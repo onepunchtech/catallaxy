@@ -1,11 +1,3 @@
-# modules/cluster/components/external-secrets.nix
-#
-# External Secrets Operator component — merged high-level options + IR writer.
-#
-# External Secrets Operator synchronizes secrets from external secret
-# management systems (AWS Secrets Manager, HashiCorp Vault, etc.) into
-# Kubernetes Secrets.
-
 {
   config,
   lib,

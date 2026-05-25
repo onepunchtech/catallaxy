@@ -1,10 +1,3 @@
-# modules/cluster/components/kaniop.nix
-#
-# Kaniop operator component — merged high-level options + IR writer.
-#
-# Manages Kanidm lifecycle declaratively via Kubernetes CRDs
-# (KanidmPersonAccount, KanidmGroup, KanidmOAuth2Client).
-
 {
   config,
   lib,

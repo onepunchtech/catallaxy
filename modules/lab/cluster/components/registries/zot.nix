@@ -1,10 +1,3 @@
-# modules/cluster/components/zot.nix
-#
-# Zot OCI-native container registry component — merged high-level options + IR writer.
-#
-# A vendor-neutral, OCI-native container image registry.
-# Supports OIDC authentication via Kanidm.
-
 {
   config,
   lib,

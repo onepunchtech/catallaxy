@@ -1,9 +1,3 @@
-# modules/cluster/components/seaweedfs.nix
-#
-# SeaweedFS distributed storage component — merged high-level options + IR writer.
-#
-# Provides S3-compatible object storage.
-
 {
   config,
   lib,

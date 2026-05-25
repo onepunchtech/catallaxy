@@ -185,6 +185,12 @@
           default = packages'.cataWrapped;
           cata = packages'.cataWrapped;
           cata-unwrapped = packages'.cata;
+          docs = pkgs.runCommand "catallaxy-docs" {
+            nativeBuildInputs = [ pkgs.mdbook ];
+          } ''
+            cp -r ${./docs/book} src
+            mdbook build src -d $out
+          '';
         };
 
         apps = {
@@ -235,6 +241,7 @@
             rustToolchain
             pkgs.cargo-watch
             pkgs.rust-analyzer
+            pkgs.mdbook
           ];
           shellHook = ''
             echo "catallaxy dev shell"

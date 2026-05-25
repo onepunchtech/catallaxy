@@ -1,9 +1,3 @@
-# modules/cluster/components/tempo.nix
-#
-# Tempo distributed tracing component — merged high-level options + IR writer.
-#
-# Provides trace storage and querying with native OTLP ingestion.
-
 {
   config,
   lib,

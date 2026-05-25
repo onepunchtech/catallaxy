@@ -1,5 +1,3 @@
-# modules/lab/network.nix
-
 { config, lib, ... }:
 
 let

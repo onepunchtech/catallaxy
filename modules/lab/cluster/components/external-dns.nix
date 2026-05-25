@@ -1,10 +1,3 @@
-# modules/cluster/components/external-dns.nix
-#
-# ExternalDNS component — merged high-level options + IR writer.
-#
-# Automatically creates DNS records from Kubernetes resources
-# (Gateway API HTTPRoutes, Ingress, LoadBalancer Services).
-
 {
   config,
   lib,

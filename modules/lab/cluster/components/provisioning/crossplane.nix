@@ -1,14 +1,3 @@
-# modules/cluster/components/crossplane.nix
-#
-# Crossplane provisioner component.
-#
-# Deploys the Crossplane control plane and manages providers declaratively.
-# Providers are installed via Provider CRs. Credentials are configured via
-# ProviderConfig CRs with secrets. Managed resources (DNS records, Droplets,
-# etc.) are declared as Nix options and rendered into Kubernetes resources.
-#
-# Supported providers: DigitalOcean, Cloudflare, Kubernetes, Helm.
-
 {
   config,
   lib,

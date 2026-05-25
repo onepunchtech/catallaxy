@@ -1,9 +1,3 @@
-# modules/cluster/components/redis-operator.nix
-#
-# Redis operator component — merged high-level options + IR writer.
-#
-# Provides Redis lifecycle management via Kubernetes CRDs.
-
 {
   config,
   lib,

@@ -1,15 +1,3 @@
-# modules/cluster/components/cilium.nix
-#
-# Cilium CNI component — merged high-level options + IR writer.
-#
-# Cilium provides networking, security, observability, and service exposure
-# via eBPF. Gateway API, BGP, encryption, and network policies are all
-# managed through this single component.
-#
-# This file combines:
-# - modules/components/cilium.nix (high-level options)
-# - modules/nixidy/cilium.nix (manifest generation)
-
 {
   config,
   lib,

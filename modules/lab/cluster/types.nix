@@ -1,9 +1,3 @@
-# modules/cluster/types.nix
-#
-# Core type definitions for cluster configuration.
-# A cluster is defined by its name, provisioning method, Kubernetes settings,
-# and network topology. No fixed "type" hierarchy — clusters are what they declare.
-
 { lib, ... }:
 
 let

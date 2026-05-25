@@ -1,15 +1,3 @@
-# modules/lab/ingress.nix
-#
-# Lab ingress — HAProxy container on host ports 80/443 that routes
-# by domain to the correct k3d cluster. Discovers services from all
-# clusters' gateway-enabled components at Nix eval time.
-#
-# Two routing modes:
-# - TLS terminate: HAProxy terminates TLS with a wildcard cert, routes
-#   HTTP by Host header to the cluster's gateway HTTP port (80).
-# - TLS passthrough: HAProxy inspects SNI and forwards raw TLS to the
-#   cluster's gateway passthrough port (8444).
-
 { config, lib, ... }:
 
 let

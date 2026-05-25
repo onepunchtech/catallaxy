@@ -1,8 +1,3 @@
-# modules/cluster/components/oidc.nix
-#
-# Configures Kubernetes API server OIDC flags and
-# declarative RBAC bindings mapping OIDC groups to ClusterRoles.
-
 { config, lib, ... }:
 
 let

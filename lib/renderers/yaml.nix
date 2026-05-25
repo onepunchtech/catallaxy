@@ -1,8 +1,3 @@
-# lib/renderers/yaml.nix
-#
-# YAML utilities for manifest rendering.
-# Uses yq-go to convert JSON (from builtins.toJSON) to human-readable YAML.
-
 { lib, pkgs }:
 
 {

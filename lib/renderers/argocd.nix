@@ -1,23 +1,3 @@
-# lib/renderers/argocd.nix
-#
-# ArgoCD manifest renderer.
-# Produces Application CRs with sync-wave annotations for phase ordering,
-# plus the raw manifests each Application points to.
-#
-# Output structure:
-#   <clusterName>/
-#     applications/
-#       00-crds.yaml          # Application CR, sync-wave from phase.order
-#       01-namespaces.yaml
-#       ...
-#     phases/
-#       crds/
-#         manifests.yaml
-#       namespaces/
-#         manifests.yaml
-#       ...
-#     .deploy-strategy
-
 {
   lib,
   pkgs,

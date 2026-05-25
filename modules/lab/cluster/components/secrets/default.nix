@@ -1,7 +1,3 @@
-# modules/secrets/default.nix
-#
-# Secrets management — declarative secret definitions with pluggable backends.
-
 { config, lib, ... }:
 
 let

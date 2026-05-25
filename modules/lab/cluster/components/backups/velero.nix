@@ -1,9 +1,3 @@
-# modules/cluster/components/velero.nix
-#
-# Velero backup and restore component — merged high-level options + IR writer.
-#
-# Provides Kubernetes cluster backup and restore capabilities.
-
 {
   config,
   lib,

@@ -1,18 +1,3 @@
-# modules/cluster/components/cert-manager.nix
-#
-# cert-manager component — merged high-level options + IR writer.
-#
-# cert-manager provides X.509 certificate management for Kubernetes,
-# supporting ACME (Let's Encrypt), self-signed CAs, and various other
-# certificate authorities.
-#
-# This file combines:
-# - modules/components/cert-manager.nix (high-level options)
-# - modules/nixidy/cert-manager.nix (manifest generation)
-#
-# Instead of writing to nixidy.applications, this component writes
-# directly to ir.phases for build-time manifest rendering.
-
 {
   config,
   lib,

@@ -1,9 +1,3 @@
-# modules/cluster/components/prometheus.nix
-#
-# Prometheus component (via kube-prometheus-stack) — merged high-level options + IR writer.
-#
-# Provides metrics collection, alerting, and service monitoring.
-
 {
   config,
   lib,

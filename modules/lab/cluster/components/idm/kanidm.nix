@@ -1,12 +1,3 @@
-# modules/cluster/components/kanidm.nix
-#
-# Kanidm identity management component — merged high-level options + IR writer.
-#
-# Provides OIDC/OAuth2 identity provider, authentication,
-# and authorization for cluster services.
-# Supports declarative provisioning of users, groups, and OAuth2 clients
-# via the Kaniop operator CRDs.
-
 {
   config,
   lib,

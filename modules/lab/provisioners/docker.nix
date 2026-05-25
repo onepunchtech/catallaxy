@@ -1,7 +1,3 @@
-# modules/provisioners/docker.nix
-#
-# Docker provisioner for Talos-in-Docker clusters.
-
 { config, lib, ... }:
 
 let

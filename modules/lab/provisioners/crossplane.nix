@@ -1,7 +1,3 @@
-# modules/provisioners/crossplane.nix
-#
-# Crossplane provisioner for infrastructure via Kubernetes control plane.
-
 { config, lib, ... }:
 
 let

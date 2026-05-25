@@ -1,9 +1,3 @@
-# modules/lab/registry.nix
-#
-# Lab registry options and computed service definition.
-# When lab.registry.enable is true, a Zot OCI registry container is
-# automatically started as a pull-through cache for common registries.
-
 { config, lib, ... }:
 
 let

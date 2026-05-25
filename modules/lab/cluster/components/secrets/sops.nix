@@ -1,8 +1,3 @@
-# lib/secrets/sops.nix
-#
-# SOPS secrets integration.
-# Handles encrypted secrets in Git.
-
 { config, lib, ... }:
 
 let

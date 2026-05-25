@@ -1,9 +1,3 @@
-# modules/cluster/components/loki.nix
-#
-# Loki log aggregation component — merged high-level options + IR writer.
-#
-# Provides horizontally-scalable log storage with label-based indexing.
-
 {
   config,
   lib,

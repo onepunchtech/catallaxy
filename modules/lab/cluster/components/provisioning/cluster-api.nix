@@ -1,11 +1,3 @@
-# modules/cluster/components/cluster-api.nix
-#
-# Cluster API component — merged high-level options + IR writer.
-#
-# Uses the CAPI Operator (Helm chart) to declaratively manage CAPI providers.
-# Provider CRs (CoreProvider, BootstrapProvider, etc.) tell the operator
-# which providers to install. No imperative `clusterctl init` needed.
-
 {
   config,
   lib,

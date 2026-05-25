@@ -1,11 +1,3 @@
-# modules/cluster/components/netbird.nix
-#
-# Netbird mesh VPN component — merged high-level options + IR writer.
-#
-# Provides WireGuard-based zero-trust networking with
-# identity-aware access control. Integrates with Kanidm or
-# other OIDC providers for authentication.
-
 {
   config,
   lib,

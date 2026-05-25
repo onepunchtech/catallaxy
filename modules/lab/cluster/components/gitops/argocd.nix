@@ -1,10 +1,3 @@
-# modules/cluster/components/argocd.nix
-#
-# ArgoCD component — merged high-level options + IR writer.
-#
-# GitOps continuous delivery tool for Kubernetes.
-# Supports repository credentials, OIDC authentication, and HA mode.
-
 {
   config,
   lib,

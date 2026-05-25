@@ -1,16 +1,3 @@
-# modules/lab/ops.nix
-#
-# Lab operations — component-aware runtime tooling.
-#
-# Generates a lab-specific CLI tool (<labname>-ops) from declared
-# operational commands. Components can contribute commands automatically
-# (e.g., kanidm ships a password reset command), and users can add their
-# own alongside their lab config.
-#
-# Each command is a Nix package (typically writeShellApplication) that
-# conforms to a simple interface. The ops module wraps them into a
-# multi-command dispatcher with self-documenting --help.
-
 {
   config,
   lib,

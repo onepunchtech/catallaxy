@@ -1,12 +1,3 @@
-# modules/cluster/components/gateway.nix
-#
-# Standalone Gateway API component — CNI-agnostic.
-#
-# Installs Gateway API CRDs, deploys a gateway controller (Traefik v3 by
-# default), and creates the default GatewayClass + Gateway.
-# When using Cilium with gatewayAPI.enable, you typically don't need this
-# component since Cilium provides its own gateway setup.
-
 {
   config,
   lib,

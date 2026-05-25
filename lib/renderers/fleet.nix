@@ -1,20 +1,3 @@
-# lib/renderers/fleet.nix
-#
-# Fleet manifest renderer.
-# Produces directories per phase, each containing a fleet.yaml with
-# dependsOn for ordering and the raw manifests.
-#
-# Output structure:
-#   <clusterName>/
-#     [prefix-]crds/
-#       fleet.yaml
-#       manifests.yaml
-#     [prefix-]namespaces/
-#       fleet.yaml
-#       manifests.yaml
-#     ...
-#     .deploy-strategy
-
 {
   lib,
   pkgs,

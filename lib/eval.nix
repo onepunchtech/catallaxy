@@ -1,9 +1,3 @@
-# lib/eval.nix
-#
-# Module evaluation entry point.
-# Evaluates cluster configuration through the module system for introspection.
-# This does NOT include the nixidy backend — it evaluates cluster options only.
-
 { lib, pkgs }:
 
 let

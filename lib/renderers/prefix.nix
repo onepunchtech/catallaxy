@@ -1,9 +1,3 @@
-# lib/renderers/prefix.nix
-#
-# Shared helper for applying lab prefix to rendered YAML manifests.
-# Skips CRDs (kind: CustomResourceDefinition) since their names are tied to API groups.
-# Only prefixes namespace references for lab-created namespaces.
-
 { lib, pkgs }:
 
 let

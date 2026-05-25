@@ -1,8 +1,3 @@
-# lib/eval-module.nix
-#
-# General-purpose module evaluator with assertion checking.
-# Similar to NixOS's evalModules but customized for catallaxy.
-
 { lib }:
 
 {

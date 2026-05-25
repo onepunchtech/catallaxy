@@ -1,5 +1,3 @@
-# modules/lab/default.nix
-
 { lib, ... }:
 
 {

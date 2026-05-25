@@ -1,18 +1,3 @@
-# lib/renderers/kapp.nix
-#
-# kapp manifest renderer.
-# Produces ordered directories that the CLI applies sequentially via kapp.
-#
-# Output structure:
-#   <clusterName>/
-#     00-crds/
-#       manifests.yaml
-#     01-namespaces/
-#       manifests.yaml
-#     ...
-#     .phase-order
-#     .deploy-strategy
-
 {
   lib,
   pkgs,

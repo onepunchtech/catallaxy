@@ -1,10 +1,3 @@
-# modules/cluster/components/cnpg.nix
-#
-# CloudNativePG operator component — merged high-level options + IR writer.
-#
-# Provides PostgreSQL lifecycle management via Kubernetes CRDs.
-# Supports declarative cluster and database definitions.
-
 {
   config,
   lib,

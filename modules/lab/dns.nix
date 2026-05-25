@@ -1,9 +1,3 @@
-# modules/lab/dns.nix
-#
-# Lab DNS options and computed service definition.
-# When lab.dns.enable is true, a Knot DNS container service is
-# automatically generated for the lab
-
 { config, lib, ... }:
 
 let

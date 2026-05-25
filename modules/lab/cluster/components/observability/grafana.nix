@@ -1,11 +1,3 @@
-# modules/cluster/components/grafana.nix
-#
-# Grafana component — merged high-level options + IR writer.
-#
-# Provides dashboarding and visualization for observability data.
-# Auto-configures datasources when co-deployed with Prometheus, Loki, and Tempo.
-# Supports OIDC authentication via Kanidm.
-
 {
   config,
   lib,

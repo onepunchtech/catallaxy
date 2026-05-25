@@ -1,7 +1,3 @@
-# modules/provisioners/k3d.nix
-#
-# k3d provisioner for k3s-in-Docker clusters (fast local development).
-
 { config, lib, ... }:
 
 let

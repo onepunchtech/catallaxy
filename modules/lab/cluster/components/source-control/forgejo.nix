@@ -1,10 +1,3 @@
-# modules/cluster/components/forgejo.nix
-#
-# Forgejo git forge component — merged high-level options + IR writer.
-#
-# Provides self-hosted Git services with OIDC authentication support.
-# Integrates with CNPG for PostgreSQL database and Kanidm for identity.
-
 {
   config,
   lib,

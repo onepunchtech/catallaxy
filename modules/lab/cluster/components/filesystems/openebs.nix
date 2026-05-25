@@ -1,10 +1,3 @@
-# modules/cluster/components/openebs.nix
-#
-# OpenEBS storage operator component — merged high-level options + IR writer.
-#
-# Provides dynamic PV provisioning via various storage engines.
-# Currently uses Rancher local-path-provisioner for simple local storage.
-
 {
   config,
   lib,

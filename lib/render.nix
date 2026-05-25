@@ -1,17 +1,3 @@
-# lib/render.nix
-#
-# Build-time manifest rendering for the IR module system.
-#
-# This module provides functions to render IR outputs (helm charts, typed
-# resources, raw yamls) into Kubernetes manifests at Nix build time.
-# No IFDs are used - all rendering happens via runCommand derivations.
-#
-# Key functions:
-# - renderHelmChart: Render a helm chart with optional kustomize patching
-# - renderResources: Convert typed resources to YAML
-# - renderPhase: Combine all outputs for a single phase
-# - renderCluster: Full cluster manifest rendering
-
 { lib, pkgs }:
 
 let

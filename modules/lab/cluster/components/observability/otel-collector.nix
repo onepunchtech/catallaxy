@@ -1,13 +1,3 @@
-# modules/cluster/components/otel-collector.nix
-#
-# OpenTelemetry Collector component — merged high-level options + IR writer.
-#
-# Agent (DaemonSet): Runs on each node, collects logs via filelog receiver,
-#   forwards to local or remote gateway.
-#
-# Gateway (Deployment): Receives telemetry via OTLP, exports to backends
-#   (Tempo, Prometheus, Loki).
-
 {
   config,
   lib,

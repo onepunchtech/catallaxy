@@ -1,8 +1,3 @@
-# lib/renderers/dir-builder.nix
-#
-# Directory structure builders for manifest output packages.
-# Assembles derivations into organized directory trees.
-
 {
   lib,
   pkgs,

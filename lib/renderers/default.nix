@@ -1,9 +1,3 @@
-# lib/renderers/default.nix
-#
-# Manifest renderers for each deployment strategy.
-# Each renderer takes { clusterName, prefix, labNamespaces, phases, phaseOrder, deployConfig }
-# and returns a Nix package containing the strategy-specific directory layout.
-
 { lib, pkgs }:
 
 let

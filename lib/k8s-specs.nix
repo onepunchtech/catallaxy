@@ -1,10 +1,3 @@
-# lib/k8s-specs.nix
-#
-# Kubernetes API specs for type generation, and standalone CRD sources
-# that aren't coupled to a chart (e.g. gateway-api).
-#
-# Chart-coupled CRDs live in lib/charts.nix (cataCharts.*.crds).
-
 {
   lib,
   pkgs,

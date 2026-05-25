@@ -1,10 +1,3 @@
-# modules/lab/bgp-router.nix
-#
-# Lab BGP router (FRRouting) for LoadBalancer IP advertisement.
-# Runs on the host network so learned BGP routes are installed
-# in the host routing table, making cluster LoadBalancer IPs
-# reachable from the developer's machine.
-
 { config, lib, ... }:
 
 let

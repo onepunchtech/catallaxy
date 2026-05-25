@@ -1,7 +1,3 @@
-# lib/network.nix
-#
-# Network utility functions for IP address and CIDR manipulation.
-
 { lib }:
 
 {

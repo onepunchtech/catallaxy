@@ -1,8 +1,3 @@
-# lib/default.nix
-#
-# Main entry point for the catallaxy library.
-# Provides module evaluation, manifest rendering, and strategy-specific renderers.
-
 { lib, pkgs }:
 
 let

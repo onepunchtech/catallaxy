@@ -1,32 +1,3 @@
-# modules/cluster/components/custom.nix
-#
-# Custom application component — user-defined workloads without creating
-# a full component module.
-#
-# Provides a simple interface for deploying arbitrary Helm charts, YAML
-# manifests, or typed Kubernetes resources into any phase.
-#
-# Example:
-#
-#   components.custom.apps.my-api = {
-#     phase = "apps";
-#     namespace = "my-api";
-#     helmCharts.my-api = {
-#       chart = ./charts/my-api;
-#       values = { replicas = 3; image.tag = "v1.2.3"; };
-#     };
-#     gateway = {
-#       enable = true;
-#       domain = "api.${dns.zone}";
-#     };
-#   };
-#
-#   components.custom.apps.static-site = {
-#     phase = "apps";
-#     namespace = "static";
-#     yamls = [ ./manifests/static-site.yaml ];
-#   };
-
 {
   config,
   lib,

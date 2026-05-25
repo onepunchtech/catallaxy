@@ -1,13 +1,3 @@
-# lib/charts.nix
-#
-# Centralized chart + CRD definitions.
-# Each entry bundles: { chart, crds, version }
-# - chart: Helm chart derivation (always present)
-# - crds: CRD YAML derivation (null if chart has no CRDs)
-# - version: chart version string
-#
-# CRD sources are coupled to chart versions so they don't drift.
-
 {
   lib,
   pkgs,
