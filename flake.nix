@@ -42,6 +42,7 @@
 
     in
     {
+      version = "0.5.0";
 
       # Reusable module for external flakes
       nixosModules.default =
