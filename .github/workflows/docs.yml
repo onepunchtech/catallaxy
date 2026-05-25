@@ -21,7 +21,7 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v14
       - uses: DeterminateSystems/magic-nix-cache-action@v8
         with:
-          use-flakehub: disabled
+          use-flakehub: "disabled"
       - run: nix build .#docs
       - uses: actions/upload-pages-artifact@v3
         with:
