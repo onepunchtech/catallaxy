@@ -15,6 +15,14 @@ YAML), and provides a CLI to provision and manage the result.
 
 **[Documentation](https://defectivenpc.github.io/catallaxy)**
 
+## Why
+
+Kubernetes platform engineering has an accidental complexity problem: YAML sprawl across environments, deployment ordering that lives in tribal knowledge, brittle bash glue that breaks silently, and a management plane that's always click-ops even when everything it manages gets GitOps.
+
+Catallaxy treats your platform like a compilation problem. Declare components in typed Nix modules. Cross-cluster references resolve through lazy evaluation at build time. Phase ordering is a dependency graph, not a runbook. The same declarations compile to kapp, ArgoCD, or Fleet output without changing component code.
+
+If you've felt this pain and recognize that Nix's guarantees — purity, reproducibility, composability — are what infrastructure configuration needs, [read more](https://defectivenpc.github.io/catallaxy/why.html).
+
 ## Quick start
 
 ```bash
@@ -39,8 +47,8 @@ cata --flake ./examples/labs#homelab lab down
 
 ## Features
 
-- **30 components** across 18 categories — CNI, gateway, PKI, observability,
-  databases, identity, GitOps, and more
+- **Batteries included** — CNI, gateway, PKI, observability, databases,
+  identity, GitOps, and more
 - **Cross-cluster references** via Nix lazy evaluation — one cluster's Tempo
   endpoint wired into another's OTEL collector
 - **Phase-based deployment ordering** — CRDs before operators before
@@ -68,7 +76,6 @@ nix flake check                   # build + format + lint checks
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and the
 [contributor guide](https://defectivenpc.github.io/catallaxy/contributing/guide.html).
 
 ## License

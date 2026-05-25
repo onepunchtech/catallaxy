@@ -6,7 +6,7 @@ Catallaxy is a declarative Kubernetes platform built on the NixOS module system.
 
 The term "catallaxy" comes from F.A. Hayek's description of a spontaneous order: a complex, coordinated system that emerges not from central planning, but from independent actors following their own rules. In economics, this is the market. In catallaxy, it is your infrastructure.
 
-Each component — cert-manager, ArgoCD, Prometheus, Kanidm, and roughly 30 others across 18 categories — is a self-contained declaration. It defines its own options, its own defaults, and writes its own manifests into the appropriate deployment phase. No component knows the full picture. Yet through Nix's lazy evaluation and the module system's merge semantics, these independent declarations compose into a coherent, cross-referenced, multi-cluster platform.
+Each component — cert-manager, ArgoCD, Prometheus, Kanidm, and many others — is a self-contained declaration. It defines its own options, its own defaults, and writes its own manifests into the appropriate deployment phase. No component knows the full picture. Yet through Nix's lazy evaluation and the module system's merge semantics, these independent declarations compose into a coherent, cross-referenced, multi-cluster platform.
 
 There is no imperative glue. No ordering logic scattered across scripts. Components declare what they need, reference what they depend on, and the system resolves it all at build time.
 

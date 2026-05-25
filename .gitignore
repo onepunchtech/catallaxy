@@ -6,4 +6,5 @@ result-*
 .DS_Store
 cli/target/
 docs/book/book/
+docs/book/src/reference/options/
 .claude/

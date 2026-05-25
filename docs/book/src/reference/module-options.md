@@ -1,72 +1,56 @@
 # Module Options
 
-Auto-generated module option documentation is planned but not yet available.
+Auto-generated reference for all catallaxy module options. Options are split
+across pages by category to keep each page fast to load.
 
-## Finding options in source
+## Lab options
 
-All module options are defined in Nix files using the standard NixOS module system (`mkOption`, `mkEnableOption`, `types.*`).
+Top-level lab configuration: name, environment, CD strategy, DNS, networking,
+ingress, registry, and ops commands.
 
-### Lab options
+- [Lab Options](./options/lab.md)
 
-Top-level lab configuration: DNS, ingress, registry, CD strategy, ops commands.
+## Cluster options
 
-Source: `modules/lab/`
+Per-cluster configuration nested under `lab.clusters.<name>`: Kubernetes
+settings, provisioners, phases, authentication, and storage.
 
-### Cluster options
+- [Cluster Options](./options/cluster.md)
 
-Per-cluster configuration: Kubernetes version, provisioner, components, phases.
+## Component options
 
-Source: `modules/lab/cluster/`
+Each component declares options under `lab.clusters.<name>.components.<name>`.
+Pages are grouped by category:
 
-### Component options
+| Category | Components |
+|----------|-----------|
+| [CNI](./options/components/cni.md) | Cilium |
+| [Gateway and DNS](./options/components/gateway.md) | Gateway, External DNS |
+| [PKI](./options/components/pki.md) | cert-manager, trust-manager |
+| [Observability](./options/components/observability.md) | Prometheus, Grafana, Loki, Tempo, OTEL Collector |
+| [Databases](./options/components/databases.md) | CloudNativePG, Redis Operator |
+| [Filesystems](./options/components/filesystems.md) | OpenEBS, SeaweedFS |
+| [Secrets](./options/components/secrets.md) | External Secrets, SOPS |
+| [Identity](./options/components/identity.md) | Kanidm, Kaniop, OIDC |
+| [GitOps](./options/components/gitops.md) | ArgoCD |
+| [Source Control](./options/components/source-control.md) | Forgejo |
+| [Provisioning](./options/components/provisioning.md) | Cluster API, Crossplane |
+| [Other](./options/components/other.md) | Velero, Netbird, Zot, Custom |
 
-Each component is a single-file module with its own options under `components.<name>`.
+## How options are structured
 
-Source: `modules/lab/cluster/components/`
-
-Components are organized by category:
-
-| Category | Path |
-|----------|------|
-| Backups | `components/backups/` |
-| CNI | `components/cni/` |
-| Databases | `components/databases/` |
-| Filesystems | `components/filesystems/` |
-| GitOps | `components/gitops/` |
-| Identity | `components/idm/` |
-| Observability | `components/observability/` |
-| PKI | `components/pki/` |
-| Provisioning | `components/provisioning/` |
-| Registries | `components/registries/` |
-| Secrets | `components/secrets/` |
-| Source Control | `components/source-control/` |
-| VPN | `components/vpn/` |
-| Custom | `components/custom.nix` |
-| Gateway | `components/gateway.nix` |
-| External DNS | `components/external-dns.nix` |
-| Redis | `components/redis-operator.nix` |
-
-### Phase options
-
-Deployment phase configuration: ordering, dependencies, timeouts, pruning.
-
-Source: `modules/lab/cluster/phases/default.nix`
-
-See the [Phases reference](./phases.md) for details on built-in phases.
-
-## Reading option definitions
-
-Each component follows a consistent pattern. Look for the `options` attribute set to see what can be configured:
+Every component follows the same pattern:
 
 ```nix
 options.components.<name> = {
   enable = mkEnableOption "<Name>";
   phase = mkOption { default = "<phase>"; };
   namespace = mkOption { default = "<namespace>"; };
-  chart = mkOption { ... };      # Helm chart override
-  ref = mkOption { readOnly = true; };  # Cross-component references
-  # ... component-specific options
+  chart = mkOption { ... };
+  ref = mkOption { readOnly = true; };
 };
 ```
 
-The `ref` attribute is always `readOnly` and provides computed values that other components can reference. It is set even when the component is disabled.
+The `ref` attribute provides computed values for cross-component wiring. It is
+always set, even when the component is disabled, so other components can
+reference it safely.

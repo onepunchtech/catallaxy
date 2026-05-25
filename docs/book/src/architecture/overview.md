@@ -4,41 +4,16 @@ Catallaxy is a declarative Kubernetes platform built on two foundations: the Nix
 
 ## Two-Layer System
 
-```
-                    +--------------------------+
-                    |    User Configuration    |
-                    |  (Nix modules / flake)   |
-                    +-----------+--------------+
-                                |
-              nix eval / nix build
-                                |
-              +-----------------v-----------------+
-              |         Nix Layer (build-time)     |
-              |  - NixOS module evaluation         |
-              |  - Type checking & defaults        |
-              |  - Helm template rendering         |
-              |  - Typed K8s resource generation   |
-              |  - Strategy-specific output        |
-              |    (kapp / argocd / fleet)          |
-              +-----------------+-----------------+
-                                |
-                     JSON config + store paths
-                                |
-              +-----------------v-----------------+
-              |       Rust CLI (runtime)           |
-              |  - Cluster provisioning (k3d)      |
-              |  - Manifest application (kapp)     |
-              |  - Secret injection (SOPS)         |
-              |  - PKI management                  |
-              |  - Backup/restore (Velero)          |
-              |  - CAPI bootstrap & pivot          |
-              +-----------------+-----------------+
-                                |
-                          kubectl / kapp
-                                |
-                    +-----------v--------------+
-                    |    Kubernetes Clusters    |
-                    +--------------------------+
+```mermaid
+flowchart TD
+    A["User Configuration<br/>(Nix modules / flake)"]
+    B["<b>Nix Layer</b> (build-time)<br/>Module evaluation<br/>Type checking & defaults<br/>Helm template rendering<br/>Typed K8s resource generation<br/>Strategy-specific output<br/>(kapp / argocd / fleet)"]
+    C["<b>Rust CLI</b> (runtime)<br/>Cluster provisioning (k3d)<br/>Manifest application (kapp)<br/>Secret injection (SOPS)<br/>PKI management<br/>Backup/restore (Velero)<br/>CAPI bootstrap & pivot"]
+    D["Kubernetes Clusters"]
+
+    A -->|"nix eval / nix build"| B
+    B -->|"JSON config + store paths"| C
+    C -->|"kubectl / kapp"| D
 ```
 
 **Nix layer** -- Everything that can be computed at build time lives here. The NixOS module system evaluates lab and cluster configurations, resolves cross-references between components and clusters, renders Helm charts via `helm template`, generates typed Kubernetes resources, and packages everything into Nix store derivations. The output is deterministic: the same configuration always produces the same manifests.
@@ -91,24 +66,3 @@ The CLI reads the built store paths and orchestrates deployment:
 
 This separation means Nix never needs network access during builds (no import-from-derivation), and the CLI never needs to understand Helm charts or Nix module evaluation.
 
-## Component Count
-
-The platform ships 30 components across 18 categories, covering the full Kubernetes infrastructure stack:
-
-- **Networking**: Cilium, Flannel (CNI), Traefik (Gateway)
-- **PKI**: cert-manager, trust-manager
-- **Observability**: Prometheus, Grafana, Loki, Tempo, OpenTelemetry Collector
-- **Databases**: CloudNativePG, Redis Operator
-- **Storage**: OpenEBS, SeaweedFS
-- **Registries**: Zot
-- **Secrets**: External Secrets, SOPS
-- **Identity**: Kanidm, Kaniop
-- **GitOps**: ArgoCD
-- **Source Control**: Forgejo
-- **Provisioning**: Cluster API, Crossplane
-- **VPN**: Netbird
-- **Backups**: Velero
-- **DNS**: External DNS
-- **Custom**: User-defined application bundles
-
-All components follow the same single-file pattern and participate in the same phase-based deployment ordering.

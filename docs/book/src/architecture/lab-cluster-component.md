@@ -188,19 +188,18 @@ This works because:
 
 ### Practical Example: Observability Pipeline
 
-```
-  core cluster                     obs cluster
-  +------------------+             +------------------+
-  | otel-collector   |   OTLP/gRPC | otel-gateway     |
-  | (agent mode)     | ----------> | (gateway mode)   |
-  |                  |             |                  |
-  | ref: core's OTEL |             | ref: obs's OTEL  |
-  +------------------+             +--------+---------+
-                                            |
-                                   +--------v---------+
-                                   | loki / tempo     |
-                                   | ref.otlpGrpc     |
-                                   +------------------+
+```mermaid
+flowchart LR
+    subgraph core["core cluster"]
+        A["otel-collector<br/>(agent mode)"]
+    end
+    subgraph obs["obs cluster"]
+        B["otel-gateway<br/>(gateway mode)"]
+        C["loki / tempo"]
+    end
+
+    A -->|"OTLP/gRPC"| B
+    B --> C
 ```
 
 The core cluster's OTEL collector is configured to export to the obs cluster's gateway endpoint. This endpoint URL is computed from the obs cluster's component refs and resolved at Nix evaluation time -- no runtime service discovery needed.

@@ -175,14 +175,35 @@
         # Built lab packages for CLI lint and external consumption
         labPackages = lib.mapAttrs (_: lab: lab.config.lab.out.package) exampleLabDefs;
 
-        packages = {
+        packages =
+          let
+            optionDocs = import ./lib/docs.nix {
+              inherit lib pkgs cataCharts k8sSpecs;
+              sourceRoot = toString ./.;
+            };
+            optionDocsRendered = pkgs.runCommand "catallaxy-option-docs" {
+              nativeBuildInputs = [ pkgs.python3 ];
+            } ''
+              python3 ${./lib/docs-render.py} \
+                ${optionDocs.json}/share/doc/nixos/options.json \
+                $out
+            '';
+          in
+          {
           default = packages'.cataWrapped;
           cata = packages'.cataWrapped;
           cata-unwrapped = packages'.cata;
+          option-docs = optionDocsRendered;
           docs = pkgs.runCommand "catallaxy-docs" {
-            nativeBuildInputs = [ pkgs.mdbook ];
+            nativeBuildInputs = [ pkgs.mdbook pkgs.mdbook-mermaid ];
           } ''
             cp -r ${./docs/book} src
+            chmod -R u+w src
+            mkdir -p src/src/reference/options/components
+            cp ${optionDocsRendered}/lab.md src/src/reference/options/
+            cp ${optionDocsRendered}/cluster.md src/src/reference/options/
+            cp ${optionDocsRendered}/components/*.md src/src/reference/options/components/
+            mdbook-mermaid install src
             mdbook build src -d $out
           '';
         };
@@ -236,6 +257,7 @@
             pkgs.cargo-watch
             pkgs.rust-analyzer
             pkgs.mdbook
+            pkgs.mdbook-mermaid
           ];
           shellHook = ''
             echo "catallaxy dev shell"

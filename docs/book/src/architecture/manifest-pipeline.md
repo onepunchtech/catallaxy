@@ -4,32 +4,18 @@ The manifest pipeline transforms high-level component declarations into deployme
 
 ## Pipeline Stages
 
-```
- Components write to bundles
-          |
-          v
- +----------------------------+
- | 1. Bundle Accumulation     |   Components write helmCharts, resources,
- |    (per-phase)             |   yamls, and createNamespaces into bundles
- +----------------------------+
-          |
-          v
- +----------------------------+
- | 2. Phase Merging           |   cluster.out.phases merges all bundles
- |    (cluster.out.phases)    |   within each phase into single derivations
- +----------------------------+
-          |
-          v
- +----------------------------+
- | 3. Strategy Rendering      |   lab.out.manifests passes phases through
- |    (kapp / argocd / fleet) |   a strategy-specific renderer
- +----------------------------+
-          |
-          v
- +----------------------------+
- | 4. Lab Packaging           |   lab.out.package combines all clusters'
- |    (lab.out.package)       |   manifests + metadata.json into one derivation
- +----------------------------+
+```mermaid
+flowchart TD
+    A["<b>1. Bundle Accumulation</b><br/>(per-phase)"]
+    B["<b>2. Phase Merging</b><br/>(cluster.out.phases)"]
+    C["<b>3. Strategy Rendering</b><br/>(kapp / argocd / fleet)"]
+    D["<b>4. Lab Packaging</b><br/>(lab.out.package)"]
+    E["Nix store path"]
+
+    A -->|"helmCharts, resources, yamls,<br/>createNamespaces into bundles"| B
+    B -->|"merge bundles per phase<br/>into single derivations"| C
+    C -->|"strategy-specific renderer"| D
+    D -.->|"all clusters' manifests +<br/>metadata.json"| E
 ```
 
 ## Stage 1: Bundle Accumulation
