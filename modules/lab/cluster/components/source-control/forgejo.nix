@@ -67,7 +67,6 @@ let
     };
   };
 
-  # TLS Certificate
   tlsCertResource = optionalAttrs (cfg.tls.issuerRef != null) {
     forgejo-tls = {
       apiVersion = "cert-manager.io/v1";
@@ -111,10 +110,6 @@ let
   dbSslMode = if cfg.database.ssl then "require" else "disable";
 in
 {
-  # =========================================================================
-  # PART 1: High-level options
-  # =========================================================================
-
   options.components.forgejo = {
     enable = mkEnableOption "Forgejo git forge";
 
@@ -314,10 +309,6 @@ in
     };
   };
 
-  # =========================================================================
-  # PART 2: Computed refs and config
-  # =========================================================================
-
   config = lib.mkMerge [
     {
       components.forgejo.ref =
@@ -338,10 +329,6 @@ in
           domain = cfg.domain;
         };
     }
-
-    # =========================================================================
-    # PART 3: Phase writer
-    # =========================================================================
 
     (mkIf cfg.enable {
       phases.${cfg.phase}.bundles.forgejo = {

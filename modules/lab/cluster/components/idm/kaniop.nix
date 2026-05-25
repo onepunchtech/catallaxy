@@ -24,10 +24,6 @@ let
   '';
 in
 {
-  # =========================================================================
-  # PART 1: High-level options
-  # =========================================================================
-
   options.components.kaniop = {
     enable = mkEnableOption "Kaniop operator for declarative Kanidm management";
 
@@ -62,20 +58,12 @@ in
     };
   };
 
-  # =========================================================================
-  # PART 2: Computed refs and config
-  # =========================================================================
-
   config = lib.mkMerge [
     {
       components.kaniop.ref = {
         namespace = cfg.namespace;
       };
     }
-
-    # =========================================================================
-    # PART 3: Phase writer
-    # =========================================================================
 
     (mkIf cfg.enable {
       # Install kaniop CRDs in the crds phase so the operator doesn't crash

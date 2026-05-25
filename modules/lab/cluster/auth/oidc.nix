@@ -11,7 +11,6 @@ let
     ;
   cfg = config.components.oidc;
 
-  # Generate RBAC ClusterRoleBindings
   rbacResources = mapAttrs (name: binding: {
     apiVersion = "rbac.authorization.k8s.io/v1";
     kind = "ClusterRoleBinding";
@@ -36,10 +35,6 @@ let
   }) cfg.rbac;
 in
 {
-  # =========================================================================
-  # PART 1: High-level options
-  # =========================================================================
-
   options.components.oidc = {
     enable = mkEnableOption "OIDC authentication for Kubernetes API server";
 
@@ -147,10 +142,6 @@ in
     };
   };
 
-  # =========================================================================
-  # PART 2: Computed refs and config
-  # =========================================================================
-
   config = lib.mkMerge [
     {
       components.oidc.ref = {
@@ -164,10 +155,6 @@ in
         };
       };
     }
-
-    # =========================================================================
-    # PART 3: Phase writer
-    # =========================================================================
 
     (mkIf (cfg.enable && cfg.rbac != { }) {
       # RBAC ClusterRoleBindings

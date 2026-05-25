@@ -61,7 +61,6 @@ let
   # Chart definitions — all managed with explicit versions
   # Each entry has: repo, chart, version, chartHash, and optional crd
   chartDefs = {
-    # Core infrastructure
     cilium = {
       repo = "https://helm.cilium.io";
       chart = "cilium";
@@ -111,7 +110,6 @@ let
       };
     };
 
-    # Observability
     prometheus = {
       repo = "https://prometheus-community.github.io/helm-charts";
       chart = "kube-prometheus-stack";
@@ -152,7 +150,6 @@ let
       chartHash = "sha256-rltQ1AOliiNVwhBkU24G0c4uRZj46TUepGG9Oh38GQg=";
     };
 
-    # DNS & Secrets
     external-dns = {
       repo = "https://kubernetes-sigs.github.io/external-dns";
       chart = "external-dns";
@@ -175,7 +172,6 @@ let
       };
     };
 
-    # Backup
     velero = {
       repo = "https://vmware-tanzu.github.io/helm-charts";
       chart = "velero";
@@ -186,7 +182,6 @@ let
       };
     };
 
-    # Infrastructure provisioning
     crossplane = {
       repo = "https://charts.crossplane.io/stable";
       chart = "crossplane";
@@ -202,7 +197,6 @@ let
       };
     };
 
-    # Databases & Operators
     cnpg = {
       repo = "https://cloudnative-pg.github.io/charts";
       chart = "cloudnative-pg";
@@ -228,7 +222,6 @@ let
       };
     };
 
-    # Storage
     local-path-provisioner = {
       repo = "https://charts.containeroo.ch";
       chart = "local-path-provisioner";
@@ -243,7 +236,6 @@ let
       chartHash = "sha256-8iW/unqfCVGeYFy8XPh7E9chH6bzyX3u+x3lgxSa6e0=";
     };
 
-    # Gateway API controller
     traefik = {
       repo = "https://traefik.github.io/charts";
       chart = "traefik";
@@ -251,7 +243,6 @@ let
       chartHash = "sha256-E6CY8pKAhLhRuJL1ZtgUXSHlcLVyb0+Nhbe6kFvryD0=";
     };
 
-    # Networking & Identity
     netbird = {
       repo = "https://charts.jaconi.io";
       chart = "netbird";
@@ -266,7 +257,6 @@ let
       chartHash = "sha256-toHedI3JT/A3ff2E7O2BYtoA2twEr0XlYig7DmEacFY=";
     };
 
-    # Git & Registry
     forgejo = {
       repo = "oci://codeberg.org/forgejo-contrib";
       chart = "forgejo";
@@ -291,7 +281,6 @@ let
       };
     };
 
-    # Cluster API
     capi-operator = {
       repo = "https://kubernetes-sigs.github.io/cluster-api-operator";
       chart = "cluster-api-operator";
@@ -307,7 +296,7 @@ let
       };
     };
 
-    # OpenEBS (uses local-path-provisioner chart, no separate chart)
+    # Uses local-path-provisioner chart, no separate chart
     openebs = {
       repo = "https://charts.containeroo.ch";
       chart = "local-path-provisioner";

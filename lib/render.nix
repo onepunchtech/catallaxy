@@ -8,10 +8,8 @@ let
     filterAttrs
     ;
 
-  # Convert an attribute set to a YAML file
   writeYamlFile = name: content: pkgs.writeText "${name}.yaml" (builtins.toJSON content);
 
-  # Write helm values to a file
   writeValuesFile = name: values: pkgs.writeText "${name}-values.yaml" (builtins.toJSON values);
 
   # Convert a typed Kubernetes resource to its YAML representation

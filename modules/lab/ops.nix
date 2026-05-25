@@ -18,7 +18,6 @@ let
 
   cfg = config.lab.ops;
 
-  # Command submodule type
   opsCommandType = types.submodule {
     options = {
       description = mkOption {
@@ -74,10 +73,8 @@ let
   # Merge: component ops as defaults, user commands override
   allCommands = componentOps // cfg.commands;
 
-  # Generate the dispatcher script
   toolScript =
     let
-      # Case branches for each command
       caseBranches = concatStringsSep "\n" (
         mapAttrsToList (
           name: cmd:

@@ -5,17 +5,14 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
 
-    # Kubernetes
     nix-kube-generators.url = "github:farcaller/nix-kube-generators";
 
-    # Rust tooling
     crane.url = "github:ipetkov/crane";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Formatting
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -79,7 +76,6 @@
           programs.yamlfmt.enable = true;
         };
 
-        # Packages (CLI, scripts)
         packages' = import ./pkgs {
           inherit
             self
@@ -143,10 +139,8 @@
 
       in
       {
-        # Centralized Helm chart definitions
         charts = cataCharts;
 
-        # Lab evaluator and example labs
         mkLab = mkLab';
         labs = lib.mapAttrs (_: lab: lab.config.lab.out.cliConfig) exampleLabDefs;
 

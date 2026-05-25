@@ -37,7 +37,6 @@ let
     else
       map (ns: "/var/log/pods/${ns}_*/*/*.log") cfg.agent.namespaces;
 
-  # Agent Configuration (DaemonSet)
   agentConfig = {
     mode = "daemonset";
     image.repository = "otel/opentelemetry-collector-contrib";
@@ -394,10 +393,6 @@ let
   };
 in
 {
-  # =========================================================================
-  # PART 1: High-level options
-  # =========================================================================
-
   options.components.otel-collector = {
     enable = mkEnableOption "OpenTelemetry Collector";
 
@@ -612,10 +607,6 @@ in
     };
   };
 
-  # =========================================================================
-  # PART 2: Computed refs and config
-  # =========================================================================
-
   config = lib.mkMerge [
     {
       components.otel-collector.ref =
@@ -638,10 +629,6 @@ in
           otlpHttpEndpoint = "http://${gatewayHost}:${toString cfg.ports.otlpHttp}";
         };
     }
-
-    # =========================================================================
-    # PART 3: Phase writer
-    # =========================================================================
 
     (mkIf cfg.enable {
       phases.${cfg.phase}.bundles.otel-collector = {

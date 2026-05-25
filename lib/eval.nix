@@ -6,7 +6,6 @@ let
     ../modules
   ];
 
-  # Evaluate a cluster configuration
   evalCluster =
     {
       modules ? [ ],
@@ -187,19 +186,16 @@ let
 
         # CRDs are all applied in the dedicated `crds` phase — not per-phase apps
 
-        # Compose services
         composePhases = lib.mapAttrsToList (name: svc: {
           inherit name;
           phase = svc.phase;
         }) (config.compose or { });
 
-        # Managed secrets
         secretPhases = lib.mapAttrsToList (name: sec: {
           name = "secrets-${name}";
           phase = sec.phase;
         }) ((config.secrets or { }).managed or { });
 
-        # Database instances
         pgPhases = lib.mapAttrsToList (name: pg: {
           name = "pg-${name}";
           phase = pg.phase;

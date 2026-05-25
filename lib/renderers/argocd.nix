@@ -23,7 +23,6 @@ let
     mapAttrsToList
     ;
 
-  # Prefix helper for Application names
   appName = name: if prefix == "" then name else "${prefix}-${name}";
 
   # Generate an ArgoCD Application CR for a phase

@@ -19,10 +19,6 @@ let
   chartRef = cfg.chart;
 in
 {
-  # =========================================================================
-  # PART 1: High-level options (from components/cert-manager.nix)
-  # =========================================================================
-
   options.components.cert-manager = {
     enable = mkEnableOption "cert-manager";
 
@@ -164,14 +160,6 @@ in
     };
   };
 
-  # =========================================================================
-  # PART 2: Computed refs
-  # =========================================================================
-
-  # =========================================================================
-  # PART 3: CRD management (legacy integration)
-  # =========================================================================
-
   config = lib.mkMerge [
     {
       components.cert-manager.ref = {
@@ -206,10 +194,6 @@ in
     (mkIf cfg.enable {
       # CRDs in the crds phase
       phases.crds.bundles.cert-manager-crds.yamls = [ cataCharts.cert-manager.crds ];
-
-      # =========================================================================
-      # PART 4: Phase writer (replaces nixidy/cert-manager.nix)
-      # =========================================================================
 
       # Main cert-manager helm chart + namespace
       phases.${cfg.phase}.bundles.cert-manager = {

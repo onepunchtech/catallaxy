@@ -10,7 +10,6 @@
 }:
 
 let
-  # CLI source
   cliSrc = lib.cleanSourceWith {
     src = ../cli;
     filter = path: type: (craneLib.filterCargoSources path type) || (type == "directory");
