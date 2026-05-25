@@ -25,7 +25,7 @@ let
     specialArgs = { inherit lib pkgs; };
   };
 
-  gitHubBaseUrl = "https://github.com/defectivenpc/catallaxy/blob/master";
+  gitHubBaseUrl = "https://github.com/onepunchtech/catallaxy/blob/master";
 
   transformOptions =
     opt:

@@ -17,7 +17,7 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v14
       - uses: DeterminateSystems/magic-nix-cache-action@v8
         with:
-          use-flakehub: false
+          use-flakehub: disabled
       - name: Get version
         id: version
         run: |

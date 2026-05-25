@@ -9,7 +9,7 @@ Create a new directory for your lab and add a `flake.nix`:
 ```nix
 {
   inputs = {
-    catallaxy.url = "github:defectivenpc/catallaxy";
+    catallaxy.url = "github:onepunchtech/catallaxy";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
@@ -92,7 +92,7 @@ Every component exposes a `ref` attribute set with computed, read-only values â€
 From your flake directory, enter the dev shell and use `cata` as shown in the [Quick Start](./quick-start.md):
 
 ```bash
-nix develop github:defectivenpc/catallaxy
+nix develop github:onepunchtech/catallaxy
 cata --flake .#mylab lab up
 ```
 

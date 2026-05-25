@@ -13,7 +13,7 @@ Define your clusters, components, and topology in Nix. Catallaxy evaluates the
 configuration, renders Kubernetes manifests (Helm charts, typed resources, raw
 YAML), and provides a CLI to provision and manage the result.
 
-**[Documentation](https://defectivenpc.github.io/catallaxy)**
+**[Documentation](https://onepunchtech.github.io/catallaxy)**
 
 ## Why
 
@@ -21,7 +21,7 @@ Kubernetes platform engineering has an accidental complexity problem: YAML spraw
 
 Catallaxy treats your platform like a compilation problem. Declare components in typed Nix modules. Cross-cluster references resolve through lazy evaluation at build time. Phase ordering is a dependency graph, not a runbook. The same declarations compile to kapp, ArgoCD, or Fleet output without changing component code.
 
-If you've felt this pain and recognize that Nix's guarantees — purity, reproducibility, composability — are what infrastructure configuration needs, [read more](https://defectivenpc.github.io/catallaxy/why.html).
+If you've felt this pain and recognize that Nix's guarantees — purity, reproducibility, composability — are what infrastructure configuration needs, [read more](https://onepunchtech.github.io/catallaxy/why.html).
 
 ## Quick start
 
@@ -62,7 +62,7 @@ cata --flake ./examples/labs#homelab lab down
 
 **v0.5** — The homelab example boots multi-cluster environments on k3d with
 full-stack services and domain-based access. Cloud provisioning and GitOps
-integration are next. See the [roadmap](https://defectivenpc.github.io/catallaxy/roadmap.html).
+integration are next. See the [roadmap](https://onepunchtech.github.io/catallaxy/roadmap.html).
 
 ## Build and development
 
@@ -76,7 +76,7 @@ nix flake check                   # build + format + lint checks
 
 ## Contributing
 
-[contributor guide](https://defectivenpc.github.io/catallaxy/contributing/guide.html).
+[contributor guide](https://onepunchtech.github.io/catallaxy/contributing/guide.html).
 
 ## License
 

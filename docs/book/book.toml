@@ -10,8 +10,8 @@ command = "mdbook-mermaid"
 
 [output.html]
 default-theme = "navy"
-git-repository-url = "https://github.com/defectivenpc/catallaxy"
-edit-url-template = "https://github.com/defectivenpc/catallaxy/edit/master/docs/book/{path}"
+git-repository-url = "https://github.com/onepunchtech/catallaxy"
+edit-url-template = "https://github.com/onepunchtech/catallaxy/edit/master/docs/book/{path}"
 additional-js = ["mermaid.min.js", "mermaid-init.js"]
 
 [output.html.search]

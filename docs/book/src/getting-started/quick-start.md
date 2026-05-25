@@ -5,7 +5,7 @@ This guide walks you through standing up the example homelab — a multi-cluster
 ## Clone the repository
 
 ```bash
-git clone https://github.com/defectivenpc/catallaxy.git
+git clone https://github.com/onepunchtech/catallaxy.git
 cd catallaxy
 ```
 
