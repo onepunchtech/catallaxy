@@ -120,6 +120,7 @@ let
 
   # Build Helm values
   helmValues = {
+    snapshotsEnabled = cfg.volumeSnapshotLocation.enable;
     configuration = {
       backupStorageLocation = [
         {
@@ -151,7 +152,7 @@ let
     };
 
     deployNodeAgent = cfg.fileSystemBackup.enable;
-    installCRDs = true;
+    installCRDs = false;
 
     credentials = {
       useSecret = true;
@@ -498,6 +499,9 @@ in
         }
       ];
 
+      # Install Velero CRDs in the crds phase (before operators)
+      phases.crds.bundles.velero-crds.yamls = [ cataCharts.velero.crds ];
+
       phases.${cfg.phase}.bundles.velero = {
         # Velero helm chart
         helmCharts.velero = {
@@ -508,11 +512,16 @@ in
           values = helmValues // localS3Config;
         };
 
-        # Schedule and SeaweedFS resources
-        resources = scheduleResources // seaweedResources;
+        # SeaweedFS resources (Secrets/Jobs don't need CRDs)
+        resources = seaweedResources;
 
         # Namespace creation
         createNamespaces = [ cfg.namespace ];
+      };
+
+      # Schedule CRs go in a later phase so Velero CRDs are established first
+      phases.infrastructure.bundles.velero-schedules = {
+        resources = scheduleResources;
       };
     })
   ];

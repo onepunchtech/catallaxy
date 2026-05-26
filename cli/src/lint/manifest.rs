@@ -23,6 +23,10 @@ pub struct K8sResource {
     pub secret_refs: Vec<String>,
     /// Source file for error reporting
     pub source_file: PathBuf,
+    /// Full parsed YAML value (for CRD schema validation)
+    pub raw: serde_yaml::Value,
+    /// Lint checks to skip (from `catallaxy.io/lint-skip` annotation)
+    pub lint_skip: Vec<String>,
 }
 
 impl K8sResource {
@@ -55,6 +59,10 @@ impl K8sResource {
 
     pub fn is_secret(&self) -> bool {
         self.kind == "Secret"
+    }
+
+    pub fn has_lint_skip(&self, check: &str) -> bool {
+        self.lint_skip.iter().any(|s| s == check)
     }
 }
 
@@ -129,6 +137,7 @@ fn parse_resource(value: &serde_yaml::Value, source_file: &Path) -> Option<K8sRe
     let selector = extract_service_selector(mapping, &kind);
     let pod_labels = extract_pod_labels(mapping, &kind);
     let (configmap_refs, secret_refs) = extract_refs(mapping);
+    let lint_skip = extract_lint_skip(metadata.as_mapping()?);
 
     Some(K8sResource {
         api_version,
@@ -140,7 +149,21 @@ fn parse_resource(value: &serde_yaml::Value, source_file: &Path) -> Option<K8sRe
         configmap_refs,
         secret_refs,
         source_file: source_file.to_path_buf(),
+        raw: value.clone(),
+        lint_skip,
     })
+}
+
+/// Extract lint-skip checks from `catallaxy.io/lint-skip` annotation.
+/// Value is a comma-separated list of check names, e.g. "selector,reference".
+fn extract_lint_skip(metadata: &serde_yaml::Mapping) -> Vec<String> {
+    metadata
+        .get(serde_yaml::Value::String("annotations".into()))
+        .and_then(|v| v.as_mapping())
+        .and_then(|m| m.get(serde_yaml::Value::String("catallaxy.io/lint-skip".into())))
+        .and_then(|v| v.as_str())
+        .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+        .unwrap_or_default()
 }
 
 fn get_str(mapping: &serde_yaml::Mapping, key: &str) -> Option<String> {
@@ -235,19 +258,33 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
         {
             for vol in volumes {
                 if let Some(m) = vol.as_mapping() {
-                    if let Some(name) = m
+                    if let Some(cm) = m
                         .get(serde_yaml::Value::String("configMap".into()))
                         .and_then(|cm| cm.as_mapping())
-                        .and_then(|cm| get_str(cm, "name"))
                     {
-                        cm_refs.push(name);
+                        let optional = cm
+                            .get(serde_yaml::Value::String("optional".into()))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        if !optional {
+                            if let Some(name) = get_str(cm, "name") {
+                                cm_refs.push(name);
+                            }
+                        }
                     }
-                    if let Some(name) = m
+                    if let Some(secret) = m
                         .get(serde_yaml::Value::String("secret".into()))
                         .and_then(|s| s.as_mapping())
-                        .and_then(|s| get_str(s, "secretName"))
                     {
-                        secret_refs.push(name);
+                        let optional = secret
+                            .get(serde_yaml::Value::String("optional".into()))
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        if !optional {
+                            if let Some(name) = get_str(secret, "secretName") {
+                                secret_refs.push(name);
+                            }
+                        }
                     }
                 }
             }

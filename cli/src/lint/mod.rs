@@ -29,7 +29,7 @@ pub struct LabMetadata {
 }
 
 /// Available lint checks
-const ALL_CHECKS: &[&str] = &["schema", "identity", "prefix", "selector", "reference"];
+const ALL_CHECKS: &[&str] = &["schema", "identity", "prefix", "selector", "reference", "crd-schema"];
 
 /// Run all lint checks against a built lab package.
 ///
@@ -99,6 +99,7 @@ pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
                 }
                 "selector" => checks::check_selectors(&resources, cluster_name),
                 "reference" => checks::check_references(&resources, cluster_name),
+                "crd-schema" => checks::check_crd_schema(&resources, cluster_name),
                 _ => Vec::new(),
             };
             cluster_diags.extend(diags);
