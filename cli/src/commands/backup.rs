@@ -350,25 +350,19 @@ pub async fn run(ctx: &CataContext, args: BackupArgs) -> Result<()> {
 fn resolve_kube_context(ctx: &CataContext, cluster_name: &str) -> Result<String> {
     let config = nix::get_cluster_config(ctx, cluster_name)?;
 
-    let k3d_enabled = config
-        .pointer("/provisioner/k3d/enable")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
+    let provisioner = config["provisioner"].as_str().unwrap_or("k3d");
     let default_name = format!("catallaxy-{cluster_name}");
 
-    if k3d_enabled {
-        let k3d_name = config
-            .pointer("/provisioner/k3d/clusterName")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&default_name);
-        Ok(format!("k3d-{k3d_name}"))
-    } else {
-        let provider = config["provider"].as_str().unwrap_or("unknown");
-        match provider {
-            "docker" => Ok(format!("admin@{default_name}")),
-            _ => Ok(cluster_name.to_string()),
+    match provisioner {
+        "k3d" => {
+            let k3d_name = config
+                .pointer("/provisionerConfig/k3d/clusterName")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&default_name);
+            Ok(format!("k3d-{k3d_name}"))
         }
+        "talos" => Ok(format!("admin@{default_name}")),
+        _ => Ok(cluster_name.to_string()),
     }
 }
 
@@ -433,6 +427,7 @@ async fn stabilize_cluster(ctx: &CataContext, cluster_name: &str, prefix: &str) 
                 phase: Some("operators".to_string()),
                 component: Some("velero".to_string()),
                 dry_run: false,
+                force: true, // backup setup always applies directly
                 sequential: false,
                 manifests_dir: None,
             },

@@ -18,7 +18,7 @@ let
     optionalString
     ;
   cfg = config.components.cilium;
-  clusterProvider = config.cluster.provider or "docker";
+  clusterProvisioner = config.cluster.provisioner;
 
   # Chart reference with fallback
   chartRef = cfg.chart;
@@ -27,7 +27,7 @@ let
   effectiveK8sServiceHost =
     if cfg.k8sServiceHost != null then
       cfg.k8sServiceHost
-    else if clusterProvider == "external" then
+    else if clusterProvisioner == "external" then
       "10.96.0.1" # CAPI: Kubernetes service ClusterIP
     else
       "localhost"; # k3d/docker
@@ -36,7 +36,7 @@ let
   effectiveK8sServicePort =
     if cfg.k8sServicePort != null then
       cfg.k8sServicePort
-    else if clusterProvider == "external" then
+    else if clusterProvisioner == "external" then
       "443" # CAPI: Kubernetes service port
     else
       "6443"; # k3d/docker
@@ -641,7 +641,7 @@ in
         lib.mkIf (cfg.lbIPAM.enable || cfg.bgp.enable) (poolResources // bgpResources);
 
       # Auto-deploy Cilium at k3d boot so nodes get CNI immediately
-      provisioner.k3d.autoDeployManifests = mkIf (config.provisioner.k3d.enable or false) [
+      provisioner.k3d.autoDeployManifests = mkIf (config.cluster.provisioner == "k3d") [
         {
           name = "cilium";
           content = ciliumAutoDeployManifest;

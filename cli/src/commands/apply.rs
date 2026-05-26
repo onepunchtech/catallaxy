@@ -37,6 +37,10 @@ pub struct ApplyArgs {
     #[arg(long)]
     pub sequential: bool,
 
+    /// Force direct apply even when the lab uses a GitOps strategy (argocd/fleet)
+    #[arg(long)]
+    pub force: bool,
+
     /// Pre-built manifests directory (skip nix build).
     /// Used by lab commands that build the lab package once for all clusters.
     #[arg(skip)]
@@ -104,6 +108,14 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or("kapp");
 
+    if (strategy == "argocd" || strategy == "fleet") && !args.force {
+        bail!(
+            "This lab uses '{strategy}' strategy — manifests must be deployed via Git.\n\
+             Use 'cata lab publish' to push manifests to the Git repository.\n\
+             To apply directly anyway, use --force."
+        );
+    }
+
     // Resolve kube context
     let kube_context = resolve_kube_context(&config, &cluster);
 
@@ -136,22 +148,19 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
 
 /// Resolve the kubectl context name for a cluster
 fn resolve_kube_context(config: &serde_json::Value, cluster: &str) -> String {
-    let k3d_enabled = config
-        .pointer("/provisioner/k3d/enable")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let is_k3d = config["provisioner"].as_str().unwrap_or("k3d") == "k3d";
 
-    if k3d_enabled {
+    if is_k3d {
         let default_name = format!("catallaxy-{cluster}");
         let k3d_name = config
-            .pointer("/provisioner/k3d/clusterName")
+            .pointer("/provisionerConfig/k3d/clusterName")
             .and_then(|v| v.as_str())
             .unwrap_or(&default_name);
         format!("k3d-{k3d_name}")
     } else {
-        let provider = config["provider"].as_str().unwrap_or("unknown");
-        match provider {
-            "docker" | "external" => format!("{cluster}-admin@{cluster}"),
+        let provisioner = config["provisioner"].as_str().unwrap_or("k3d");
+        match provisioner {
+            "talos" => format!("{cluster}-admin@{cluster}"),
             _ => cluster.to_string(),
         }
     }
@@ -383,7 +392,7 @@ fn inject_sops_secrets(
 /// DaemonSets) that were auto-deployed (i.e., lack kapp labels) so kapp recreates them.
 fn cleanup_bootstrap_resources(kube_context: &str, config: &serde_json::Value) {
     let auto_deploy = config
-        .pointer("/provisioner/k3d/autoDeployManifests")
+        .pointer("/provisionerConfig/k3d/autoDeployManifests")
         .and_then(|v| v.as_array());
 
     if auto_deploy.map_or(true, |a| a.is_empty()) {

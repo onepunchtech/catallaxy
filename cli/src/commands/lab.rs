@@ -55,6 +55,10 @@ pub enum LabCommands {
         /// Dry run (don't actually apply)
         #[arg(long)]
         dry_run: bool,
+
+        /// Force direct apply even when the lab uses a GitOps strategy
+        #[arg(long)]
+        force: bool,
     },
 
     /// Stop lab infrastructure services
@@ -79,6 +83,10 @@ pub enum LabCommands {
         /// Dry run (don't actually apply)
         #[arg(long)]
         dry_run: bool,
+
+        /// Force direct apply even when the lab uses a GitOps strategy
+        #[arg(long)]
+        force: bool,
     },
 
     /// Lint rendered manifests for correctness
@@ -163,18 +171,20 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
             phase,
             component,
             dry_run,
+            force,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            up(ctx, &name, phase, component, dry_run).await
+            up(ctx, &name, phase, component, dry_run, force).await
         }
         LabCommands::Apply {
             name,
             phase,
             component,
             dry_run,
+            force,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            apply(ctx, &name, phase, component, dry_run).await
+            apply(ctx, &name, phase, component, dry_run, force).await
         }
         LabCommands::Down { name } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
@@ -530,10 +540,102 @@ async fn lint_cmd(
     path: Option<PathBuf>,
     skip: Vec<String>,
 ) -> Result<()> {
+    // Tier 1: Environment — check required tools
+    println!("{} Environment", style("catallaxy").cyan().bold(),);
+    let tool_results = tools::check_all_tools();
+    let mut missing_tools = Vec::new();
+    for (name, found, info) in &tool_results {
+        if *found {
+            println!("  {} {}", style("✓").green(), name);
+        } else {
+            println!("  {} {} ({})", style("✗").red(), name, info);
+            missing_tools.push(name.as_str());
+        }
+    }
+    println!();
+
+    if !missing_tools.is_empty() {
+        println!(
+            "{} Missing tools: {}",
+            style("Warning:").yellow(),
+            missing_tools.join(", ")
+        );
+        println!();
+    }
+
+    // Tier 2: Configuration — validate lab config
+    let lab_name = match &path {
+        Some(_) => None,
+        None => Some(ctx.resolve_lab_name(name.as_deref())?),
+    };
+
+    if let Some(ref lab_name) = lab_name {
+        println!("{} Configuration", style("catallaxy").cyan().bold());
+        match crate::nix::get_lab_config(ctx, lab_name) {
+            Ok(lab) => {
+                let cluster_names: Vec<&str> = lab["clusterNames"]
+                    .as_array()
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                    .unwrap_or_default();
+                let strategy = lab
+                    .pointer("/cd/strategy")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("kapp");
+
+                println!("  {} lab: {}", style("✓").green(), lab_name);
+                println!("  {} strategy: {}", style("✓").green(), strategy);
+                println!(
+                    "  {} clusters: {}",
+                    style("✓").green(),
+                    cluster_names.join(", ")
+                );
+
+                // Validate each cluster config loads
+                for cluster in &cluster_names {
+                    match crate::nix::get_cluster_config(ctx, cluster) {
+                        Ok(config) => {
+                            let provisioner = config["provisioner"].as_str().unwrap_or("unknown");
+                            let component_count = config["components"]
+                                .as_object()
+                                .map(|c| {
+                                    c.values()
+                                        .filter(|v| {
+                                            v.get("enable")
+                                                .and_then(|e| e.as_bool())
+                                                .unwrap_or(false)
+                                        })
+                                        .count()
+                                })
+                                .unwrap_or(0);
+                            println!(
+                                "    {} {} ({}, {} components)",
+                                style("✓").green(),
+                                cluster,
+                                provisioner,
+                                component_count,
+                            );
+                        }
+                        Err(e) => {
+                            println!("    {} {} — {}", style("✗").red(), cluster, e,);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("  {} lab config failed: {}", style("✗").red(), e);
+                bail!("Configuration validation failed");
+            }
+        }
+        println!();
+    }
+
+    // Tier 3: Manifests — build and lint
+    println!("{} Manifests", style("catallaxy").cyan().bold());
     let package_path = match path {
         Some(p) => p,
         None => {
-            let lab_name = ctx.resolve_lab_name(name.as_deref())?;
+            let lab_name = lab_name.unwrap();
+            println!("  Building...");
             let store_path = crate::nix::build_lab_package(ctx, &lab_name)?;
             PathBuf::from(store_path)
         }
@@ -639,7 +741,7 @@ fn resolve_cluster_context(ctx: &CataContext, cluster_name: &str) -> String {
     crate::nix::get_cluster_config(ctx, cluster_name)
         .ok()
         .and_then(|c| {
-            c.pointer("/provisioner/k3d/clusterName")
+            c.pointer("/provisionerConfig/k3d/clusterName")
                 .and_then(|v| v.as_str())
                 .map(|k3d_name| format!("k3d-{k3d_name}"))
         })
@@ -780,11 +882,11 @@ async fn init(ctx: &CataContext, name: &str) -> Result<()> {
         // Connect k3d server to the lab network for cross-cluster and service access
         // (skip when provisioner.k3d.network is set — cluster is already on the lab network)
         let k3d_network = config
-            .pointer("/provisioner/k3d/network")
+            .pointer("/provisionerConfig/k3d/network")
             .and_then(|v| v.as_str());
         if k3d_network.is_none() {
             let k3d_cluster_name = config
-                .pointer("/provisioner/k3d/clusterName")
+                .pointer("/provisionerConfig/k3d/clusterName")
                 .and_then(|v| v.as_str())
                 .unwrap_or(cluster_name);
             let k3d_server = format!("k3d-{k3d_cluster_name}-server-0");
@@ -806,6 +908,7 @@ async fn apply_cluster_components(
     ctx: &CataContext,
     cluster_name: &str,
     dry_run: bool,
+    force: bool,
     manifests_dir: Option<String>,
 ) -> Result<()> {
     println!(
@@ -821,6 +924,7 @@ async fn apply_cluster_components(
             phase: None,
             component: None,
             dry_run,
+            force,
             sequential: false,
             manifests_dir,
         },
@@ -834,6 +938,7 @@ async fn up(
     _phase: Option<String>,
     _component: Option<String>,
     dry_run: bool,
+    force: bool,
 ) -> Result<()> {
     // Init (services + cluster provisioning)
     init(ctx, name).await?;
@@ -944,7 +1049,7 @@ async fn up(
         let lab_package = lab_package.clone();
         join_set.spawn(async move {
             let cluster_manifests = format!("{lab_package}/manifests/{cluster_name}");
-            apply_cluster_components(&ctx, &cluster_name, dry_run, Some(cluster_manifests))
+            apply_cluster_components(&ctx, &cluster_name, dry_run, force, Some(cluster_manifests))
                 .await
                 .map_err(|e| (cluster_name, e))
         });
@@ -1009,6 +1114,7 @@ async fn apply(
     phase: Option<String>,
     component: Option<String>,
     dry_run: bool,
+    force: bool,
 ) -> Result<()> {
     let lab = crate::nix::get_lab_config(ctx, name)?;
 
@@ -1036,6 +1142,7 @@ async fn apply(
                 phase: phase.clone(),
                 component: component.clone(),
                 dry_run,
+                force,
                 sequential: false,
                 manifests_dir: Some(cluster_manifests),
             },

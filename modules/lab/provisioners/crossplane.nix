@@ -5,8 +5,6 @@ let
 in
 {
   options.provisioner.crossplane = {
-    enable = mkEnableOption "Crossplane provisioner";
-
     phase = mkOption {
       type = types.str;
       default = "infrastructure";

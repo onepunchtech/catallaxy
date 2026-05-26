@@ -7,6 +7,7 @@
     ../aspects/gitops.nix
     ../aspects/source-control.nix
     ../aspects/registry.nix
+    ../aspects/backups.nix
   ];
 
   cluster.name = "core";

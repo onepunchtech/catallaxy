@@ -1,65 +1,71 @@
 # Roadmap
 
-Catallaxy development is organized into milestones from v0.5 through v1.0. Each milestone builds on the previous, progressively adding cloud provisioning, GitOps integration, backup workflows, and production hardening.
+Everything below drives toward a single milestone: **1.0 — production ready**. Version numbers bump as progress is made, not on a fixed schedule. Categories are organizational, not sequential — work can happen in any order.
 
-## v0.5.0 -- Local Platform (current)
+## 1.0 — Production Ready
 
-The foundation: a fully functional local development platform on k3d.
+### Local Platform
 
-- Startup reliability improvements and error handling
-- End-to-end verification of the full stack (networking, PKI, identity, observability, GitOps)
-- Documentation site (this mdBook)
-- Lab ops commands for day-2 operations
-- TLS trust chain: lab CA distributed via trust-manager, all components use verified TLS
-- OIDC integration across ArgoCD, Grafana, and Forgejo via Kanidm
+- [x] Startup reliability improvements and error handling
+- [x] End-to-end verification of the full stack (networking, PKI, identity, observability, GitOps)
+- [x] Documentation site (mdBook)
+- [x] Lab ops commands for day-2 operations
+- [x] TLS trust chain: lab CA distributed via trust-manager, all components use verified TLS
+- [x] OIDC integration across ArgoCD, Grafana, and Forgejo via Kanidm
 
-## v0.6.0 -- Cloud Provisioning
+### Cloud Provisioning
 
-Extend beyond local development to cloud infrastructure.
+- [x] SOPS integration for encrypted secrets in Git
+- [x] Crossplane providers for DigitalOcean and Cloudflare
+- [x] Cluster API (CAPI) integration for declarative cluster provisioning
+- [x] Management cluster pattern: a persistent cluster that provisions and manages workload clusters
+- [x] Multi-provider provisioner abstraction (k3d, CAPI, Talos)
 
-- Crossplane providers for DigitalOcean and Cloudflare
-- Cluster API (CAPI) integration for declarative cluster provisioning
-- Management cluster pattern: a persistent cluster that provisions and manages workload clusters
-- SOPS integration for encrypted secrets in Git
-- Multi-provider provisioner abstraction (k3d, CAPI, Talos)
+### GitOps
 
-## v0.7.0 -- GitOps Integration
+- [x] ArgoCD bootstrap: self-managing ArgoCD that syncs from rendered manifests
+- [x] `cata lab publish` command: render manifests and push to a Git repository
+- [x] Pull request workflow: `--pr` flag creates a PR for review before apply
+- [x] Push-to-pull transition: direct apply blocked for GitOps labs unless `--force`
 
-Push-to-pull deployment model for production environments.
+### Backup & Migration
 
-- ArgoCD bootstrap: self-managing ArgoCD that syncs from rendered manifests
-- `cata lab publish` command: render manifests and push to a Git repository
-- Pull request workflow: `--pr` flag creates a PR for review before apply
-- Push-to-pull transition: local `cata lab apply` for dev, Git-driven for staging/prod
-- Manifest diff previews in PRs
+- [x] Velero backup schedules configured per-cluster
+- [x] S3-compatible backup storage via SeaweedFS or cloud providers
+- [x] Cross-provider cluster migration: backup from one provider, restore to another
+- [x] Management cluster pivot: migrate the management cluster itself to new infrastructure
+- [x] Backup verification and restore testing
 
-## v0.8.0 -- Backup & Migration
+### Environments
 
-Data protection and cross-provider mobility.
+- [x] Environment layers (local, staging, prod) with progressive configuration overrides
 
-- Velero backup schedules configured per-cluster
-- S3-compatible backup storage via SeaweedFS or cloud providers
-- Cross-provider cluster migration: backup from one provider, restore to another
-- Management cluster pivot: migrate the management cluster itself to new infrastructure
-- Backup verification and restore testing
+### Hardening & Stability
 
-## v0.9.0 -- Environments & Hardening
+- [ ] Stable Nix module API with backward compatibility guarantees
+- [ ] Security hardening: network policies, pod security standards, audit logging
+- [ ] Comprehensive test suite covering module evaluation, rendering, and deployment
+- [ ] Security audit of the platform and supply chain
+- [x] Pre-flight validation in `cata lab lint` (environment, config, and manifest checks)
+- [ ] CHANGELOG and versioned releases
 
-Environment-aware defaults and operational maturity.
+### Extensibility
 
-- Environment layers (local, staging, prod) with progressive configuration overrides
-- `cata lab promote` workflow: promote changes across environments
-- Automated testing framework for lab configurations
-- Plugin system for extending the CLI and module system
-- Security hardening: network policies, pod security standards, audit logging
+- [ ] Custom components, charts, and transformation passes without forking
+- [ ] Consumer flake extensibility: teams define their own modules that compose with built-in components
+- [ ] Documentation for writing and distributing custom component modules
 
-## v1.0.0 -- Production Ready
+### Documentation
 
-Stable API and production-grade guarantees.
+- [ ] Secrets management recipe (SOPS setup, team workflows, per-environment keys)
+- [ ] Operational runbooks (backup/restore, disaster recovery, troubleshooting)
+- [ ] Consumer flake guide for custom charts and components
 
-- Stable Nix module API with backward compatibility guarantees
-- On-premises support (Talos Linux on bare metal)
-- Comprehensive test suite covering module evaluation, rendering, and deployment
-- Security audit of the platform and supply chain
-- Migration guide from v0.x to v1.0
-- Performance benchmarking and optimization for large multi-cluster labs
+## Future
+
+Ideas worth capturing but not blocking 1.0. These are distractions until the above is done.
+
+- [ ] Performance benchmarking and optimization for large multi-cluster labs
+- [ ] Migration guide from v0.x to v1.0
+- [ ] Automated testing framework for lab configurations
+- [ ] On-premises support (Talos Linux on bare metal)

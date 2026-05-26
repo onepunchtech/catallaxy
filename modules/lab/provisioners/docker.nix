@@ -6,8 +6,6 @@ let
 in
 {
   options.provisioner.docker = {
-    enable = mkEnableOption "Docker provisioner (Talos-in-Docker)";
-
     clusterName = mkOption {
       type = types.str;
       default = "catallaxy-${config.cluster.name}";

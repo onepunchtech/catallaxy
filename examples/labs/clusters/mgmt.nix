@@ -3,7 +3,7 @@
 {
   cluster = {
     name = "mgmt";
-    provider = "docker";
+    provisioner = "k3d";
     kubernetes = {
       distribution = "k3s";
       controlPlanes = 1;

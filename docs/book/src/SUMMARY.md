@@ -25,6 +25,7 @@
 # Recipes
 
 - [Homelab OIDC Setup](./recipes/homelab-oidc.md)
+- [Backup and Restore](./recipes/backup-restore.md)
 - [Custom Components](./recipes/custom-component.md)
 
 # Reference

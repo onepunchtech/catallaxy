@@ -61,16 +61,13 @@ async fn show(ctx: &CataContext) -> Result<()> {
 }
 
 fn resolve_kube_context(config: &serde_json::Value, cluster_name: &str) -> String {
-    let k3d_enabled = config
-        .pointer("/provisioner/k3d/enable")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+    let is_k3d = config["provisioner"].as_str().unwrap_or("k3d") == "k3d";
 
     let default_name = format!("catallaxy-{cluster_name}");
 
-    if k3d_enabled {
+    if is_k3d {
         let k3d_name = config
-            .pointer("/provisioner/k3d/clusterName")
+            .pointer("/provisionerConfig/k3d/clusterName")
             .and_then(|v| v.as_str())
             .unwrap_or(&default_name);
         format!("k3d-{k3d_name}")

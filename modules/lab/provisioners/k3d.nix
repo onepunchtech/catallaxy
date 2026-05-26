@@ -13,8 +13,6 @@ let
 in
 {
   options.provisioner.k3d = {
-    enable = mkEnableOption "k3d provisioner (k3s-in-Docker)";
-
     clusterName = mkOption {
       type = types.str;
       default = config.cluster.name;
@@ -113,7 +111,7 @@ in
     };
   };
 
-  config.provisioner.k3d = mkIf config.provisioner.k3d.enable {
+  config.provisioner.k3d = mkIf (config.cluster.provisioner == "k3d") {
     extraApiServerArgs =
       # OIDC args
       (lib.optionals oidcCfg.enable (mapAttrsToList (k: v: "${k}=${v}") oidcCfg.ref.apiServerArgs))

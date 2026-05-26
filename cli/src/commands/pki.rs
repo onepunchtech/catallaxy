@@ -630,7 +630,7 @@ async fn kubeconfig(
     // Determine the server URL from provisioner config
     let cluster_config = crate::nix::get_cluster_config(ctx, cluster_name)?;
     let k3d_name = cluster_config
-        .pointer("/provisioner/k3d/clusterName")
+        .pointer("/provisionerConfig/k3d/clusterName")
         .and_then(|v| v.as_str())
         .unwrap_or(cluster_name);
     let _context_name = format!("k3d-{k3d_name}");

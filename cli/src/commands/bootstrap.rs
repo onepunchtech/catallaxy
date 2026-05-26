@@ -398,6 +398,7 @@ async fn init(
                 phase: None,
                 component: None,
                 dry_run: false,
+                force: true, // bootstrap always applies directly
                 sequential: false,
                 manifests_dir: None,
             },

@@ -22,7 +22,7 @@
   lab.clusters.core =
     { ... }:
     {
-      cluster.provider = lib.mkForce "external";
+      cluster.provisioner = lib.mkForce "external";
       components.argocd.ha = true;
       components.cnpg.clusters.postgres.instances = lib.mkForce 2;
       components.cnpg.clusters.postgres.storage.size = lib.mkForce "20Gi";
@@ -31,7 +31,7 @@
   lab.clusters.obs =
     { ... }:
     {
-      cluster.provider = lib.mkForce "external";
+      cluster.provisioner = lib.mkForce "external";
       components.otel-collector.gateway.replicas = 3;
     };
 }

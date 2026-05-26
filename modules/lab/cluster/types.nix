@@ -1,14 +1,37 @@
-{ lib, ... }:
+{ config, lib, ... }:
 
 let
   inherit (lib) mkOption types;
 in
 {
+  config.cluster.provider =
+    if config.cluster.provisioner == "k3d" || config.cluster.provisioner == "talos" then
+      "docker"
+    else
+      config.cluster.provisioner;
+
   options.cluster = {
     name = mkOption {
       type = types.str;
       description = "Unique name for this cluster";
       example = "local";
+    };
+
+    provisioner = mkOption {
+      type = types.enum [
+        "k3d"
+        "talos"
+        "crossplane"
+        "external"
+      ];
+      default = "k3d";
+      description = ''
+        How this cluster is provisioned:
+        - k3d: k3s-in-Docker (local development)
+        - talos: Talos-in-Docker (local development)
+        - crossplane: Provisioned via Crossplane from another cluster
+        - external: Pre-existing cluster, just configure it
+      '';
     };
 
     provider = mkOption {
@@ -17,13 +40,8 @@ in
         "crossplane"
         "external"
       ];
-      default = "docker";
-      description = ''
-        How this cluster is provisioned:
-        - docker: Talos-in-Docker (local development)
-        - crossplane: Provisioned via Crossplane from another cluster
-        - external: Pre-existing cluster, just configure it
-      '';
+      readOnly = true;
+      description = "Computed provider category (derived from cluster.provisioner)";
     };
 
     kubernetes = {

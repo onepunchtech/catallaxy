@@ -9,13 +9,13 @@ use console::style;
 
 use crate::config::Context as CataContext;
 
-/// Check that a tool is available
+/// Check that a tool is available, returning its path
 pub fn check_tool(name: &str) -> Result<()> {
     which::which(name).with_context(|| format!("Tool not found: {name}"))?;
     Ok(())
 }
 
-/// Check all required tools are available
+/// Check all required tools are available (minimal set for cluster operations)
 pub fn check_required_tools() -> Result<()> {
     let tools = ["kubectl", "helm", "nix"];
     for tool in tools {
@@ -25,6 +25,20 @@ pub fn check_required_tools() -> Result<()> {
         check_tool("colima")?;
     }
     Ok(())
+}
+
+/// Check all tools needed for a full deploy cycle.
+/// Returns a list of (tool_name, found, path_or_error) for reporting.
+pub fn check_all_tools() -> Vec<(String, bool, String)> {
+    let tools = ["nix", "kubectl", "helm", "kapp", "sops", "k3d"];
+
+    tools
+        .iter()
+        .map(|&name| match which::which(name) {
+            Ok(path) => (name.to_string(), true, path.display().to_string()),
+            Err(_) => (name.to_string(), false, "not found".to_string()),
+        })
+        .collect()
 }
 
 /// Run a command and stream output

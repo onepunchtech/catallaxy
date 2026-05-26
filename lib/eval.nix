@@ -34,7 +34,7 @@ let
   # Convert an already-evaluated cluster config to JSON-friendly format.
   # Separated from evalClusterJSON so it can be reused by lab evaluation.
   clusterConfigToJSON = config: {
-    inherit (config.cluster) name provider;
+    inherit (config.cluster) name provider provisioner;
     kubernetes = config.cluster.kubernetes;
     talos = config.cluster.talos;
     network = config.cluster.network;
@@ -114,15 +114,13 @@ let
           version = component.version or null;
         }
     ) config.components;
-    provisioner = {
+    provisionerConfig = {
       docker = {
-        enable = config.provisioner.docker.enable or false;
         clusterName = config.provisioner.docker.clusterName or "";
         waitTimeout = config.provisioner.docker.waitTimeout or "10m";
         colima = config.provisioner.docker.colima or { };
       };
       k3d = {
-        enable = config.provisioner.k3d.enable or false;
         clusterName = config.provisioner.k3d.clusterName or "";
         image = config.provisioner.k3d.image or null;
         noTraefik = config.provisioner.k3d.noTraefik or true;
@@ -173,7 +171,7 @@ let
         );
 
         # Provisioners with phase support (crossplane)
-        provisionerPhases = lib.optional (config.provisioner.crossplane.enable or false) {
+        provisionerPhases = lib.optional (config.cluster.provisioner == "crossplane") {
           name = "crossplane";
           phase = config.provisioner.crossplane.phase or "infrastructure";
         };
