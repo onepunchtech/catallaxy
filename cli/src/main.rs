@@ -15,7 +15,7 @@ mod tools;
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
 
-use commands::{apply, backup, bootstrap, cluster, generate, kubeconfig, lab, pki, secrets};
+use commands::{apply, bootstrap, cluster, generate, kubeconfig, lab, pki, secrets};
 
 /// Catallaxy - Declarative Kubernetes Platform Management
 #[derive(Parser)]
@@ -51,9 +51,6 @@ enum Commands {
 
     /// Apply manifests to a cluster
     Apply(apply::ApplyArgs),
-
-    /// Backup and restore cluster state
-    Backup(backup::BackupArgs),
 
     /// Bootstrap a CAPI management cluster
     Bootstrap(bootstrap::BootstrapArgs),
@@ -102,7 +99,6 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Cluster { command } => cluster::run(&ctx, command).await,
         Commands::Lab { command } => lab::run(&ctx, command).await,
         Commands::Apply(args) => apply::run(&ctx, args).await,
-        Commands::Backup(args) => backup::run(&ctx, args).await,
         Commands::Bootstrap(args) => bootstrap::run(&ctx, args).await,
         Commands::Pki { command } => pki::run(&ctx, command).await,
         Commands::Secrets { command } => secrets::run(&ctx, command).await,

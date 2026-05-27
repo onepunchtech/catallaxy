@@ -179,6 +179,17 @@ in
           };
         };
 
+        # The chart unconditionally defines a volume for seaweedfs-db-init-config
+        # but never creates the ConfigMap (chart bug). Provide an empty one.
+        resources.seaweedfs-db-init-config = {
+          apiVersion = "v1";
+          kind = "ConfigMap";
+          metadata = {
+            name = "seaweedfs-db-init-config";
+            namespace = cfg.namespace;
+          };
+        };
+
         # Namespace creation
         createNamespaces = [ cfg.namespace ];
       };

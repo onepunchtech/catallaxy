@@ -29,6 +29,7 @@ in
   lab.ops.commands = {
     init-user = {
       description = "Reset a kanidm account password (for initial login)";
+      category = "idm";
       args = [
         {
           name = "username";
@@ -70,11 +71,11 @@ in
       };
     };
 
-    db-shell = {
+    shell = {
       description = "Open a psql shell to the forgejo database";
       category = "database";
       package = pkgs.writeShellApplication {
-        name = "db-shell";
+        name = "shell";
         runtimeInputs = [
           pkgs.kubectl
           pkgs.postgresql

@@ -10,6 +10,9 @@ in
     else
       config.cluster.provisioner;
 
+  # Default kubeContext — provisioners override this
+  config.cluster.ref.kubeContext = lib.mkDefault config.cluster.name;
+
   options.cluster = {
     name = mkOption {
       type = types.str;
@@ -105,6 +108,13 @@ in
         type = types.str;
         default = "10.96.0.0/12";
         description = "Service network CIDR";
+      };
+    };
+
+    ref = {
+      kubeContext = mkOption {
+        type = types.str;
+        description = "Kubernetes context name for kubectl/velero/etc. Set by provisioner modules.";
       };
     };
 

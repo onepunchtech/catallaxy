@@ -52,7 +52,8 @@ in
   };
 
   # Operational commands contributed by components.
-  # These bubble up to lab.ops.commands for the generated ops CLI tool.
+  # These bubble up to lab.ops where same-named commands from different clusters
+  # are merged (enum options get their values unioned, packages keyed by cluster).
   options.ops = mkOption {
     type = types.attrsOf (
       types.submodule {
@@ -61,6 +62,42 @@ in
           category = mkOption {
             type = types.str;
             default = "general";
+            description = "Subcommand group (e.g. 'backup', 'database')";
+          };
+          options = mkOption {
+            type = types.attrsOf (
+              types.submodule {
+                options = {
+                  type = mkOption {
+                    type = types.enum [
+                      "string"
+                      "enum"
+                      "bool"
+                    ];
+                    default = "string";
+                  };
+                  description = mkOption {
+                    type = types.str;
+                    default = "";
+                  };
+                  required = mkOption {
+                    type = types.bool;
+                    default = false;
+                  };
+                  default = mkOption {
+                    type = types.nullOr types.str;
+                    default = null;
+                  };
+                  values = mkOption {
+                    type = types.listOf types.str;
+                    default = [ ];
+                    description = "Valid values for enum type";
+                  };
+                };
+              }
+            );
+            default = { };
+            description = "Named options (flags) for this command";
           };
           args = mkOption {
             type = types.listOf (
@@ -79,6 +116,7 @@ in
               }
             );
             default = [ ];
+            description = "Positional arguments";
           };
           package = mkOption { type = types.package; };
         };

@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   cataCharts,
   ...
 }:
@@ -23,8 +24,30 @@ let
       ref = { };
     };
 
+  # When using local SeaweedFS storage, Velero must deploy after SeaweedFS
+  veleroPhase = if cfg.local.enable then "apps" else cfg.phase;
+  schedulesPhase = if cfg.local.enable then "workloads" else "infrastructure";
+
   # Chart reference with fallback
   chartRef = cfg.chart;
+
+  # Kube context for ops scripts (provided by provisioner modules)
+  kubeContext = config.cluster.ref.kubeContext;
+
+  # Ops helper scripts
+  mkVeleroScript =
+    name: text:
+    pkgs.writeShellApplication {
+      inherit name;
+      runtimeInputs = with pkgs; [
+        kubectl
+        velero
+      ];
+      text = ''
+        KUBE_CONTEXT="${kubeContext}"
+        ${text}
+      '';
+    };
 
   # Backup schedule submodule
   backupScheduleType = types.submodule {
@@ -153,11 +176,31 @@ let
 
     deployNodeAgent = cfg.fileSystemBackup.enable;
     installCRDs = false;
+    upgradeCRDs = false;
 
     credentials = {
       useSecret = true;
       existingSecret = cfg.backupStorageLocation.credentialsSecret;
     };
+
+    # Velero plugins as init containers
+    initContainers =
+      optional
+        (
+          cfg.backupStorageLocation.provider == "aws"
+          || cfg.backupStorageLocation.provider == "seaweedfs"
+        )
+        {
+          name = "velero-plugin-for-aws";
+          image = "velero/velero-plugin-for-aws:v1.11.1";
+          imagePullPolicy = "IfNotPresent";
+          volumeMounts = [
+            {
+              mountPath = "/target";
+              name = "plugins";
+            }
+          ];
+        };
   };
 
   # Local mode configuration using SeaweedFS
@@ -502,7 +545,7 @@ in
       # Install Velero CRDs in the crds phase (before operators)
       phases.crds.bundles.velero-crds.yamls = [ cataCharts.velero.crds ];
 
-      phases.${cfg.phase}.bundles.velero = {
+      phases.${veleroPhase}.bundles.velero = {
         # Velero helm chart
         helmCharts.velero = {
           chart = chartRef;
@@ -520,8 +563,143 @@ in
       };
 
       # Schedule CRs go in a later phase so Velero CRDs are established first
-      phases.infrastructure.bundles.velero-schedules = {
+      phases.${schedulesPhase}.bundles.velero-schedules = {
         resources = scheduleResources;
+      };
+
+      # Ops commands for lab CLI (category = subcommand group)
+      ops.create = {
+        description = "Create a Velero backup";
+        category = "backup";
+        options.cluster = {
+          type = "enum";
+          values = [ config.cluster.name ];
+          required = true;
+          description = "Target cluster";
+        };
+        args = [
+          {
+            name = "name";
+            description = "Backup name (optional, auto-generated if omitted)";
+            required = false;
+          }
+        ];
+        package = mkVeleroScript "create" ''
+          NAME="''${1:-$(date +%Y%m%d-%H%M%S)}"
+          velero backup create "$NAME" \
+            --kubecontext "$KUBE_CONTEXT" \
+            --exclude-namespaces kube-system,${cfg.namespace} \
+            --include-cluster-resources=true \
+            --wait
+        '';
+      };
+
+      ops.list = {
+        description = "List Velero backups";
+        category = "backup";
+        options.cluster = {
+          type = "enum";
+          values = [ config.cluster.name ];
+          required = true;
+          description = "Target cluster";
+        };
+        package = mkVeleroScript "list" ''
+          velero backup get --kubecontext "$KUBE_CONTEXT"
+        '';
+      };
+
+      ops.describe = {
+        description = "Describe a Velero backup";
+        category = "backup";
+        options.cluster = {
+          type = "enum";
+          values = [ config.cluster.name ];
+          required = true;
+          description = "Target cluster";
+        };
+        args = [
+          {
+            name = "name";
+            description = "Backup name";
+          }
+        ];
+        package = mkVeleroScript "describe" ''
+          velero backup describe "$1" --kubecontext "$KUBE_CONTEXT" --details
+        '';
+      };
+
+      ops.delete = {
+        description = "Delete a Velero backup";
+        category = "backup";
+        options.cluster = {
+          type = "enum";
+          values = [ config.cluster.name ];
+          required = true;
+          description = "Target cluster";
+        };
+        args = [
+          {
+            name = "name";
+            description = "Backup name";
+          }
+        ];
+        package = mkVeleroScript "delete" ''
+          velero backup delete "$1" --kubecontext "$KUBE_CONTEXT" --confirm
+        '';
+      };
+
+      ops.restore = {
+        description = "Restore from a Velero backup";
+        category = "backup";
+        options.cluster = {
+          type = "enum";
+          values = [ config.cluster.name ];
+          required = true;
+          description = "Target cluster";
+        };
+        args = [
+          {
+            name = "backup";
+            description = "Backup name to restore from";
+          }
+        ];
+        package = mkVeleroScript "restore" ''
+          velero restore create --from-backup "$1" --kubecontext "$KUBE_CONTEXT" --wait
+        '';
+      };
+
+      ops.schedules = {
+        description = "List Velero backup schedules";
+        category = "backup";
+        options.cluster = {
+          type = "enum";
+          values = [ config.cluster.name ];
+          required = true;
+          description = "Target cluster";
+        };
+        package = mkVeleroScript "schedules" ''
+          velero schedule get --kubecontext "$KUBE_CONTEXT"
+        '';
+      };
+
+      ops.trigger = {
+        description = "Trigger a backup schedule manually";
+        category = "backup";
+        options.cluster = {
+          type = "enum";
+          values = [ config.cluster.name ];
+          required = true;
+          description = "Target cluster";
+        };
+        args = [
+          {
+            name = "schedule";
+            description = "Schedule name to trigger";
+          }
+        ];
+        package = mkVeleroScript "trigger" ''
+          velero backup create --from-schedule "$1" --kubecontext "$KUBE_CONTEXT"
+        '';
       };
     })
   ];

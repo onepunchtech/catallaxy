@@ -111,6 +111,9 @@ in
     };
   };
 
+  config.cluster.ref.kubeContext = mkIf (config.cluster.provisioner == "k3d")
+    "k3d-${config.provisioner.k3d.clusterName}";
+
   config.provisioner.k3d = mkIf (config.cluster.provisioner == "k3d") {
     extraApiServerArgs =
       # OIDC args
