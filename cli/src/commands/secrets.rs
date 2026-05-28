@@ -476,9 +476,11 @@ async fn list(ctx: &CataContext, cluster: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Decrypt a SOPS secret file and return key-value pairs.
-/// Used by the apply flow to inject secrets.
-pub fn decrypt_sops_secret(path: &std::path::Path) -> Result<HashMap<String, String>> {
+/// Decrypt a SOPS store file and return nested data.
+/// Store files are structured as: { managed_secret_name: { key: value } }
+pub fn decrypt_sops_store(
+    path: &std::path::Path,
+) -> Result<HashMap<String, HashMap<String, String>>> {
     let output = std::process::Command::new("sops")
         .args(["--decrypt", "--output-type", "yaml"])
         .arg(path)
@@ -491,6 +493,6 @@ pub fn decrypt_sops_secret(path: &std::path::Path) -> Result<HashMap<String, Str
     }
 
     let yaml_str = String::from_utf8_lossy(&output.stdout);
-    let data: HashMap<String, String> = serde_yaml::from_str(&yaml_str)?;
+    let data: HashMap<String, HashMap<String, String>> = serde_yaml::from_str(&yaml_str)?;
     Ok(data)
 }

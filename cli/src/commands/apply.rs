@@ -106,8 +106,17 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
     );
     println!();
 
-    // Get cluster config (needed for kube context resolution and secrets)
-    let config = nix::get_cluster_config(ctx, &cluster)?;
+    // Get cluster config — try lab-scoped first (has labName), fall back to global
+    let config = ctx
+        .resolve_lab_name(None)
+        .ok()
+        .and_then(|lab_name| {
+            nix::get_lab_config(ctx, &lab_name)
+                .ok()
+                .and_then(|lab| nix::get_cluster_config_from_lab(&lab, &cluster).ok())
+        })
+        .or_else(|| nix::get_cluster_config(ctx, &cluster).ok())
+        .ok_or_else(|| anyhow::anyhow!("Failed to load config for cluster '{cluster}'"))?;
     let strategy = config
         .pointer("/deploy/strategy")
         .and_then(|v| v.as_str())
@@ -337,22 +346,22 @@ fn inject_projections(
     projections: &[(String, ProjectionConfig)],
     timeout: &str,
 ) -> Result<()> {
-    // Get lab name from config to find SOPS files
+    // Get lab name from cluster config to find SOPS store files
     let lab_name = config
-        .pointer("/labName")
-        .or_else(|| config.pointer("/outputs/labName"))
+        .get("labName")
         .and_then(|v| v.as_str())
-        .unwrap_or("default");
+        .map(String::from)
+        .or_else(|| ctx.resolve_lab_name(None).ok())
+        .unwrap_or_else(|| "default".to_string());
 
     let secrets_tmp = tempfile::tempdir()?;
+    let lab_config = nix::get_lab_config(ctx, &lab_name).ok();
 
-    // Cache decrypted store files to avoid decrypting the same file multiple times
-    let mut store_cache: HashMap<String, HashMap<String, String>> = HashMap::new();
+    // Cache decrypted store files: { store_name → { managed_secret_name → { key → value } } }
+    let mut store_cache: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
 
     for (proj_name, proj) in projections {
         // Resolve which store this projection's source managed secret lives in.
-        // We read the lab config's secrets.managed.<source>.store to find the store name.
-        let lab_config = nix::get_lab_config(ctx, lab_name).ok();
         let store_name = lab_config
             .as_ref()
             .and_then(|lc| {
@@ -367,7 +376,7 @@ fn inject_projections(
         } else {
             let enc_path = PathBuf::from(ctx.flake_uri())
                 .join("secrets")
-                .join(lab_name)
+                .join(&lab_name)
                 .join(format!("{store_name}.enc.yaml"));
 
             if !enc_path.exists() {
@@ -380,7 +389,7 @@ fn inject_projections(
                 continue;
             }
 
-            let data = secrets_mod::decrypt_sops_secret(&enc_path)?;
+            let data = secrets_mod::decrypt_sops_store(&enc_path)?;
             store_cache.insert(store_name.to_string(), data.clone());
             data
         };
@@ -393,19 +402,13 @@ fn inject_projections(
             proj.source,
         );
 
-        // Extract source managed secret's keys and apply transforms
+        // Look up the source managed secret's keys from the nested store data
+        let source_keys = store_data.get(&proj.source);
         let mut k8s_data: HashMap<String, String> = HashMap::new();
 
         for (key_name, key_def) in &proj.keys {
-            // Source value is at store_data[managed_secret_name][key_name]
-            let source_value = store_data
-                .get(&format!("{}.{}", proj.source, key_def.from))
-                .or_else(|| {
-                    // Try nested YAML: the store file has managed secret names as top-level keys
-                    // After decryption, sops returns flat key-value pairs
-                    // Try the flat format: "managed_secret_name/key_name"
-                    store_data.get(&key_def.from)
-                })
+            let source_value = source_keys
+                .and_then(|keys| keys.get(&key_def.from))
                 .map(|s| s.as_str())
                 .unwrap_or("");
 

@@ -28,6 +28,9 @@ let
   # Chart reference with fallback
   chartRef = cfg.chart;
 
+  # Convert { key = "val"; } map to v1beta2 extraArgs format: [ { name = "key"; value = "val"; } ]
+  toExtraArgs = attrs: lib.mapAttrsToList (name: value: { inherit name value; }) attrs;
+
   # Compute the first usable IP in a CIDR
   cidrFirstIP =
     cidr:
@@ -452,20 +455,20 @@ let
       controlPlaneRef =
         if clusterCfg.talos.enable then
           {
-            apiVersion = "controlplane.cluster.x-k8s.io/v1alpha3";
+            apiGroup = "controlplane.cluster.x-k8s.io";
             kind = "TalosControlPlane";
             name = "${clusterName}-control-plane";
           }
         else
           {
-            apiVersion = "controlplane.cluster.x-k8s.io/v1beta1";
+            apiGroup = "controlplane.cluster.x-k8s.io";
             kind = "KubeadmControlPlane";
             name = "${clusterName}-control-plane";
           };
 
       clusterResource = {
         "${clusterName}-cluster" = {
-          apiVersion = "cluster.x-k8s.io/v1beta1";
+          apiVersion = "cluster.x-k8s.io/v1beta2";
           kind = "Cluster";
           metadata = {
             name = clusterName;
@@ -479,7 +482,7 @@ let
             };
             inherit controlPlaneRef;
             infrastructureRef = {
-              apiVersion = infraApiVersion provider;
+              apiGroup = "infrastructure.cluster.x-k8s.io";
               kind = infraClusterKind provider;
               name = clusterName;
             };
@@ -533,7 +536,7 @@ let
 
       kubeadmControlPlane = optionalAttrs (!clusterCfg.talos.enable) {
         "${clusterName}-control-plane" = {
-          apiVersion = "controlplane.cluster.x-k8s.io/v1beta1";
+          apiVersion = "controlplane.cluster.x-k8s.io/v1beta2";
           kind = "KubeadmControlPlane";
           metadata = {
             name = "${clusterName}-control-plane";
@@ -543,24 +546,26 @@ let
           spec = {
             version = k8sVersion;
             replicas = cpReplicas;
-            machineTemplate.infrastructureRef = {
-              apiVersion = infraApiVersion provider;
-              kind = infraMachineTemplateKind provider;
-              name = "${clusterName}-control-plane";
+            machineTemplate = {
+              spec.infrastructureRef = {
+                apiGroup = "infrastructure.cluster.x-k8s.io";
+                kind = infraMachineTemplateKind provider;
+                name = "${clusterName}-control-plane";
+              };
             };
             kubeadmConfigSpec = {
               clusterConfiguration = {
                 apiServer = {
-                  extraArgs = clusterCfg.apiServerExtraArgs;
+                  extraArgs = toExtraArgs clusterCfg.apiServerExtraArgs;
                 }
                 // optionalAttrs (clusterCfg.certSANs != [ ]) { certSANs = clusterCfg.certSANs; };
-                controllerManager.extraArgs = { };
-                scheduler.extraArgs = { };
+                controllerManager.extraArgs = [ ];
+                scheduler.extraArgs = [ ];
               };
-              initConfiguration.nodeRegistration.kubeletExtraArgs = {
+              initConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
                 "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
               };
-              joinConfiguration.nodeRegistration.kubeletExtraArgs = {
+              joinConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
                 "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
               };
             }
@@ -575,13 +580,13 @@ let
         pool:
         if clusterCfg.talos.enable then
           {
-            apiVersion = "bootstrap.cluster.x-k8s.io/v1alpha3";
+            apiGroup = "bootstrap.cluster.x-k8s.io";
             kind = "TalosConfigTemplate";
             name = "${clusterName}-${pool.name}";
           }
         else
           {
-            apiVersion = "bootstrap.cluster.x-k8s.io/v1beta1";
+            apiGroup = "bootstrap.cluster.x-k8s.io";
             kind = "KubeadmConfigTemplate";
             name = "${clusterName}-${pool.name}";
           };
@@ -590,7 +595,7 @@ let
         imap0 (
           idx: pool:
           nameValuePair "${clusterName}-${pool.name}-md" {
-            apiVersion = "cluster.x-k8s.io/v1beta1";
+            apiVersion = "cluster.x-k8s.io/v1beta2";
             kind = "MachineDeployment";
             metadata = {
               name = "${clusterName}-${pool.name}";
@@ -610,7 +615,7 @@ let
                   clusterName = clusterName;
                   bootstrap.configRef = bootstrapConfigRef pool;
                   infrastructureRef = {
-                    apiVersion = infraApiVersion provider;
+                    apiGroup = "infrastructure.cluster.x-k8s.io";
                     kind = infraMachineTemplateKind provider;
                     name = "${clusterName}-${pool.name}";
                   };
@@ -647,7 +652,7 @@ let
           map (
             pool:
             nameValuePair "${clusterName}-${pool.name}-kubeadm-config" {
-              apiVersion = "bootstrap.cluster.x-k8s.io/v1beta1";
+              apiVersion = "bootstrap.cluster.x-k8s.io/v1beta2";
               kind = "KubeadmConfigTemplate";
               metadata = {
                 name = "${clusterName}-${pool.name}";
@@ -655,7 +660,7 @@ let
                 labels = commonLabels;
               };
               spec.template.spec = {
-                joinConfiguration.nodeRegistration.kubeletExtraArgs = {
+                joinConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
                   "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
                 };
               }
@@ -743,7 +748,7 @@ let
             };
             spec.template.spec = {
               size = docfg.controlPlaneSize;
-              image.slug = docfg.image;
+              image = docfg.image;
               sshKeys = docfg.sshKeys;
             };
           };
@@ -761,7 +766,7 @@ let
               };
               spec.template.spec = {
                 size = pool.machineType or docfg.workerSize;
-                image.slug = docfg.image;
+                image = docfg.image;
                 sshKeys = docfg.sshKeys;
               };
             }
@@ -985,7 +990,7 @@ in
     providerVersions = {
       core = mkOption {
         type = types.str;
-        default = "1.9.0";
+        default = "1.13.2";
       };
       talosBootstrap = mkOption {
         type = types.str;
@@ -1025,73 +1030,76 @@ in
 
   config = lib.mkMerge [
     # Deploy phases for CAPI
-    (mkIf cfg.enable {
-      phases.capi-providers = mkIf cfg.isManagementCluster {
+    (mkIf (cfg.enable && enabledClusters != { }) {
+      # CAPI providers deploy as full component bundles (CRDs + controllers + webhooks
+      # together). CRDs have conversion webhooks that need the controller, and the
+      # controller needs the CRDs — they must deploy as a unit.
+      phases.capi-providers = {
         order = 55;
-        dependsOn = [ "infrastructure" ];
+        dependsOn = [ "operators" ];
       };
 
-      # Install CAPI provider CRDs declaratively in the crds phase
-      phases.crds.bundles.capi-core-crds.yamls = [ cataCharts.capiProviderCrds.capi-core ];
-      phases.crds.bundles.capi-bootstrap-crds.yamls =
-        optional (elem "kubeadm" cfg.bootstrapProviders)
-          cataCharts.capiProviderCrds.capi-kubeadm-bootstrap;
-      phases.crds.bundles.capi-control-plane-crds.yamls =
-        optional (elem "kubeadm" cfg.controlPlaneProviders)
-          cataCharts.capiProviderCrds.capi-kubeadm-control-plane;
-      phases.crds.bundles.capi-infra-crds.yamls =
+      # Pre-create namespaces so SOPS secrets can be injected before the phase deploys
+      phases.namespaces.bundles.capi-namespaces.createNamespaces =
+        [ "capi-system" ]
+        ++ optional (elem "kubeadm" cfg.bootstrapProviders) "capi-kubeadm-bootstrap-system"
+        ++ optional (elem "kubeadm" cfg.controlPlaneProviders) "capi-kubeadm-control-plane-system"
+        ++ lib.concatMap (p: {
+          digitalocean = [ "capdo-system" ];
+        }.${p} or [ ]) cfg.infrastructureProviders;
+
+      # Full component bundles (CRDs + controllers deployed together by kapp)
+      phases.capi-providers.bundles.capi-core.yamls = [
+        cataCharts.capiProviderComponents.capi-core.controller
+        cataCharts.capiProviderComponents.capi-core.crds
+      ];
+      phases.capi-providers.bundles.capi-bootstrap.yamls =
+        (optional (elem "kubeadm" cfg.bootstrapProviders)
+          cataCharts.capiProviderComponents.capi-kubeadm-bootstrap.controller)
+        ++ (optional (elem "kubeadm" cfg.bootstrapProviders)
+          cataCharts.capiProviderComponents.capi-kubeadm-bootstrap.crds);
+      phases.capi-providers.bundles.capi-control-plane.yamls =
+        (optional (elem "kubeadm" cfg.controlPlaneProviders)
+          cataCharts.capiProviderComponents.capi-kubeadm-control-plane.controller)
+        ++ (optional (elem "kubeadm" cfg.controlPlaneProviders)
+          cataCharts.capiProviderComponents.capi-kubeadm-control-plane.crds);
+      phases.capi-providers.bundles.capi-infra.yamls =
         let
           usedInfraProviders = lib.unique (
             map (c: c.infrastructureProvider) (lib.attrValues enabledClusters)
           );
-          infraCrdMap = {
-            digitalocean = cataCharts.capiProviderCrds.capi-digitalocean;
+          infraMap = {
+            digitalocean = [
+              cataCharts.capiProviderComponents.capi-digitalocean.controller
+              cataCharts.capiProviderComponents.capi-digitalocean.crds
+            ];
           };
         in
-        lib.concatMap (p: optional (infraCrdMap ? ${p}) infraCrdMap.${p}) usedInfraProviders;
+        lib.concatMap (p: infraMap.${p} or [ ]) usedInfraProviders;
 
       phases.capi-clusters = mkIf (enabledClusters != { }) {
         order = 150;
         dependsOn = [ "capi-providers" ];
-        # No waitForCRDs needed — CRDs installed declaratively in crds phase
       };
     })
 
     # =========================================================================
-    # PART 3: Phase writer - CAPI Operator Helm chart
+    # PART 3: Phase writer - CAPI namespace + credentials
     # =========================================================================
+    # Note: The CAPI operator is NOT used. Providers are deployed directly from
+    # pinned components.yaml bundles in the capi-providers phase. This ensures
+    # CRDs, controllers, and webhooks deploy together reproducibly.
 
     (mkIf (cfg.enable && cfg.isManagementCluster) {
-      phases.${cfg.phase}.bundles.cluster-api = {
-        helmCharts.capi-operator = {
-          chart = chartRef;
-          releaseName = "capi-operator";
-          namespace = cfg.namespace;
-          createNamespace = true;
-          values = {
-            cert-manager.enabled = false;
-          };
-        };
 
-        createNamespaces = [ cfg.namespace ];
-      };
-    })
-
-    # =========================================================================
-    # PART 4: Phase writer - Provider CRs (capi-providers phase)
-    # =========================================================================
-
-    (mkIf (cfg.enable && cfg.isManagementCluster) {
-      phases.capi-providers.bundles.capi-providers.resources = providerCRs;
-
-      # Project DO token into CAPI namespace with base64 encoding for variable substitution
+      # Project DO token into the secret the CAPI DO controller expects
       secrets.projections = lib.mkMerge [
         (optionalAttrs (elem "digitalocean" cfg.infrastructureProviders) {
-          capi-do-credentials = {
+          capdo-manager-bootstrap-credentials = {
             source = "do-token";
-            namespace = cfg.namespace;
-            phase = "secrets";
-            keys.DO_B64ENCODED_CREDENTIALS = {
+            namespace = "capdo-system";
+            phase = "capi-providers";
+            keys.credentials = {
               from = "token";
               transform = "base64";
             };

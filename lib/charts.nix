@@ -21,7 +21,8 @@ let
       fi
     '';
 
-  # Fetch source from GitHub and concatenate CRDs from a directory
+  # Fetch source from GitHub and concatenate CRDs from a directory.
+  # Optional crdGlob filters to specific file patterns (default: all *.yaml).
   extractGitHubCrds =
     name: def:
     let
@@ -33,16 +34,20 @@ let
           hash
           ;
       };
+      globPatterns = def.crdGlob or [ "*.yaml" ];
+      findArgs = lib.concatStringsSep " -o " (
+        map (g: "-name '${g}'") globPatterns
+      );
     in
     pkgs.runCommand "${name}-crds.yaml" { } ''
-      find "${src}/${def.crdPath}" -name '*.yaml' -type f | sort | while read -r f; do
+      find "${src}/${def.crdPath}" \( ${findArgs} \) -type f | sort | while read -r f; do
         printf '\n---\n' >> $out
         cat "$f" >> $out
       done
+      if [ ! -s "$out" ]; then touch $out; fi
     '';
 
-  # Extract CRDs from a components.yaml manifest (CAPI providers, etc.)
-  # Downloads the full manifest and filters for kind: CustomResourceDefinition
+  # Extract only CRDs from a components.yaml manifest
   extractComponentsCrds =
     name: def:
     let
@@ -53,11 +58,52 @@ let
     in
     pkgs.runCommand "${name}-crds.yaml" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
       yq 'select(.kind == "CustomResourceDefinition")' ${src} > $out
-      # Ensure file isn't empty
-      if [ ! -s "$out" ]; then
-        touch $out
+      if [ ! -s "$out" ]; then touch $out; fi
+    '';
+
+  # Extract non-CRD resources (controller, webhooks, services, certs) from components.yaml.
+  # These deploy first so the controller is running when CRDs arrive.
+  # Filters out Secrets with variable substitution placeholders (e.g., ${DO_B64ENCODED_CREDENTIALS})
+  # — those are provided by SOPS-managed secrets instead.
+  extractComponentsController =
+    name: def:
+    let
+      src = pkgs.fetchurl {
+        inherit (def) url hash;
+        name = "${name}-components.yaml";
+      };
+    in
+    pkgs.runCommand "${name}-controller.yaml" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
+      # Split multi-doc YAML, filter out CRDs and template-variable docs
+      yq --split-exp '"doc_" + $index' ${src}
+      touch $out
+      for f in doc_*.yml; do
+        [ -f "$f" ] || continue
+        kind=$(yq '.kind' "$f")
+        if [ "$kind" = "CustomResourceDefinition" ] || [ "$kind" = "Namespace" ]; then
+          continue
+        fi
+        # Skip documents containing template variable substitution
+        if grep -qE '[$][{][A-Z]' "$f"; then
+          continue
+        fi
+        printf '\n---\n' >> $out
+        cat "$f" >> $out
+      done
+      # Remove kube-rbac-proxy sidecar containers (image no longer available on gcr.io)
+      if [ -s "$out" ]; then
+        yq -i '(select(.kind == "Deployment") | .spec.template.spec.containers) |= [.[] | select(.name != "kube-rbac-proxy")]' "$out"
       fi
     '';
+
+  # Split a components.yaml into { crds, controller } for proper ordering:
+  # 1. Deploy controller (namespace, deployment, service, certs, webhooks)
+  # 2. Deploy CRDs (conversion webhooks reference the already-running controller)
+  splitComponents =
+    name: def: {
+      crds = extractComponentsCrds name def;
+      controller = extractComponentsController name def;
+    };
 
   # Build a CRD derivation from a crdDef
   buildCrds =
@@ -346,33 +392,27 @@ let
     }
   ) chartDefs;
 
-  # CAPI provider CRDs — extracted from GitHub release components.yaml files
-  capiProviderCrdDefs = {
-    capi-core = {
-      type = "components";
-      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.0/core-components.yaml";
-      hash = "sha256-ISIBsj7f9kxrf7LmH7CF+cKWEA2ha9iUWYwYYh3ABHA=";
+  # CAPI provider components — split into { crds, controller } for proper ordering.
+  # Controllers deploy first (webhooks, certs, deployments), then CRDs second
+  # (so conversion webhooks can reach the already-running controller).
+  capiProviderComponents = {
+    capi-core = splitComponents "capi-core" {
+      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.13.2/core-components.yaml";
+      hash = "sha256-98GrK+RG+ueN9eLcApXLbiYvxjdNiRfm7p/eK3vaxqg=";
     };
-    capi-kubeadm-bootstrap = {
-      type = "components";
-      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.0/bootstrap-components.yaml";
-      hash = "sha256-zmTCw82f2JWSV47Xonoo5fF+PnBECBCKirVqbnrjo/0=";
+    capi-kubeadm-bootstrap = splitComponents "capi-kubeadm-bootstrap" {
+      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.13.2/bootstrap-components.yaml";
+      hash = "sha256-fAWh2uSuk+5r3pNdTrA0VOjeiBiM3QUfhVNXJaZ1mdY=";
     };
-    capi-kubeadm-control-plane = {
-      type = "components";
-      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.0/control-plane-components.yaml";
-      hash = "sha256-qQr127IkZ+tVUq3Xga+gV/N1q6mltPzTAep/T+ttroM=";
+    capi-kubeadm-control-plane = splitComponents "capi-kubeadm-control-plane" {
+      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.13.2/control-plane-components.yaml";
+      hash = "sha256-VD8Rt1mBs7oacb1s5k7soka34OaWbvXkXt4czVsrebk=";
     };
-    capi-digitalocean = {
-      type = "components";
+    capi-digitalocean = splitComponents "capi-digitalocean" {
       url = "https://github.com/kubernetes-sigs/cluster-api-provider-digitalocean/releases/download/v1.6.0/infrastructure-components.yaml";
       hash = "sha256-4LrSpO/m3GsvtHM4uSldjHXzeyqYNiBwsAngpI4MLRk=";
     };
   };
-
-  capiProviderCrds = lib.mapAttrs (
-    name: def: buildCrds name null def
-  ) capiProviderCrdDefs;
 
   # Crossplane provider CRDs — extracted from GitHub sources at build time
   crossplaneProviderCrdDefs = {
@@ -391,6 +431,12 @@ let
       rev = "v0.2.5";
       hash = "sha256-UXaCmII2GuLjMeErqGG5yVoFYFPpSW0gdvb80P9cAHY=";
       crdPath = "package/crds";
+      # Only include CRD groups we use — the full set (425) has broken CEL rules
+      crdGlob = [
+        "dns.upjet-cloudflare.*.yaml"
+        "tunnel.upjet-cloudflare.*.yaml"
+        "upjet-cloudflare.*.yaml"
+      ];
     };
   };
 
@@ -399,4 +445,4 @@ let
   ) crossplaneProviderCrdDefs;
 
 in
-charts // { inherit capiProviderCrds crossplaneProviderCrds; }
+charts // { inherit capiProviderComponents crossplaneProviderCrds; }

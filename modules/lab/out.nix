@@ -111,7 +111,10 @@ in
 
       # Per-cluster configs for CLI consumption (provisioner details, components, etc.)
       clusters = lib.mapAttrs (
-        _: clusterCfg: catallaxyLib.clusterConfigToJSON clusterCfg
+        _: clusterCfg:
+        (catallaxyLib.clusterConfigToJSON clusterCfg) // {
+          labName = config.lab.name;
+        }
       ) config.lab.out.allClusters;
 
       # Lab-level secrets for CLI consumption
