@@ -27,8 +27,8 @@ let
 
   # Provider package references (OCI images)
   providerPackages = {
-    digitalocean = "xpkg.upbound.io/upbound/provider-digitalocean:v${cfg.providerVersions.digitalocean}";
-    cloudflare = "xpkg.upbound.io/upbound/provider-cloudflare:v${cfg.providerVersions.cloudflare}";
+    digitalocean = "xpkg.upbound.io/crossplane-contrib/provider-upjet-digitalocean:v${cfg.providerVersions.digitalocean}";
+    cloudflare = "xpkg.upbound.io/wildbitca/provider-cloudflare-dns:v${cfg.providerVersions.cloudflare}";
     kubernetes = "xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v${cfg.providerVersions.kubernetes}";
     helm = "xpkg.upbound.io/crossplane-contrib/provider-helm:v${cfg.providerVersions.helm}";
   };
@@ -54,7 +54,7 @@ let
     let
       doConfig = optionalAttrs (cfg.digitalocean.enable && cfg.digitalocean.credentialSecretRef != null) {
         xp-providerconfig-digitalocean = {
-          apiVersion = "digitalocean.upbound.io/v1beta1";
+          apiVersion = "digitalocean.crossplane.io/v1beta1";
           kind = "ProviderConfig";
           metadata = {
             name = "default";
@@ -73,7 +73,7 @@ let
 
       cfConfig = optionalAttrs (cfg.cloudflare.enable && cfg.cloudflare.credentialSecretRef != null) {
         xp-providerconfig-cloudflare = {
-          apiVersion = "cloudflare.upbound.io/v1beta1";
+          apiVersion = "upjet-cloudflare.upbound.io/v1beta1";
           kind = "ProviderConfig";
           metadata = {
             name = "default";
@@ -133,7 +133,7 @@ let
   doResources =
     let
       droplets = mapAttrs (name: droplet: {
-        apiVersion = "droplet.digitalocean.upbound.io/v1alpha1";
+        apiVersion = "droplet.digitalocean.crossplane.io/v1alpha1";
         kind = "Droplet";
         metadata = {
           name = name;
@@ -159,7 +159,7 @@ let
       }) cfg.digitalocean.droplets;
 
       lbs = mapAttrs (name: lb: {
-        apiVersion = "loadbalancer.digitalocean.upbound.io/v1alpha1";
+        apiVersion = "networking.digitalocean.crossplane.io/v1alpha1";
         kind = "Loadbalancer";
         metadata = {
           name = name;
@@ -183,7 +183,7 @@ let
   cfResources =
     let
       zones = mapAttrs (name: zone: {
-        apiVersion = "zone.cloudflare.upbound.io/v1alpha1";
+        apiVersion = "zone.upjet-cloudflare.m.upbound.io/v1alpha1";
         kind = "Zone";
         metadata = {
           name = name;
@@ -202,7 +202,7 @@ let
       }) cfg.cloudflare.zones;
 
       records = mapAttrs (name: record: {
-        apiVersion = "record.cloudflare.upbound.io/v1alpha1";
+        apiVersion = "record.upjet-cloudflare.m.upbound.io/v1alpha1";
         kind = "Record";
         metadata = {
           name = name;
@@ -222,7 +222,7 @@ let
       }) cfg.cloudflare.records;
 
       tunnels = mapAttrs (name: tunnel: {
-        apiVersion = "tunnel.cloudflare.upbound.io/v1alpha1";
+        apiVersion = "tunnel.upjet-cloudflare.m.upbound.io/v1alpha1";
         kind = "Tunnel";
         metadata = {
           name = name;
@@ -295,19 +295,19 @@ in
     providerVersions = {
       digitalocean = mkOption {
         type = types.str;
-        default = "0.4.0";
+        default = "0.3.2";
       };
       cloudflare = mkOption {
         type = types.str;
-        default = "0.3.0";
+        default = "0.2.5";
       };
       kubernetes = mkOption {
         type = types.str;
-        default = "0.14.1";
+        default = "1.2.1";
       };
       helm = mkOption {
         type = types.str;
-        default = "0.19.0";
+        default = "1.2.0";
       };
     };
 
@@ -329,7 +329,7 @@ in
         default = {
           name = "do-credentials";
           namespace = cfg.namespace;
-          key = "credentials";
+          key = "token";
         };
       };
 
@@ -415,7 +415,7 @@ in
         default = {
           name = "cf-credentials";
           namespace = cfg.namespace;
-          key = "credentials";
+          key = "token";
         };
       };
 
@@ -503,6 +503,12 @@ in
     }
 
     (mkIf cfg.enable {
+      # Install Crossplane + provider CRDs declaratively in the crds phase
+      phases.crds.bundles.crossplane-crds.yamls =
+        [ cataCharts.crossplane.crds ]
+        ++ optional cfg.digitalocean.enable cataCharts.crossplaneProviderCrds.provider-upjet-digitalocean
+        ++ optional cfg.cloudflare.enable cataCharts.crossplaneProviderCrds.provider-upjet-cloudflare;
+
       # Crossplane helm chart in operators phase
       phases.${cfg.phase}.bundles.crossplane = {
         helmCharts.crossplane = {
@@ -515,12 +521,50 @@ in
         createNamespaces = [ cfg.namespace ];
       };
 
-      # Provider CRs in infrastructure phase (after Crossplane is running)
-      phases.infrastructure.bundles.crossplane-providers.resources =
-        providerCRs // credentialSecrets // providerConfigCRs;
+      # Project lab-level managed secrets into Crossplane's namespace
+      secrets.projections = lib.mkMerge [
+        (optionalAttrs cfg.digitalocean.enable {
+          do-credentials = {
+            source = "do-token";
+            namespace = cfg.namespace;
+            phase = "secrets";
+            keys = {
+              token.from = "token";
+              credentials = {
+                from = "token";
+                transform = "json-wrap";
+                jsonKey = "access_token";
+              };
+            };
+          };
+        })
+        (optionalAttrs cfg.cloudflare.enable {
+          cf-credentials = {
+            source = "cf-token";
+            namespace = cfg.namespace;
+            phase = "secrets";
+            keys = {
+              token.from = "token";
+              credentials = {
+                from = "token";
+                transform = "json-wrap";
+                jsonKey = "api_token";
+              };
+            };
+          };
+        })
+      ];
 
-      # Managed resources in a later phase (after providers are healthy)
-      phases.databases.bundles.crossplane-resources.resources =
+      # Provider CRs in infrastructure phase (after Crossplane is running).
+      # Credential secrets are injected by SOPS at deploy time (secrets phase).
+      phases.infrastructure.bundles.crossplane-providers.resources = providerCRs;
+
+      # ProviderConfig CRs — CRDs are pre-installed in the crds phase
+      phases.apps.bundles.crossplane-provider-configs.resources =
+        providerConfigCRs;
+
+      # Managed resources in a later phase (after provider configs are ready)
+      phases.workloads.bundles.crossplane-resources.resources =
         (if cfg.digitalocean.enable then doResources else { })
         // (if cfg.cloudflare.enable then cfResources else { });
     })

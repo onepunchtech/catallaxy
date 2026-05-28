@@ -457,14 +457,16 @@ pub mod kube {
             match result {
                 Ok(output) if output.status.success() => {
                     println!(
-                        "customresourcedefinition.apiextensions.k8s.io/{crd_name} condition met"
+                        "  CRD {crd_name} established"
                     );
                     return Ok(());
                 }
                 _ => {
                     if start.elapsed() > timeout_duration {
-                        bail!("Timed out waiting for CRD: {crd_name}");
+                        bail!("Timed out waiting for CRD: {crd_name} ({}s elapsed)", timeout_duration.as_secs());
                     }
+                    let elapsed = start.elapsed().as_secs();
+                    println!("  waiting... ({elapsed}s elapsed, CRD not yet registered by provider)");
                     std::thread::sleep(Duration::from_secs(5));
                 }
             }

@@ -8,6 +8,7 @@
     ./registry.nix
     ./ingress.nix
     ./ops.nix
+    ./secrets.nix
     ./bgp-router.nix
     ./out.nix
   ];

@@ -44,7 +44,29 @@ pub fn build(ctx: &CataContext, attr: &str) -> Result<String> {
     Ok(stdout.trim().to_string())
 }
 
-/// Get the cluster configuration as JSON from flake output
+/// Get the cluster configuration as JSON from the lab config.
+/// Requires lab config to be passed in (avoids separate nix eval per cluster).
+pub fn get_cluster_config_from_lab(
+    lab: &serde_json::Value,
+    cluster_name: &str,
+) -> Result<serde_json::Value> {
+    lab.pointer(&format!("/clusters/{cluster_name}"))
+        .cloned()
+        .ok_or_else(|| {
+            let available: Vec<&str> = lab
+                .pointer("/clusters")
+                .and_then(|v| v.as_object())
+                .map(|m| m.keys().map(|k| k.as_str()).collect())
+                .unwrap_or_default();
+            anyhow::anyhow!(
+                "cluster '{}' not found in lab (available: {})",
+                cluster_name,
+                available.join(", ")
+            )
+        })
+}
+
+/// Get the cluster configuration as JSON from flake output (legacy, for non-lab contexts)
 pub fn get_cluster_config(ctx: &CataContext, cluster_name: &str) -> Result<serde_json::Value> {
     let system = current_system();
     eval_flake(ctx, &format!("clusters.{system}.{cluster_name}"))

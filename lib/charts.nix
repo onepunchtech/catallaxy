@@ -41,6 +41,24 @@ let
       done
     '';
 
+  # Extract CRDs from a components.yaml manifest (CAPI providers, etc.)
+  # Downloads the full manifest and filters for kind: CustomResourceDefinition
+  extractComponentsCrds =
+    name: def:
+    let
+      src = pkgs.fetchurl {
+        inherit (def) url hash;
+        name = "${name}-components.yaml";
+      };
+    in
+    pkgs.runCommand "${name}-crds.yaml" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
+      yq 'select(.kind == "CustomResourceDefinition")' ${src} > $out
+      # Ensure file isn't empty
+      if [ ! -s "$out" ]; then
+        touch $out
+      fi
+    '';
+
   # Build a CRD derivation from a crdDef
   buildCrds =
     name: chartDrv: crdDef:
@@ -55,6 +73,8 @@ let
       extractChartCrds name chartDrv
     else if crdDef.type == "github" then
       extractGitHubCrds name crdDef
+    else if crdDef.type == "components" then
+      extractComponentsCrds name crdDef
     else
       throw "Unknown CRD type: ${crdDef.type}";
 
@@ -326,5 +346,57 @@ let
     }
   ) chartDefs;
 
+  # CAPI provider CRDs — extracted from GitHub release components.yaml files
+  capiProviderCrdDefs = {
+    capi-core = {
+      type = "components";
+      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.0/core-components.yaml";
+      hash = "sha256-ISIBsj7f9kxrf7LmH7CF+cKWEA2ha9iUWYwYYh3ABHA=";
+    };
+    capi-kubeadm-bootstrap = {
+      type = "components";
+      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.0/bootstrap-components.yaml";
+      hash = "sha256-zmTCw82f2JWSV47Xonoo5fF+PnBECBCKirVqbnrjo/0=";
+    };
+    capi-kubeadm-control-plane = {
+      type = "components";
+      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.9.0/control-plane-components.yaml";
+      hash = "sha256-qQr127IkZ+tVUq3Xga+gV/N1q6mltPzTAep/T+ttroM=";
+    };
+    capi-digitalocean = {
+      type = "components";
+      url = "https://github.com/kubernetes-sigs/cluster-api-provider-digitalocean/releases/download/v1.6.0/infrastructure-components.yaml";
+      hash = "sha256-4LrSpO/m3GsvtHM4uSldjHXzeyqYNiBwsAngpI4MLRk=";
+    };
+  };
+
+  capiProviderCrds = lib.mapAttrs (
+    name: def: buildCrds name null def
+  ) capiProviderCrdDefs;
+
+  # Crossplane provider CRDs — extracted from GitHub sources at build time
+  crossplaneProviderCrdDefs = {
+    provider-upjet-digitalocean = {
+      type = "github";
+      owner = "crossplane-contrib";
+      repo = "provider-upjet-digitalocean";
+      rev = "v0.3.2";
+      hash = "sha256-cjXzxe/agUa7kN0uhxCg3MGAfmAO7E1B9Q79MCj6fIc=";
+      crdPath = "package/crds";
+    };
+    provider-upjet-cloudflare = {
+      type = "github";
+      owner = "wildbitca";
+      repo = "provider-upjet-cloudflare";
+      rev = "v0.2.5";
+      hash = "sha256-UXaCmII2GuLjMeErqGG5yVoFYFPpSW0gdvb80P9cAHY=";
+      crdPath = "package/crds";
+    };
+  };
+
+  crossplaneProviderCrds = lib.mapAttrs (
+    name: def: buildCrds name null def
+  ) crossplaneProviderCrdDefs;
+
 in
-charts
+charts // { inherit capiProviderCrds crossplaneProviderCrds; }

@@ -51,6 +51,41 @@ in
     default = { };
   };
 
+  # Lifecycle hooks for cluster teardown. Components contribute ordered steps
+  # that run before the cluster is deprovisioned (e.g., CAPI deletes cloud resources).
+  options.lifecycle.teardown = mkOption {
+    type = types.listOf (
+      types.submodule {
+        options = {
+          name = mkOption {
+            type = types.str;
+            description = "Step name for display";
+          };
+          description = mkOption {
+            type = types.str;
+            default = "";
+          };
+          order = mkOption {
+            type = types.int;
+            default = 0;
+            description = "Execution order (lower = first)";
+          };
+          package = mkOption {
+            type = types.package;
+            description = "Script to execute for this step";
+          };
+          waitTimeout = mkOption {
+            type = types.str;
+            default = "5m";
+            description = "How long to wait for completion";
+          };
+        };
+      }
+    );
+    default = [ ];
+    description = "Ordered teardown steps executed before cluster deprovisioning";
+  };
+
   # Operational commands contributed by components.
   # These bubble up to lab.ops where same-named commands from different clusters
   # are merged (enum options get their values unioned, packages keyed by cluster).

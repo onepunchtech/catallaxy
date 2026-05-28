@@ -46,6 +46,7 @@ let
           registry = outerConfig.lab.registry;
           ingress = outerConfig.lab.ingress;
           bgpRouter = outerConfig.lab.bgpRouter;
+          secrets = outerConfig.lab.secrets;
         };
       };
     }

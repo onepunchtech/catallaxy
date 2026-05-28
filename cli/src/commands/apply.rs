@@ -57,36 +57,41 @@ struct Phase {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ManagedSecretConfig {
+struct ProjectionConfig {
+    source: String,
     namespace: String,
     phase: String,
-    backend: String,
-    #[allow(dead_code)]
-    keys: serde_json::Value,
+    keys: HashMap<String, ProjectionKeyConfig>,
 }
 
-/// Parse SOPS-backed managed secrets from cluster config, grouped by phase.
-fn parse_sops_secrets(
-    config: &serde_json::Value,
-) -> HashMap<String, Vec<(String, ManagedSecretConfig)>> {
-    let mut by_phase: HashMap<String, Vec<(String, ManagedSecretConfig)>> = HashMap::new();
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectionKeyConfig {
+    from: String,
+    transform: Option<String>,
+    json_key: Option<String>,
+}
 
-    let secrets_value = match config.get("secrets") {
+/// Parse projections from cluster config, grouped by phase.
+fn parse_projections(
+    config: &serde_json::Value,
+) -> HashMap<String, Vec<(String, ProjectionConfig)>> {
+    let mut by_phase: HashMap<String, Vec<(String, ProjectionConfig)>> = HashMap::new();
+
+    let projs_value = match config.get("projections") {
         Some(v) => v,
         None => return by_phase,
     };
 
-    let secrets: HashMap<String, ManagedSecretConfig> =
-        match serde_json::from_value(secrets_value.clone()) {
-            Ok(s) => s,
+    let projs: HashMap<String, ProjectionConfig> =
+        match serde_json::from_value(projs_value.clone()) {
+            Ok(p) => p,
             Err(_) => return by_phase,
         };
 
-    for (name, sec) in secrets {
-        if sec.backend == "sops" {
-            let phase = sec.phase.clone();
-            by_phase.entry(phase).or_default().push((name, sec));
-        }
+    for (name, proj) in projs {
+        let phase = proj.phase.clone();
+        by_phase.entry(phase).or_default().push((name, proj));
     }
 
     by_phase
@@ -248,8 +253,8 @@ async fn apply_kapp(
         }
     }
 
-    // Parse SOPS secrets for injection
-    let sops_secrets = parse_sops_secrets(config);
+    // Parse projections for secret injection
+    let sops_secrets = parse_projections(config);
     let cluster_name = ctx.resolve_cluster_name(args.cluster.as_deref())?;
 
     if args.dry_run {
@@ -296,9 +301,9 @@ async fn apply_kapp(
             }
         }
 
-        // Inject SOPS secrets before deploying phase
-        if let Some(secrets) = sops_secrets.get(&phase.name) {
-            inject_sops_secrets(ctx, kube_context, &cluster_name, secrets, &timeout)?;
+        // Inject projected secrets before deploying phase
+        if let Some(projections) = sops_secrets.get(&phase.name) {
+            inject_projections(ctx, kube_context, &cluster_name, config, projections, &timeout)?;
         }
 
         println!(
@@ -321,61 +326,125 @@ async fn apply_kapp(
     Ok(())
 }
 
-/// Inject SOPS-encrypted secrets for a phase via kapp
-fn inject_sops_secrets(
+/// Inject projected secrets for a phase via kapp.
+///
+/// Resolves: projection → managed secret → store → SOPS file → transforms → K8s Secret
+fn inject_projections(
     ctx: &CataContext,
     kube_context: &str,
-    cluster_name: &str,
-    secrets: &[(String, ManagedSecretConfig)],
+    _cluster_name: &str,
+    config: &serde_json::Value,
+    projections: &[(String, ProjectionConfig)],
     timeout: &str,
 ) -> Result<()> {
+    // Get lab name from config to find SOPS files
+    let lab_name = config
+        .pointer("/labName")
+        .or_else(|| config.pointer("/outputs/labName"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("default");
+
     let secrets_tmp = tempfile::tempdir()?;
 
-    for (name, sec) in secrets {
-        let enc_path = PathBuf::from(ctx.flake_uri())
-            .join("secrets")
-            .join(cluster_name)
-            .join(format!("{name}.enc.yaml"));
+    // Cache decrypted store files to avoid decrypting the same file multiple times
+    let mut store_cache: HashMap<String, HashMap<String, String>> = HashMap::new();
 
-        if !enc_path.exists() {
-            println!(
-                "{} Secret '{}' not found at {} — run `cata secrets generate` first",
-                style("!!!").red(),
-                name,
-                enc_path.display()
-            );
-            continue;
-        }
+    for (proj_name, proj) in projections {
+        // Resolve which store this projection's source managed secret lives in.
+        // We read the lab config's secrets.managed.<source>.store to find the store name.
+        let lab_config = nix::get_lab_config(ctx, lab_name).ok();
+        let store_name = lab_config
+            .as_ref()
+            .and_then(|lc| {
+                lc.pointer(&format!("/secrets/managed/{}/store", proj.source))
+                    .and_then(|v| v.as_str())
+            })
+            .unwrap_or(&proj.source);
+
+        // Decrypt store file (cached)
+        let store_data = if let Some(cached) = store_cache.get(store_name) {
+            cached.clone()
+        } else {
+            let enc_path = PathBuf::from(ctx.flake_uri())
+                .join("secrets")
+                .join(lab_name)
+                .join(format!("{store_name}.enc.yaml"));
+
+            if !enc_path.exists() {
+                println!(
+                    "{} Store '{}' not found at {} — run `cata secrets generate` first",
+                    style("!!!").red(),
+                    store_name,
+                    enc_path.display()
+                );
+                continue;
+            }
+
+            let data = secrets_mod::decrypt_sops_secret(&enc_path)?;
+            store_cache.insert(store_name.to_string(), data.clone());
+            data
+        };
 
         println!(
-            "{} Injecting secret: {} (namespace: {})...",
+            "{} Injecting projection: {} (namespace: {}, from: {})...",
             style(">>>").cyan(),
-            style(name).bold(),
-            sec.namespace,
+            style(proj_name).bold(),
+            proj.namespace,
+            proj.source,
         );
 
-        let data = secrets_mod::decrypt_sops_secret(&enc_path)?;
+        // Extract source managed secret's keys and apply transforms
+        let mut k8s_data: HashMap<String, String> = HashMap::new();
+
+        for (key_name, key_def) in &proj.keys {
+            // Source value is at store_data[managed_secret_name][key_name]
+            let source_value = store_data
+                .get(&format!("{}.{}", proj.source, key_def.from))
+                .or_else(|| {
+                    // Try nested YAML: the store file has managed secret names as top-level keys
+                    // After decryption, sops returns flat key-value pairs
+                    // Try the flat format: "managed_secret_name/key_name"
+                    store_data.get(&key_def.from)
+                })
+                .map(|s| s.as_str())
+                .unwrap_or("");
+
+            let value = match key_def.transform.as_deref().unwrap_or("none") {
+                "base64" => {
+                    use base64::Engine;
+                    base64::engine::general_purpose::STANDARD.encode(source_value)
+                }
+                "json-wrap" => {
+                    let json_key = key_def.json_key.as_deref().unwrap_or(key_name);
+                    serde_json::json!({ json_key: source_value }).to_string()
+                }
+                _ => source_value.to_string(),
+            };
+
+            k8s_data.insert(key_name.clone(), value);
+        }
+
         let secret_manifest = serde_json::json!({
             "apiVersion": "v1",
             "kind": "Secret",
             "metadata": {
-                "name": name,
-                "namespace": sec.namespace,
+                "name": proj_name,
+                "namespace": proj.namespace,
                 "labels": { "app.kubernetes.io/managed-by": "catallaxy" }
             },
             "type": "Opaque",
-            "stringData": data,
+            "stringData": k8s_data,
         });
 
         let yaml = serde_yaml::to_string(&secret_manifest)?;
-        let secret_dir = secrets_tmp.path().join(format!("secrets-{name}"));
+        let secret_dir = secrets_tmp.path().join(format!("secrets-{proj_name}"));
         fs::create_dir_all(&secret_dir)?;
         fs::write(secret_dir.join("secret.yaml"), &yaml)?;
 
         tools::kapp::deploy(
             ctx,
             kube_context,
-            &format!("secrets-{name}"),
+            &format!("secrets-{proj_name}"),
             &secret_dir.display().to_string(),
             timeout,
         )?;

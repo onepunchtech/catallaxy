@@ -261,6 +261,78 @@ pub fn check_selectors(resources: &[K8sResource], cluster: &str) -> Vec<Diagnost
     diags
 }
 
+/// Built-in Kubernetes API groups that don't need CRDs.
+const BUILTIN_API_GROUPS: &[&str] = &[
+    "",
+    "apps",
+    "batch",
+    "autoscaling",
+    "policy",
+    "networking.k8s.io",
+    "rbac.authorization.k8s.io",
+    "storage.k8s.io",
+    "admissionregistration.k8s.io",
+    "apiextensions.k8s.io",
+    "apiregistration.k8s.io",
+    "certificates.k8s.io",
+    "coordination.k8s.io",
+    "discovery.k8s.io",
+    "events.k8s.io",
+    "flowcontrol.apiserver.k8s.io",
+    "node.k8s.io",
+    "scheduling.k8s.io",
+];
+
+/// Extract the API group from an apiVersion string (e.g., "apps/v1" → "apps", "v1" → "").
+fn api_group(api_version: &str) -> &str {
+    match api_version.rsplit_once('/') {
+        Some((group, _)) => group,
+        None => "", // core API group (e.g., "v1")
+    }
+}
+
+/// Check that custom resources have matching CRDs in the manifest set.
+/// Warns about CRs whose apiVersion/kind doesn't match any CRD and isn't
+/// a built-in Kubernetes type — these will fail at apply time.
+pub fn check_missing_crds(resources: &[K8sResource], cluster: &str) -> Vec<Diagnostic> {
+    // Collect all CRD-defined group/version/kind combos
+    let schemas = extract_crd_schemas(resources);
+    let mut diags = Vec::new();
+
+    for r in resources {
+        if r.is_crd() {
+            continue;
+        }
+
+        let group = api_group(&r.api_version);
+
+        // Skip built-in Kubernetes types
+        if BUILTIN_API_GROUPS.contains(&group) {
+            continue;
+        }
+
+        // Skip if we have a matching CRD schema
+        let key = crd_key(&r.api_version, &r.kind);
+        if schemas.contains_key(&key) {
+            continue;
+        }
+
+        diags.push(Diagnostic {
+            severity: Severity::Warning,
+            check: "missing-crd",
+            cluster: cluster.to_string(),
+            file: r.source_file.clone(),
+            resource: r.display_id(),
+            message: format!(
+                "no CRD found for {}/{} — will fail if CRD is not installed at apply time",
+                r.api_version, r.kind
+            ),
+        });
+    }
+
+    diags
+}
+
 /// Validate custom resources against CRD OpenAPI v3 schemas.
 ///
 /// Extracts schemas from CRD resources, then checks each custom resource

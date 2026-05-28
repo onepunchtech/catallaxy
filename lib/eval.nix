@@ -247,13 +247,19 @@ let
         ;
       ref = svc.ref;
     }) (config.compose or { });
-    secrets = lib.mapAttrs (name: sec: {
-      inherit (sec) namespace phase backend;
+    # Projections: how managed secrets map to K8s Secrets in this cluster
+    projections = lib.mapAttrs (name: proj: {
+      inherit (proj) source namespace phase;
       keys = lib.mapAttrs (kname: key: {
-        inherit (key) generator length;
-      }) sec.keys;
-      remoteRef = sec.remoteRef;
-      ref = sec.ref;
+        inherit (key) from transform;
+        jsonKey = key.jsonKey or null;
+      }) proj.keys;
+    }) ((config.secrets or { }).projections or { });
+    # Legacy: keep old secrets field for backward compat
+    secrets = lib.mapAttrs (name: sec: {
+      namespace = sec.namespace or "default";
+      phase = sec.phase or "secrets";
+      backend = sec.backend or "sops";
     }) ((config.secrets or { }).managed or { });
     databases = {
       postgres = lib.mapAttrs (name: pg: {
@@ -283,6 +289,12 @@ let
       }) ((config.storage or { }).s3Buckets or { });
     };
     outputs = config.cluster.out;
+    lifecycle = {
+      teardown = map (step: {
+        inherit (step) name description order waitTimeout;
+        bin = "${step.package}/bin/${step.name}";
+      }) (lib.sort (a: b: a.order < b.order) (config.lifecycle.teardown or [ ]));
+    };
   };
 
   # Evaluate cluster and convert to JSON-friendly format

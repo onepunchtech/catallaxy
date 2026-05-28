@@ -8,3 +8,5 @@ cli/target/
 docs/book/book/
 docs/book/src/reference/options/
 .claude/
+.sops.yaml
+secrets/

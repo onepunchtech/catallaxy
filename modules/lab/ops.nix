@@ -399,6 +399,25 @@ let
             execDispatch = mkExecDispatch name cmd;
             helpText = mkCommandHelp catName name cmd;
           in
+          let
+            requiredArgs = builtins.filter (a: a.required) (cmd.args or [ ]);
+            requiredArgCount = builtins.length requiredArgs;
+            argValidation =
+              if requiredArgCount > 0 then
+                let
+                  argUsage = concatStringsSep " " (
+                    map (a: if a.required then "<${a.name}>" else "[${a.name}]") (cmd.args or [ ])
+                  );
+                in
+                ''
+                  if [ $# -lt ${toString requiredArgCount} ]; then
+                    echo "Error: missing required argument(s)"
+                    echo "Usage: ${labName}-ops ${catName} ${name} ${argUsage}"
+                    exit 1
+                  fi''
+              else
+                "";
+          in
           ''
                 ${name})
                   shift
@@ -409,6 +428,7 @@ let
                     exit 0
                   fi
                   ${parsed.validate}
+                  ${argValidation}
                   ${execDispatch}
                   ;;''
         ) commands

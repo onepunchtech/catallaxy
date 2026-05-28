@@ -72,6 +72,9 @@ in
       };
     }
     (mkIf cfg.enable {
+      # Install CRDs declaratively in the crds phase
+      phases.crds.bundles.external-secrets-crds.yamls = [ cataCharts.external-secrets.crds ];
+
       phases.${cfg.phase}.bundles.external-secrets = {
         # Main External Secrets helm chart
         helmCharts.external-secrets = {
@@ -80,7 +83,7 @@ in
           namespace = cfg.namespace;
           createNamespace = true;
           values = {
-            installCRDs = true;
+            installCRDs = false;
           };
         };
 

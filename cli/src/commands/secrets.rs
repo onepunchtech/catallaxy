@@ -66,22 +66,53 @@ pub enum SecretsCommands {
     },
 }
 
+// --- Lab-level types (stores + managed secrets) ---
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ManagedSecret {
-    namespace: String,
-    phase: String,
+struct SecretStore {
     backend: String,
-    keys: HashMap<String, SecretKeyDef>,
-    #[allow(dead_code)]
-    remote_ref: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SecretKeyDef {
+struct ManagedSecret {
+    store: String,
+    keys: HashMap<String, ManagedKeyDef>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManagedKeyDef {
     generator: Option<String>,
     length: Option<u64>,
+}
+
+// --- Cluster-level types (projections) ---
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Projection {
+    source: String,
+    namespace: String,
+    phase: String,
+    keys: HashMap<String, ProjectionKeyDef>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectionKeyDef {
+    from: String,
+    transform: Option<String>,
+    json_key: Option<String>,
+}
+
+#[derive(Debug)]
+struct LabSecrets {
+    lab_name: String,
+    stores: HashMap<String, SecretStore>,
+    managed: HashMap<String, ManagedSecret>,
+    projections: Vec<(String, String, Projection)>, // (cluster_name, proj_name, projection)
 }
 
 pub async fn run(ctx: &CataContext, command: SecretsCommands) -> Result<()> {
@@ -190,88 +221,132 @@ async fn rotate(_ctx: &CataContext, file: &str) -> Result<()> {
     Ok(())
 }
 
-fn get_managed_secrets(
-    ctx: &CataContext,
-    cluster: Option<&str>,
-) -> Result<(String, HashMap<String, ManagedSecret>)> {
-    let cluster_name = ctx.resolve_cluster_name(cluster)?;
-    let config = nix::get_cluster_config(ctx, &cluster_name)?;
+fn get_lab_secrets(ctx: &CataContext, name: Option<&str>) -> Result<LabSecrets> {
+    let lab_name = ctx.resolve_lab_name(name)?;
+    let lab = nix::get_lab_config(ctx, &lab_name)?;
 
-    let secrets_value = config
-        .get("secrets")
-        .ok_or_else(|| anyhow::anyhow!("No 'secrets' found in cluster config"))?;
+    // Parse stores and managed secrets from lab config
+    let stores: HashMap<String, SecretStore> = lab
+        .pointer("/secrets/stores")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
 
-    let secrets: HashMap<String, ManagedSecret> = serde_json::from_value(secrets_value.clone())?;
+    let managed: HashMap<String, ManagedSecret> = lab
+        .pointer("/secrets/managed")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
 
-    Ok((cluster_name, secrets))
+    // Collect projections from all clusters
+    let mut projections = Vec::new();
+    if let Some(clusters) = lab.pointer("/clusters").and_then(|v| v.as_object()) {
+        for (cname, cconfig) in clusters {
+            if let Some(projs) = cconfig.get("projections") {
+                if let Ok(cluster_projs) =
+                    serde_json::from_value::<HashMap<String, Projection>>(projs.clone())
+                {
+                    for (pname, proj) in cluster_projs {
+                        projections.push((cname.clone(), pname, proj));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(LabSecrets {
+        lab_name,
+        stores,
+        managed,
+        projections,
+    })
 }
 
-fn secrets_dir(ctx: &CataContext, cluster_name: &str) -> PathBuf {
+fn store_file_path(ctx: &CataContext, lab_name: &str, store_name: &str) -> PathBuf {
     let flake_root = PathBuf::from(ctx.flake_uri());
-    flake_root.join("secrets").join(cluster_name)
-}
-
-fn secret_file_path(ctx: &CataContext, cluster_name: &str, secret_name: &str) -> PathBuf {
-    secrets_dir(ctx, cluster_name).join(format!("{secret_name}.enc.yaml"))
+    flake_root
+        .join("secrets")
+        .join(lab_name)
+        .join(format!("{store_name}.enc.yaml"))
 }
 
 async fn generate(
     ctx: &CataContext,
-    cluster: Option<&str>,
+    _cluster: Option<&str>,
     only_secret: Option<&str>,
     force: bool,
 ) -> Result<()> {
-    let (cluster_name, secrets) = get_managed_secrets(ctx, cluster)?;
+    let lab = get_lab_secrets(ctx, _cluster)?;
 
     println!(
-        "{} Generating secrets for cluster '{cluster_name}'",
-        style("catallaxy").cyan().bold()
+        "{} Generating secrets for lab '{}'",
+        style("catallaxy").cyan().bold(),
+        lab.lab_name,
     );
 
-    let sops_secrets: Vec<(&String, &ManagedSecret)> = secrets
+    // Group managed secrets by store — one SOPS file per store
+    let sops_stores: Vec<&String> = lab
+        .stores
         .iter()
         .filter(|(_, s)| s.backend == "sops")
-        .filter(|(name, _)| only_secret.map_or(true, |s| *name == s))
+        .map(|(name, _)| name)
         .collect();
 
-    if sops_secrets.is_empty() {
-        println!("{} No SOPS secrets to generate", style(">>>").yellow());
+    if sops_stores.is_empty() {
+        println!("{} No SOPS stores to generate", style(">>>").yellow());
         return Ok(());
     }
 
-    // Ensure secrets directory exists
-    let dir = secrets_dir(ctx, &cluster_name);
-    fs::create_dir_all(&dir).context("Failed to create secrets directory")?;
-
-    for (name, secret) in &sops_secrets {
-        let path = secret_file_path(ctx, &cluster_name, name);
+    for store_name in &sops_stores {
+        let path = store_file_path(ctx, &lab.lab_name, store_name);
 
         if path.exists() && !force {
             println!(
-                "{} Skipping {} (already exists, use --force to regenerate)",
+                "{} Skipping store '{}' (already exists, use --force to regenerate)",
                 style(">>>").yellow(),
-                name
+                store_name
             );
             continue;
         }
 
-        // Generate values for keys with generators
-        let mut data: HashMap<String, String> = HashMap::new();
-        for (key_name, key_def) in &secret.keys {
-            if let Some(ref generator) = key_def.generator {
-                let value = generators::generate_value(generator, key_def.length)?;
-                data.insert(key_name.clone(), value);
-            } else {
-                // Manual key — placeholder for user to fill via `secrets edit`
-                data.insert(key_name.clone(), "PLACEHOLDER_USE_SECRETS_EDIT".to_string());
-            }
+        // Collect all managed secrets in this store
+        let store_secrets: Vec<(&String, &ManagedSecret)> = lab
+            .managed
+            .iter()
+            .filter(|(_, sec)| &sec.store == *store_name)
+            .filter(|(name, _)| only_secret.map_or(true, |s| *name == s))
+            .collect();
+
+        if store_secrets.is_empty() {
+            continue;
         }
 
-        // Write YAML and encrypt with SOPS
+        // Build YAML data: namespace keys by managed secret name
+        let mut data: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+        for (secret_name, secret) in &store_secrets {
+            let mut secret_data = serde_json::Map::new();
+            for (key_name, key_def) in &secret.keys {
+                let value = if let Some(ref generator) = key_def.generator {
+                    generators::generate_value(generator, key_def.length)?
+                } else {
+                    "PLACEHOLDER_USE_SECRETS_EDIT".to_string()
+                };
+                secret_data.insert(key_name.clone(), serde_json::Value::String(value));
+            }
+            data.insert(
+                (*secret_name).clone(),
+                serde_json::Value::Object(secret_data),
+            );
+        }
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).context("Failed to create secrets directory")?;
+        }
+
         let yaml = serde_yaml::to_string(&data)?;
         let mut tmpfile = tempfile::NamedTempFile::new()?;
         tmpfile.write_all(yaml.as_bytes())?;
         tmpfile.flush()?;
+
+        let sops_match_path = format!("secrets/{}/{store_name}.enc.yaml", lab.lab_name);
 
         let status = std::process::Command::new("sops")
             .args([
@@ -280,6 +355,8 @@ async fn generate(
                 "yaml",
                 "--output-type",
                 "yaml",
+                "--filename-override",
+                &sops_match_path,
                 "--output",
                 &path.display().to_string(),
             ])
@@ -288,14 +365,18 @@ async fn generate(
             .context("Failed to run sops encrypt")?;
 
         if !status.success() {
-            bail!("Failed to encrypt secret '{name}'. Is .sops.yaml configured?");
+            bail!(
+                "Failed to encrypt store '{store_name}'. Is .sops.yaml configured?"
+            );
         }
 
+        let key_count: usize = store_secrets.iter().map(|(_, s)| s.keys.len()).sum();
         println!(
-            "{} Generated and encrypted: {} ({} keys)",
+            "{} Generated store: {} ({} secrets, {} keys)",
             style(">>>").green(),
-            name,
-            data.len()
+            store_name,
+            store_secrets.len(),
+            key_count,
         );
     }
 
@@ -303,46 +384,44 @@ async fn generate(
 }
 
 async fn list(ctx: &CataContext, cluster: Option<&str>) -> Result<()> {
-    let (cluster_name, secrets) = get_managed_secrets(ctx, cluster)?;
+    let lab = get_lab_secrets(ctx, cluster)?;
 
     println!(
-        "{} Managed secrets for cluster '{cluster_name}'",
-        style("catallaxy").cyan().bold()
+        "{} Secrets for lab '{}'",
+        style("catallaxy").cyan().bold(),
+        lab.lab_name,
     );
     println!();
 
-    if secrets.is_empty() {
-        println!("  (none)");
-        return Ok(());
+    // Stores
+    if !lab.stores.is_empty() {
+        println!("{}", style("Stores:").bold());
+        for (name, store) in &lab.stores {
+            let path = store_file_path(ctx, &lab.lab_name, name);
+            let status = if path.exists() {
+                style("generated").green()
+            } else {
+                style("missing").red()
+            };
+            println!(
+                "  {} ({}) → {} [{}]",
+                style(name).bold(),
+                store.backend,
+                path.display(),
+                status,
+            );
+        }
+        println!();
     }
 
-    for (name, secret) in &secrets {
-        let path = secret_file_path(ctx, &cluster_name, name);
-        let status = if secret.backend != "sops" {
-            style("(managed by operator)").dim().to_string()
-        } else if path.exists() {
-            style("generated").green().to_string()
-        } else {
-            style("missing").red().to_string()
-        };
-
-        let key_names: Vec<&String> = secret.keys.keys().collect();
-        println!(
-            "  {} {} [{}]",
-            style(name).bold(),
-            status,
-            style(format!(
-                "ns:{}, phase:{}, backend:{}",
-                secret.namespace, secret.phase, secret.backend
-            ))
-            .dim()
-        );
-        println!(
-            "    keys: {}",
-            key_names
+    // Managed secrets
+    if !lab.managed.is_empty() {
+        println!("{}", style("Managed secrets:").bold());
+        for (name, secret) in &lab.managed {
+            let key_list: String = secret
+                .keys
                 .iter()
-                .map(|k| {
-                    let def = &secret.keys[k.as_str()];
+                .map(|(k, def)| {
                     if let Some(ref generator) = def.generator {
                         format!("{k} ({generator})")
                     } else {
@@ -350,8 +429,48 @@ async fn list(ctx: &CataContext, cluster: Option<&str>) -> Result<()> {
                     }
                 })
                 .collect::<Vec<_>>()
-                .join(", ")
-        );
+                .join(", ");
+            println!(
+                "  {} [store: {}] keys: {}",
+                style(name).bold(),
+                secret.store,
+                key_list,
+            );
+        }
+        println!();
+    }
+
+    // Projections
+    if !lab.projections.is_empty() {
+        println!("{}", style("Projections:").bold());
+        for (cluster_name, proj_name, proj) in &lab.projections {
+            let key_list: String = proj
+                .keys
+                .iter()
+                .map(|(k, def)| {
+                    let transform = def.transform.as_deref().unwrap_or("none");
+                    if transform == "none" {
+                        format!("{k}←{}", def.from)
+                    } else {
+                        format!("{k}←{}({})", def.from, transform)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!(
+                "  {} → {} [ns:{}, from:{}] {}",
+                style(cluster_name).dim(),
+                style(proj_name).bold(),
+                proj.namespace,
+                proj.source,
+                key_list,
+            );
+        }
+        println!();
+    }
+
+    if lab.stores.is_empty() && lab.managed.is_empty() {
+        println!("  (none)");
     }
 
     Ok(())

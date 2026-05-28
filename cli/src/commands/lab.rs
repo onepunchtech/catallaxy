@@ -592,7 +592,7 @@ async fn lint_cmd(
 
                 // Validate each cluster config loads
                 for cluster in &cluster_names {
-                    match crate::nix::get_cluster_config(ctx, cluster) {
+                    match crate::nix::get_cluster_config_from_lab(&lab, cluster) {
                         Ok(config) => {
                             let provisioner = config["provisioner"].as_str().unwrap_or("unknown");
                             let component_count = config["components"]
@@ -715,7 +715,7 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
         println!("{}", style("Clusters:").bold());
         for cluster_name in clusters {
             let cluster_name = cluster_name.as_str().unwrap_or("?");
-            let context_name = resolve_cluster_context(ctx, cluster_name);
+            let context_name = resolve_cluster_context(&lab, cluster_name);
             let reachable = tools::kube::api_reachable(&context_name);
 
             let status_str = if reachable {
@@ -736,9 +736,9 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Resolve the kube context name for a cluster by loading its config
-fn resolve_cluster_context(ctx: &CataContext, cluster_name: &str) -> String {
-    crate::nix::get_cluster_config(ctx, cluster_name)
+/// Resolve the kube context name for a cluster from its lab config
+fn resolve_cluster_context(lab: &serde_json::Value, cluster_name: &str) -> String {
+    crate::nix::get_cluster_config_from_lab(lab, cluster_name)
         .ok()
         .and_then(|c| {
             c.pointer("/provisionerConfig/k3d/clusterName")
@@ -871,7 +871,7 @@ async fn init(ctx: &CataContext, name: &str) -> Result<()> {
             style(">>>").cyan()
         );
 
-        let config = crate::nix::get_cluster_config(ctx, cluster_name)?;
+        let config = crate::nix::get_cluster_config_from_lab(&lab, cluster_name)?;
         super::cluster::provision_cluster_with_registry(
             ctx,
             cluster_name,
@@ -964,7 +964,7 @@ async fn up(
             println!();
             println!("{} Importing lab CA into clusters...", style(">>>").cyan());
             for cluster_name in &cluster_names {
-                let context = resolve_cluster_context(ctx, cluster_name);
+                let context = resolve_cluster_context(&lab, cluster_name);
                 // Create cert-manager namespace if it doesn't exist
                 let _ = std::process::Command::new("kubectl")
                     .args(["--context", &context, "create", "namespace", "cert-manager"])
@@ -1043,8 +1043,31 @@ async fn up(
         .bold()
     );
 
+    // Only apply to locally-provisioned clusters (k3d, talos).
+    // External/crossplane clusters are provisioned out-of-band (e.g., via CAPI).
+    let mut deployable_clusters = Vec::new();
+    for cluster_name in &cluster_names {
+        let provisioner = lab
+            .pointer(&format!("/clusters/{cluster_name}/provisioner"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("k3d");
+        match provisioner {
+            "external" | "crossplane" => {
+                println!(
+                    "{} Skipping '{}' — {} cluster (provisioned out-of-band)",
+                    style(">>>").yellow(),
+                    cluster_name,
+                    provisioner,
+                );
+            }
+            _ => {
+                deployable_clusters.push(cluster_name.clone());
+            }
+        }
+    }
+
     let mut join_set = tokio::task::JoinSet::new();
-    for cluster_name in cluster_names.clone() {
+    for cluster_name in deployable_clusters.clone() {
         let ctx = ctx.clone();
         let lab_package = lab_package.clone();
         join_set.spawn(async move {
@@ -1101,7 +1124,7 @@ async fn up(
     println!();
     println!("Clusters:");
     for cluster_name in &cluster_names {
-        let context = resolve_cluster_context(ctx, cluster_name);
+        let context = resolve_cluster_context(&lab, cluster_name);
         println!("  {} (context: {})", style(cluster_name).green(), context,);
     }
 
@@ -1481,18 +1504,83 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
         })
         .unwrap_or_default();
 
-    // 1. Tear down all clusters
+    // 1. Run lifecycle teardown hooks, then deprovision clusters
     if !cluster_names.is_empty() {
         println!();
         println!("{}", style("Clusters:").bold());
 
         for cluster_name in &cluster_names {
-            println!(
-                "{} Stopping cluster '{cluster_name}'...",
-                style(">>>").cyan()
-            );
-            match crate::nix::get_cluster_config(ctx, cluster_name) {
+            match crate::nix::get_cluster_config_from_lab(&lab, cluster_name) {
                 Ok(config) => {
+                    // Execute teardown steps before deprovisioning
+                    if let Some(steps) = config
+                        .pointer("/lifecycle/teardown")
+                        .and_then(|v| v.as_array())
+                    {
+                        for step in steps {
+                            let step_name =
+                                step["name"].as_str().unwrap_or("unknown");
+                            let description =
+                                step["description"].as_str().unwrap_or("");
+                            let bin = step["bin"].as_str().unwrap_or("");
+                            let timeout =
+                                step["waitTimeout"].as_str().unwrap_or("5m");
+
+                            if bin.is_empty() {
+                                continue;
+                            }
+
+                            println!(
+                                "{} [{}] {} (timeout: {})...",
+                                style(">>>").cyan(),
+                                cluster_name,
+                                if description.is_empty() {
+                                    step_name.to_string()
+                                } else {
+                                    description.to_string()
+                                },
+                                timeout,
+                            );
+
+                            let status = std::process::Command::new(bin)
+                                .status();
+
+                            match status {
+                                Ok(s) if s.success() => {
+                                    println!(
+                                        "{} [{}] {} complete",
+                                        style(">>>").green(),
+                                        cluster_name,
+                                        step_name,
+                                    );
+                                }
+                                Ok(s) => {
+                                    println!(
+                                        "{} [{}] {} failed (exit {})",
+                                        style("Warning:").yellow(),
+                                        cluster_name,
+                                        step_name,
+                                        s.code().unwrap_or(-1),
+                                    );
+                                }
+                                Err(e) => {
+                                    println!(
+                                        "{} [{}] {} failed: {}",
+                                        style("Warning:").yellow(),
+                                        cluster_name,
+                                        step_name,
+                                        e,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Now deprovision the cluster itself
+                    println!(
+                        "{} Stopping cluster '{cluster_name}'...",
+                        style(">>>").cyan()
+                    );
                     if let Err(e) = super::cluster::deprovision_cluster(ctx, cluster_name, &config)
                     {
                         println!(

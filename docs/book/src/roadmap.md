@@ -1,7 +1,5 @@
 # Roadmap
 
-Everything below drives toward a single milestone: **1.0 — production ready**. Version numbers bump as progress is made, not on a fixed schedule. Categories are organizational, not sequential — work can happen in any order.
-
 ## 1.0 — Production Ready
 
 ### Local Platform
@@ -69,3 +67,5 @@ Ideas worth capturing but not blocking 1.0. These are distractions until the abo
 - [ ] Migration guide from v0.x to v1.0
 - [ ] Automated testing framework for lab configurations
 - [ ] On-premises support (Talos Linux on bare metal)
+- [ ] compute sboms
+- [ ] image package set for reproducible image refs

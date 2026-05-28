@@ -12,6 +12,7 @@ let
     ;
 
   renderers = import ../../lib/renderers { inherit lib pkgs; };
+  catallaxyLib = import ../../lib/eval.nix { inherit lib pkgs; };
 
 in
 {
@@ -107,6 +108,25 @@ in
           "${config.lab.ops.out.tool}/bin/${config.lab.name}-ops"
         else
           null;
+
+      # Per-cluster configs for CLI consumption (provisioner details, components, etc.)
+      clusters = lib.mapAttrs (
+        _: clusterCfg: catallaxyLib.clusterConfigToJSON clusterCfg
+      ) config.lab.out.allClusters;
+
+      # Lab-level secrets for CLI consumption
+      secrets = {
+        stores = lib.mapAttrs (name: store: {
+          inherit (store) backend;
+        }) config.lab.secrets.stores;
+
+        managed = lib.mapAttrs (name: sec: {
+          inherit (sec) store;
+          keys = lib.mapAttrs (kname: key: {
+            inherit (key) generator length;
+          }) sec.keys;
+        }) config.lab.secrets.managed;
+      };
     };
 
     allClusters = config.lab.clusters;

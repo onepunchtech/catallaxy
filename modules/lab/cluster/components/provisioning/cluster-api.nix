@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   cataCharts,
   ...
 }:
@@ -407,10 +408,19 @@ let
               "app.kubernetes.io/managed-by" = "catallaxy";
             };
           };
-          spec.version = "v${infraProviderVersion ip}";
+          spec = {
+            version = "v${infraProviderVersion ip}";
+          } // optionalAttrs (ip == "digitalocean") {
+            # DO provider requires credentials via a Secret with variable substitution
+            configSecret = {
+              name = "capi-do-credentials";
+              namespace = cfg.namespace;
+            };
+          };
         }
       ) cfg.infrastructureProviders
-    );
+    )
+;
 
   # Cluster resource generation
   mkClusterResources =
@@ -734,8 +744,6 @@ let
             spec.template.spec = {
               size = docfg.controlPlaneSize;
               image.slug = docfg.image;
-            }
-            // optionalAttrs (docfg.sshKeys != [ ]) {
               sshKeys = docfg.sshKeys;
             };
           };
@@ -754,8 +762,6 @@ let
               spec.template.spec = {
                 size = pool.machineType or docfg.workerSize;
                 image.slug = docfg.image;
-              }
-              // optionalAttrs (docfg.sshKeys != [ ]) {
                 sshKeys = docfg.sshKeys;
               };
             }
@@ -999,7 +1005,7 @@ in
       };
       digitalocean = mkOption {
         type = types.str;
-        default = "0.5.0";
+        default = "1.6.0";
       };
       aws = mkOption {
         type = types.str;
@@ -1025,18 +1031,29 @@ in
         dependsOn = [ "infrastructure" ];
       };
 
+      # Install CAPI provider CRDs declaratively in the crds phase
+      phases.crds.bundles.capi-core-crds.yamls = [ cataCharts.capiProviderCrds.capi-core ];
+      phases.crds.bundles.capi-bootstrap-crds.yamls =
+        optional (elem "kubeadm" cfg.bootstrapProviders)
+          cataCharts.capiProviderCrds.capi-kubeadm-bootstrap;
+      phases.crds.bundles.capi-control-plane-crds.yamls =
+        optional (elem "kubeadm" cfg.controlPlaneProviders)
+          cataCharts.capiProviderCrds.capi-kubeadm-control-plane;
+      phases.crds.bundles.capi-infra-crds.yamls =
+        let
+          usedInfraProviders = lib.unique (
+            map (c: c.infrastructureProvider) (lib.attrValues enabledClusters)
+          );
+          infraCrdMap = {
+            digitalocean = cataCharts.capiProviderCrds.capi-digitalocean;
+          };
+        in
+        lib.concatMap (p: optional (infraCrdMap ? ${p}) infraCrdMap.${p}) usedInfraProviders;
+
       phases.capi-clusters = mkIf (enabledClusters != { }) {
         order = 150;
         dependsOn = [ "capi-providers" ];
-        waitForCRDs = true;
-        crdNames = [
-          "clusters.cluster.x-k8s.io"
-          "machinedeployments.cluster.x-k8s.io"
-          "kubeadmcontrolplanes.controlplane.cluster.x-k8s.io"
-          "kubeadmconfigtemplates.bootstrap.cluster.x-k8s.io"
-          "dockerclusters.infrastructure.cluster.x-k8s.io"
-          "dockermachinetemplates.infrastructure.cluster.x-k8s.io"
-        ];
+        # No waitForCRDs needed — CRDs installed declaratively in crds phase
       };
     })
 
@@ -1066,6 +1083,21 @@ in
 
     (mkIf (cfg.enable && cfg.isManagementCluster) {
       phases.capi-providers.bundles.capi-providers.resources = providerCRs;
+
+      # Project DO token into CAPI namespace with base64 encoding for variable substitution
+      secrets.projections = lib.mkMerge [
+        (optionalAttrs (elem "digitalocean" cfg.infrastructureProviders) {
+          capi-do-credentials = {
+            source = "do-token";
+            namespace = cfg.namespace;
+            phase = "secrets";
+            keys.DO_B64ENCODED_CREDENTIALS = {
+              from = "token";
+              transform = "base64";
+            };
+          };
+        })
+      ];
     })
 
     # =========================================================================
@@ -1074,6 +1106,51 @@ in
 
     (mkIf (cfg.enable && enabledClusters != { }) {
       phases.capi-clusters.bundles.capi-clusters.resources = allClusterResources;
+
+      # Teardown: delete CAPI clusters and wait for cloud resources to be cleaned up
+      lifecycle.teardown = [
+        {
+          name = "capi-clusters";
+          description = "Delete CAPI-managed clusters and wait for cloud resource cleanup";
+          order = -10; # Run before cluster deprovisioning
+          waitTimeout = "10m";
+          package =
+            let
+              kubeContext = config.cluster.ref.kubeContext;
+              namespace = cfg.namespace;
+              clusterNames = lib.attrNames enabledClusters;
+              deleteCommands = lib.concatStringsSep "\n" (
+                map (
+                  name:
+                  ''
+                    echo "Deleting CAPI cluster '${name}'..."
+                    kubectl --context "${kubeContext}" delete cluster "${name}" \
+                      -n "${namespace}" --ignore-not-found --wait=false
+                  ''
+                ) clusterNames
+              );
+              waitCommands = lib.concatStringsSep "\n" (
+                map (
+                  name:
+                  ''
+                    echo "Waiting for cluster '${name}' to be fully deleted..."
+                    kubectl --context "${kubeContext}" wait --for=delete \
+                      "cluster/${name}" -n "${namespace}" --timeout=600s 2>/dev/null || true
+                  ''
+                ) clusterNames
+              );
+            in
+            pkgs.writeShellApplication {
+              name = "capi-teardown";
+              runtimeInputs = [ pkgs.kubectl ];
+              text = ''
+                ${deleteCommands}
+                ${waitCommands}
+                echo "All CAPI clusters deleted"
+              '';
+            };
+        }
+      ];
     })
   ];
 }
