@@ -61,50 +61,6 @@ let
       if [ ! -s "$out" ]; then touch $out; fi
     '';
 
-  # Extract non-CRD resources (controller, webhooks, services, certs) from components.yaml.
-  # These deploy first so the controller is running when CRDs arrive.
-  # Filters out Secrets with variable substitution placeholders (e.g., ${DO_B64ENCODED_CREDENTIALS})
-  # — those are provided by SOPS-managed secrets instead.
-  extractComponentsController =
-    name: def:
-    let
-      src = pkgs.fetchurl {
-        inherit (def) url hash;
-        name = "${name}-components.yaml";
-      };
-    in
-    pkgs.runCommand "${name}-controller.yaml" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
-      # Split multi-doc YAML, filter out CRDs and template-variable docs
-      yq --split-exp '"doc_" + $index' ${src}
-      touch $out
-      for f in doc_*.yml; do
-        [ -f "$f" ] || continue
-        kind=$(yq '.kind' "$f")
-        if [ "$kind" = "CustomResourceDefinition" ] || [ "$kind" = "Namespace" ]; then
-          continue
-        fi
-        # Skip documents containing template variable substitution
-        if grep -qE '[$][{][A-Z]' "$f"; then
-          continue
-        fi
-        printf '\n---\n' >> $out
-        cat "$f" >> $out
-      done
-      # Remove kube-rbac-proxy sidecar containers (image no longer available on gcr.io)
-      if [ -s "$out" ]; then
-        yq -i '(select(.kind == "Deployment") | .spec.template.spec.containers) |= [.[] | select(.name != "kube-rbac-proxy")]' "$out"
-      fi
-    '';
-
-  # Split a components.yaml into { crds, controller } for proper ordering:
-  # 1. Deploy controller (namespace, deployment, service, certs, webhooks)
-  # 2. Deploy CRDs (conversion webhooks reference the already-running controller)
-  splitComponents =
-    name: def: {
-      crds = extractComponentsCrds name def;
-      controller = extractComponentsController name def;
-    };
-
   # Build a CRD derivation from a crdDef
   buildCrds =
     name: chartDrv: crdDef:
@@ -350,14 +306,14 @@ let
     capi-operator = {
       repo = "https://kubernetes-sigs.github.io/cluster-api-operator";
       chart = "cluster-api-operator";
-      version = "0.14.0";
-      chartHash = "sha256-X/YFe4IUpcTVnfO/pFkBGxOd0EkWn9OWGEr/hB8amQs=";
+      version = "0.27.0";
+      chartHash = "sha256-XYJaGk3fU0rL9MMP8vWLS4OFrUdhHDcEwUumJUgHXPU=";
       crd = {
         type = "github";
         owner = "kubernetes-sigs";
         repo = "cluster-api-operator";
-        rev = "v0.14.0";
-        hash = "sha256-sc0oX9UqMg7e4pe7EfeT+r9430cgnCCfAgnJcPDkjOY=";
+        rev = "v0.27.0";
+        hash = "sha256-tmdmi23AEc9BsslQSG6N88RpE9qGuy+acIzw/Ni9v5g=";
         crdPath = "config/crd/bases";
       };
     };
@@ -392,28 +348,6 @@ let
     }
   ) chartDefs;
 
-  # CAPI provider components — split into { crds, controller } for proper ordering.
-  # Controllers deploy first (webhooks, certs, deployments), then CRDs second
-  # (so conversion webhooks can reach the already-running controller).
-  capiProviderComponents = {
-    capi-core = splitComponents "capi-core" {
-      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.13.2/core-components.yaml";
-      hash = "sha256-98GrK+RG+ueN9eLcApXLbiYvxjdNiRfm7p/eK3vaxqg=";
-    };
-    capi-kubeadm-bootstrap = splitComponents "capi-kubeadm-bootstrap" {
-      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.13.2/bootstrap-components.yaml";
-      hash = "sha256-fAWh2uSuk+5r3pNdTrA0VOjeiBiM3QUfhVNXJaZ1mdY=";
-    };
-    capi-kubeadm-control-plane = splitComponents "capi-kubeadm-control-plane" {
-      url = "https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.13.2/control-plane-components.yaml";
-      hash = "sha256-VD8Rt1mBs7oacb1s5k7soka34OaWbvXkXt4czVsrebk=";
-    };
-    capi-digitalocean = splitComponents "capi-digitalocean" {
-      url = "https://github.com/kubernetes-sigs/cluster-api-provider-digitalocean/releases/download/v1.6.0/infrastructure-components.yaml";
-      hash = "sha256-4LrSpO/m3GsvtHM4uSldjHXzeyqYNiBwsAngpI4MLRk=";
-    };
-  };
-
   # Crossplane provider CRDs — extracted from GitHub sources at build time
   crossplaneProviderCrdDefs = {
     provider-upjet-digitalocean = {
@@ -445,4 +379,4 @@ let
   ) crossplaneProviderCrdDefs;
 
 in
-charts // { inherit capiProviderComponents crossplaneProviderCrds; }
+charts // { inherit crossplaneProviderCrds; }

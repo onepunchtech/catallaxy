@@ -61,8 +61,14 @@ pub enum LabCommands {
         force: bool,
     },
 
-    /// Stop lab infrastructure services
+    /// Stop lab clusters (preserves state, restartable with `lab up`)
     Down {
+        /// Lab name (defaults to flake fragment if provided)
+        name: Option<String>,
+    },
+
+    /// Destroy lab completely (deletes clusters, cloud resources, services, network)
+    Destroy {
         /// Lab name (defaults to flake fragment if provided)
         name: Option<String>,
     },
@@ -189,6 +195,10 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
         LabCommands::Down { name } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
             down(ctx, &name).await
+        }
+        LabCommands::Destroy { name } => {
+            let name = ctx.resolve_lab_name(name.as_deref())?;
+            destroy(ctx, &name).await
         }
         LabCommands::Lint { name, path, skip } => lint_cmd(ctx, name, path, skip).await,
         LabCommands::Publish {
@@ -1118,6 +1128,50 @@ async fn up(
         bail!("Failed to deploy clusters: {}", names.join(", "));
     }
 
+    // Step 4: Sync kubeconfigs for CAPI-managed clusters
+    if let Some((mgmt_name, mgmt_config)) = find_capi_mgmt_cluster(&lab) {
+        let mgmt_context = resolve_cluster_context(&lab, &mgmt_name);
+        let capi_clusters = get_capi_cluster_names(&mgmt_config);
+
+        if !capi_clusters.is_empty() {
+            println!();
+            println!(
+                "{}",
+                style(format!(
+                    "Step 4: Syncing kubeconfigs for CAPI clusters ({})",
+                    capi_clusters.join(", ")
+                ))
+                .bold()
+            );
+
+            let capi_ns = mgmt_config
+                .pointer("/components/cluster-api/namespace")
+                .and_then(|v| v.as_str())
+                .unwrap_or("capi-system");
+
+            for cluster_name in &capi_clusters {
+                println!(
+                    "{} Waiting for kubeconfig: {cluster_name}...",
+                    style(">>>").cyan()
+                );
+                match sync_capi_kubeconfig(&mgmt_context, cluster_name, capi_ns, "10m") {
+                    Ok(()) => {
+                        println!(
+                            "{} Kubeconfig synced: {cluster_name} (context: {cluster_name}-admin)",
+                            style(">>>").green()
+                        );
+                    }
+                    Err(e) => {
+                        println!(
+                            "{} Failed to sync kubeconfig for {cluster_name}: {e}",
+                            style("Warning:").yellow()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // Summary
     println!();
     println!("{} Lab '{}' is up", style("catallaxy").cyan().bold(), name);
@@ -1129,6 +1183,90 @@ async fn up(
     }
 
     Ok(())
+}
+
+/// Find the CAPI management cluster in a lab config
+fn find_capi_mgmt_cluster(
+    lab: &serde_json::Value,
+) -> Option<(String, serde_json::Value)> {
+    let clusters = lab.pointer("/clusters")?.as_object()?;
+    for (name, config) in clusters {
+        if config
+            .pointer("/components/cluster-api/isManagementCluster")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return Some((name.clone(), config.clone()));
+        }
+    }
+    None
+}
+
+/// Get enabled CAPI cluster names from a management cluster's config
+fn get_capi_cluster_names(mgmt_config: &serde_json::Value) -> Vec<String> {
+    mgmt_config
+        .pointer("/components/cluster-api/clusters")
+        .and_then(|v| v.as_object())
+        .map(|clusters| {
+            clusters
+                .iter()
+                .filter(|(_, v)| {
+                    v.get("enable")
+                        .and_then(|e| e.as_bool())
+                        .unwrap_or(true)
+                })
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Sync a CAPI-managed cluster's kubeconfig into ~/.kube/config.
+/// Waits for the kubeconfig secret to appear, then extracts and merges it.
+fn sync_capi_kubeconfig(
+    mgmt_context: &str,
+    cluster_name: &str,
+    namespace: &str,
+    timeout: &str,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+
+    let timeout_secs: u64 = timeout
+        .trim_end_matches('m')
+        .parse::<u64>()
+        .unwrap_or(10)
+        * 60;
+    let timeout_duration = Duration::from_secs(timeout_secs);
+    let start = Instant::now();
+
+    // Wait for kubeconfig secret to exist
+    loop {
+        match tools::kube::get_capi_kubeconfig(mgmt_context, cluster_name, namespace) {
+            Ok(kubeconfig_content) if !kubeconfig_content.trim().is_empty() => {
+                // Save to file
+                let kube_dir = dirs::home_dir().unwrap_or_default().join(".kube");
+                std::fs::create_dir_all(&kube_dir)?;
+                let kube_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
+                std::fs::write(&kube_path, &kubeconfig_content)?;
+
+                // Merge into default kubeconfig
+                let context_name = format!("{cluster_name}-admin");
+                tools::kube::merge_kubeconfig(&kube_path, &context_name)?;
+
+                return Ok(());
+            }
+            _ => {
+                if start.elapsed() > timeout_duration {
+                    bail!(
+                        "Timed out waiting for kubeconfig for '{cluster_name}' ({}s elapsed)",
+                        timeout_duration.as_secs()
+                    );
+                }
+                println!("  waiting... ({}s elapsed)", start.elapsed().as_secs());
+                std::thread::sleep(Duration::from_secs(10));
+            }
+        }
+    }
 }
 
 async fn apply(
@@ -1490,8 +1628,12 @@ fn chrono_simple_timestamp() -> String {
     format!("{}", secs)
 }
 
+/// Stop lab clusters (preserves state, restartable with `lab up`)
 async fn down(ctx: &CataContext, name: &str) -> Result<()> {
-    println!("{} Stopping lab '{name}'", style("catallaxy").cyan().bold());
+    println!(
+        "{} Stopping lab '{name}' (use 'lab destroy' to delete everything)",
+        style("catallaxy").cyan().bold()
+    );
 
     let lab = crate::nix::get_lab_config(ctx, name)?;
 
@@ -1504,7 +1646,6 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
         })
         .unwrap_or_default();
 
-    // 1. Run lifecycle teardown hooks, then deprovision clusters
     if !cluster_names.is_empty() {
         println!();
         println!("{}", style("Clusters:").bold());
@@ -1512,26 +1653,82 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
         for cluster_name in &cluster_names {
             match crate::nix::get_cluster_config_from_lab(&lab, cluster_name) {
                 Ok(config) => {
-                    // Execute teardown steps before deprovisioning
+                    println!(
+                        "{} Stopping cluster '{cluster_name}'...",
+                        style(">>>").cyan()
+                    );
+                    if let Err(e) = super::cluster::stop_cluster(ctx, cluster_name, &config) {
+                        println!(
+                            "{} Failed to stop '{}': {}",
+                            style("Warning:").yellow(),
+                            cluster_name,
+                            e
+                        );
+                    }
+                }
+                Err(e) => {
+                    println!(
+                        "{} Failed to load config for '{}': {}",
+                        style("Warning:").yellow(),
+                        cluster_name,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    println!();
+    println!(
+        "{} Lab '{name}' is stopped. Run 'lab up' to resume.",
+        style("catallaxy").cyan().bold()
+    );
+
+    Ok(())
+}
+
+/// Destroy lab completely — teardown hooks, delete clusters, remove services/network/CA
+async fn destroy(ctx: &CataContext, name: &str) -> Result<()> {
+    println!(
+        "{} Destroying lab '{name}'",
+        style("catallaxy").cyan().bold()
+    );
+
+    let lab = crate::nix::get_lab_config(ctx, name)?;
+
+    let cluster_names: Vec<String> = lab["clusterNames"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 1. Run lifecycle teardown hooks, then destroy clusters
+    if !cluster_names.is_empty() {
+        println!();
+        println!("{}", style("Clusters:").bold());
+
+        for cluster_name in &cluster_names {
+            match crate::nix::get_cluster_config_from_lab(&lab, cluster_name) {
+                Ok(config) => {
+                    // Execute teardown steps before destroying
                     if let Some(steps) = config
                         .pointer("/lifecycle/teardown")
                         .and_then(|v| v.as_array())
                     {
                         for step in steps {
-                            let step_name =
-                                step["name"].as_str().unwrap_or("unknown");
-                            let description =
-                                step["description"].as_str().unwrap_or("");
+                            let step_name = step["name"].as_str().unwrap_or("unknown");
+                            let description = step["description"].as_str().unwrap_or("");
                             let bin = step["bin"].as_str().unwrap_or("");
-                            let timeout =
-                                step["waitTimeout"].as_str().unwrap_or("5m");
 
                             if bin.is_empty() {
                                 continue;
                             }
 
                             println!(
-                                "{} [{}] {} (timeout: {})...",
+                                "{} [{}] {}...",
                                 style(">>>").cyan(),
                                 cluster_name,
                                 if description.is_empty() {
@@ -1539,13 +1736,9 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
                                 } else {
                                     description.to_string()
                                 },
-                                timeout,
                             );
 
-                            let status = std::process::Command::new(bin)
-                                .status();
-
-                            match status {
+                            match std::process::Command::new(bin).status() {
                                 Ok(s) if s.success() => {
                                     println!(
                                         "{} [{}] {} complete",
@@ -1576,15 +1769,16 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
                         }
                     }
 
-                    // Now deprovision the cluster itself
+                    // Destroy the cluster
                     println!(
-                        "{} Stopping cluster '{cluster_name}'...",
+                        "{} Destroying cluster '{cluster_name}'...",
                         style(">>>").cyan()
                     );
-                    if let Err(e) = super::cluster::deprovision_cluster(ctx, cluster_name, &config)
+                    if let Err(e) =
+                        super::cluster::deprovision_cluster(ctx, cluster_name, &config)
                     {
                         println!(
-                            "{} Failed to stop cluster '{}': {}",
+                            "{} Failed to destroy '{}': {}",
                             style("Warning:").yellow(),
                             cluster_name,
                             e
@@ -1612,22 +1806,12 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
         }
     }
 
-    // 2. Stop infrastructure services (except registry - kept for caching)
+    // 2. Stop and remove infrastructure services
     if let Some(services) = lab["services"].as_object() {
         if !services.is_empty() {
             println!();
             println!("{}", style("Services:").bold());
             for (svc_name, svc) in services {
-                if svc_name == "registry" {
-                    let description = svc["description"].as_str().unwrap_or(svc_name);
-                    println!(
-                        "{} Keeping {} running (image cache)",
-                        style(">>>").green(),
-                        description
-                    );
-                    continue;
-                }
-
                 let container = svc["container"].as_str().unwrap_or("");
                 let description = svc["description"].as_str().unwrap_or(svc_name);
 
@@ -1635,11 +1819,9 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
                     continue;
                 }
 
-                println!("{} Stopping {}...", style(">>>").cyan(), description);
-
+                println!("{} Removing {}...", style(">>>").cyan(), description);
                 tools::docker::stop_container(ctx, container)?;
-
-                println!("{} {} stopped", style(">>>").green(), description);
+                println!("{} {} removed", style(">>>").green(), description);
             }
         }
     }

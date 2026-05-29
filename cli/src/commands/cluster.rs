@@ -489,7 +489,36 @@ async fn up(
     .await
 }
 
-/// Tear down a single cluster. Called by both `cluster down` and `lab down`.
+/// Stop a single cluster (preserves state). Called by `lab down`.
+pub fn stop_cluster(
+    ctx: &CataContext,
+    name: &str,
+    config: &serde_json::Value,
+) -> Result<()> {
+    let provisioner = cluster_provisioner(config);
+    let cluster_name = provisioner_cluster_name(config);
+
+    match provisioner {
+        "k3d" => {
+            let docker_host = resolve_docker_host(ctx, config)?;
+            if !tools::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
+                println!("{} Cluster '{name}' is not running", style(">>>").green());
+                return Ok(());
+            }
+            tools::k3d::cluster_stop(ctx, &cluster_name, docker_host.as_deref())?;
+        }
+        "external" | "crossplane" => {
+            println!("  {provisioner} cluster '{name}' — nothing to stop locally");
+        }
+        _ => {
+            println!("  Cluster '{name}' ({provisioner}) — stop not supported, skipping");
+        }
+    }
+
+    Ok(())
+}
+
+/// Destroy a single cluster completely. Called by `lab destroy`.
 pub fn deprovision_cluster(
     ctx: &CataContext,
     name: &str,

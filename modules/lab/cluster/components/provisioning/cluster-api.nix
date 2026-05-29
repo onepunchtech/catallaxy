@@ -414,10 +414,18 @@ let
           spec = {
             version = "v${infraProviderVersion ip}";
           } // optionalAttrs (ip == "digitalocean") {
-            # DO provider requires credentials via a Secret with variable substitution
             configSecret = {
               name = "capi-do-credentials";
               namespace = cfg.namespace;
+            };
+            # Replace broken kube-rbac-proxy image (removed from gcr.io)
+            deployment = {
+              containers = [
+                {
+                  name = "kube-rbac-proxy";
+                  imageUrl = "quay.io/brancz/kube-rbac-proxy:v0.18.1";
+                }
+              ];
             };
           };
         }
@@ -553,15 +561,17 @@ let
                 name = "${clusterName}-control-plane";
               };
             };
-            kubeadmConfigSpec = {
-              clusterConfiguration = {
-                apiServer = {
-                  extraArgs = toExtraArgs clusterCfg.apiServerExtraArgs;
-                }
-                // optionalAttrs (clusterCfg.certSANs != [ ]) { certSANs = clusterCfg.certSANs; };
-                controllerManager.extraArgs = [ ];
-                scheduler.extraArgs = [ ];
+            kubeadmConfigSpec = { }
+            // optionalAttrs (clusterCfg.apiServerExtraArgs != { } || clusterCfg.certSANs != [ ]) {
+              clusterConfiguration.apiServer = { }
+              // optionalAttrs (clusterCfg.apiServerExtraArgs != { }) {
+                extraArgs = toExtraArgs clusterCfg.apiServerExtraArgs;
+              }
+              // optionalAttrs (clusterCfg.certSANs != [ ]) {
+                certSANs = clusterCfg.certSANs;
               };
+            }
+            // {
               initConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
                 "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
               };
@@ -765,7 +775,7 @@ let
                 labels = commonLabels;
               };
               spec.template.spec = {
-                size = pool.machineType or docfg.workerSize;
+                size = if pool.machineType != null then pool.machineType else docfg.workerSize;
                 image = docfg.image;
                 sshKeys = docfg.sshKeys;
               };
@@ -843,7 +853,7 @@ let
                 labels = commonLabels;
               };
               spec.template.spec = {
-                type = pool.machineType or hcfg.workerType;
+                type = if pool.machineType != null then pool.machineType else hcfg.workerType;
                 imageName = "talos-${clusterCfg.talos.version}";
               }
               // optionalAttrs hcfg.placementGroup { placementGroupName = "${clusterName}-workers"; };
@@ -896,7 +906,7 @@ let
                 labels = commonLabels;
               };
               spec.template.spec = {
-                instanceType = pool.machineType or acfg.workerInstanceType;
+                instanceType = if pool.machineType != null then pool.machineType else acfg.workerInstanceType;
                 iamInstanceProfile = "nodes.cluster-api-provider-aws.sigs.k8s.io";
                 sshKeyName = acfg.sshKeyName;
               };
@@ -1030,76 +1040,88 @@ in
 
   config = lib.mkMerge [
     # Deploy phases for CAPI
-    (mkIf (cfg.enable && enabledClusters != { }) {
-      # CAPI providers deploy as full component bundles (CRDs + controllers + webhooks
-      # together). CRDs have conversion webhooks that need the controller, and the
-      # controller needs the CRDs — they must deploy as a unit.
-      phases.capi-providers = {
+    (mkIf cfg.enable {
+      phases.capi-providers = mkIf cfg.isManagementCluster {
         order = 55;
         dependsOn = [ "operators" ];
       };
 
-      # Pre-create namespaces so SOPS secrets can be injected before the phase deploys
-      phases.namespaces.bundles.capi-namespaces.createNamespaces =
-        [ "capi-system" ]
-        ++ optional (elem "kubeadm" cfg.bootstrapProviders) "capi-kubeadm-bootstrap-system"
-        ++ optional (elem "kubeadm" cfg.controlPlaneProviders) "capi-kubeadm-control-plane-system"
-        ++ lib.concatMap (p: {
-          digitalocean = [ "capdo-system" ];
-        }.${p} or [ ]) cfg.infrastructureProviders;
-
-      # Full component bundles (CRDs + controllers deployed together by kapp)
-      phases.capi-providers.bundles.capi-core.yamls = [
-        cataCharts.capiProviderComponents.capi-core.controller
-        cataCharts.capiProviderComponents.capi-core.crds
-      ];
-      phases.capi-providers.bundles.capi-bootstrap.yamls =
-        (optional (elem "kubeadm" cfg.bootstrapProviders)
-          cataCharts.capiProviderComponents.capi-kubeadm-bootstrap.controller)
-        ++ (optional (elem "kubeadm" cfg.bootstrapProviders)
-          cataCharts.capiProviderComponents.capi-kubeadm-bootstrap.crds);
-      phases.capi-providers.bundles.capi-control-plane.yamls =
-        (optional (elem "kubeadm" cfg.controlPlaneProviders)
-          cataCharts.capiProviderComponents.capi-kubeadm-control-plane.controller)
-        ++ (optional (elem "kubeadm" cfg.controlPlaneProviders)
-          cataCharts.capiProviderComponents.capi-kubeadm-control-plane.crds);
-      phases.capi-providers.bundles.capi-infra.yamls =
-        let
-          usedInfraProviders = lib.unique (
-            map (c: c.infrastructureProvider) (lib.attrValues enabledClusters)
-          );
-          infraMap = {
-            digitalocean = [
-              cataCharts.capiProviderComponents.capi-digitalocean.controller
-              cataCharts.capiProviderComponents.capi-digitalocean.crds
-            ];
-          };
-        in
-        lib.concatMap (p: infraMap.${p} or [ ]) usedInfraProviders;
-
       phases.capi-clusters = mkIf (enabledClusters != { }) {
         order = 150;
         dependsOn = [ "capi-providers" ];
+        waitForCRDs = true;
+        crdNames =
+          let
+            coreCrds = [
+              "clusters.cluster.x-k8s.io"
+              "machinedeployments.cluster.x-k8s.io"
+            ];
+            bootstrapCrds =
+              (optional (elem "kubeadm" cfg.bootstrapProviders)
+                "kubeadmconfigtemplates.bootstrap.cluster.x-k8s.io")
+              ++ (optional (elem "kubeadm" cfg.controlPlaneProviders)
+                "kubeadmcontrolplanes.controlplane.cluster.x-k8s.io");
+            usedInfraProviders = lib.unique (
+              map (c: c.infrastructureProvider) (lib.attrValues enabledClusters)
+            );
+            infraCrdMap = {
+              docker = [
+                "dockerclusters.infrastructure.cluster.x-k8s.io"
+                "dockermachinetemplates.infrastructure.cluster.x-k8s.io"
+              ];
+              digitalocean = [
+                "doclusters.infrastructure.cluster.x-k8s.io"
+                "domachinetemplates.infrastructure.cluster.x-k8s.io"
+              ];
+            };
+            infraCrds = lib.concatMap (
+              p: infraCrdMap.${p} or [ ]
+            ) usedInfraProviders;
+          in
+          coreCrds ++ bootstrapCrds ++ infraCrds;
       };
     })
 
     # =========================================================================
-    # PART 3: Phase writer - CAPI namespace + credentials
+    # PART 3: CAPI Operator Helm chart
     # =========================================================================
-    # Note: The CAPI operator is NOT used. Providers are deployed directly from
-    # pinned components.yaml bundles in the capi-providers phase. This ensures
-    # CRDs, controllers, and webhooks deploy together reproducibly.
 
     (mkIf (cfg.enable && cfg.isManagementCluster) {
+      phases.${cfg.phase}.bundles.cluster-api = {
+        helmCharts.capi-operator = {
+          chart = chartRef;
+          releaseName = "capi-operator";
+          namespace = cfg.namespace;
+          createNamespace = true;
+          values = {
+            cert-manager.enabled = false;
+          };
+        };
+        createNamespaces = [ cfg.namespace ];
+      };
+    })
 
-      # Project DO token into the secret the CAPI DO controller expects
+    # =========================================================================
+    # PART 4: Provider CRs (capi-providers phase)
+    # =========================================================================
+
+    (mkIf (cfg.enable && cfg.isManagementCluster) {
+      phases.capi-providers.bundles.capi-providers.resources = providerCRs;
+
+      # Pre-create DO namespace for credential secret injection
+      phases.namespaces.bundles.capi-namespaces.createNamespaces =
+        lib.concatMap (p: {
+          digitalocean = [ "capdo-system" ];
+        }.${p} or [ ]) cfg.infrastructureProviders;
+
+      # Project DO token into the secret the CAPI operator expects
       secrets.projections = lib.mkMerge [
         (optionalAttrs (elem "digitalocean" cfg.infrastructureProviders) {
-          capdo-manager-bootstrap-credentials = {
+          capi-do-credentials = {
             source = "do-token";
-            namespace = "capdo-system";
+            namespace = cfg.namespace;
             phase = "capi-providers";
-            keys.credentials = {
+            keys.DO_B64ENCODED_CREDENTIALS = {
               from = "token";
               transform = "base64";
             };

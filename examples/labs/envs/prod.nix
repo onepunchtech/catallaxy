@@ -1,4 +1,4 @@
-# Production — mgmt cluster + CAPI on DigitalOcean
+# Production — mgmt cluster + DOKS on DigitalOcean via Crossplane
 { lib, ... }:
 {
   lab.name = "homelab.prod";
@@ -19,7 +19,7 @@
     };
   };
 
-  # Mgmt cluster provisions cloud clusters via CAPI
+  # Mgmt cluster provisions DOKS clusters via Crossplane
   lab.clusters.mgmt =
     { ... }:
     {
@@ -27,47 +27,30 @@
         ../clusters/mgmt.nix
         ../provisioners/k3d.nix
       ];
-      components.cluster-api.infrastructureProviders = [ "digitalocean" ];
       components.crossplane.providers = [
         "digitalocean"
         "cloudflare"
       ];
 
-      # CAPI-managed workload clusters on DigitalOcean
-      components.cluster-api.clusters = {
+      # DOKS managed Kubernetes clusters on DigitalOcean
+      components.crossplane.digitalocean.kubernetesClusters = {
         core = {
-          infrastructureProvider = "digitalocean";
-          kubernetes.version = "v1.31.0";
-          kubernetes.controlPlane.replicas = 1;
-          kubernetes.workers = [
-            {
-              name = "default";
-              replicas = 2;
-            }
-          ];
-          talos.enable = false;
-          digitalocean = {
-            region = "nyc1";
-            controlPlaneSize = "s-2vcpu-4gb";
-            workerSize = "s-4vcpu-8gb";
+          region = "nyc1";
+          version = "1.36.0-do.0";
+          nodePool = {
+            name = "default";
+            size = "s-4vcpu-8gb";
+            nodeCount = 2;
           };
         };
 
         obs = {
-          infrastructureProvider = "digitalocean";
-          kubernetes.version = "v1.31.0";
-          kubernetes.controlPlane.replicas = 1;
-          kubernetes.workers = [
-            {
-              name = "default";
-              replicas = 1;
-            }
-          ];
-          talos.enable = false;
-          digitalocean = {
-            region = "nyc1";
-            controlPlaneSize = "s-2vcpu-4gb";
-            workerSize = "s-2vcpu-4gb";
+          region = "nyc1";
+          version = "1.36.0-do.0";
+          nodePool = {
+            name = "default";
+            size = "s-2vcpu-4gb";
+            nodeCount = 1;
           };
         };
       };

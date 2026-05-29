@@ -1,4 +1,4 @@
-# Management cluster — CAPI + Crossplane controllers
+# Management cluster — Crossplane controllers
 { ... }:
 {
   cluster = {
@@ -14,13 +14,6 @@
   components.cert-manager = {
     enable = true;
     selfSignedCA.enable = true;
-  };
-
-  components.cluster-api = {
-    enable = true;
-    isManagementCluster = true;
-    bootstrapProviders = [ "kubeadm" ];
-    controlPlaneProviders = [ "kubeadm" ];
   };
 
   components.crossplane.enable = true;

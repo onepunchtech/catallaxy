@@ -86,7 +86,10 @@ fn parse_projections(
     let projs: HashMap<String, ProjectionConfig> =
         match serde_json::from_value(projs_value.clone()) {
             Ok(p) => p,
-            Err(_) => return by_phase,
+            Err(e) => {
+                eprintln!("Warning: failed to parse projections: {e}");
+                return by_phase;
+            }
         };
 
     for (name, proj) in projs {
@@ -264,6 +267,13 @@ async fn apply_kapp(
 
     // Parse projections for secret injection
     let sops_secrets = parse_projections(config);
+    if !sops_secrets.is_empty() {
+        println!(
+            "{} Found projections for phases: {}",
+            style(">>>").cyan(),
+            sops_secrets.keys().cloned().collect::<Vec<_>>().join(", ")
+        );
+    }
     let cluster_name = ctx.resolve_cluster_name(args.cluster.as_deref())?;
 
     if args.dry_run {

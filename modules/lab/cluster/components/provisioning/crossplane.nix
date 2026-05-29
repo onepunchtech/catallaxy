@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   cataCharts,
   ...
 }:
@@ -176,8 +177,41 @@ let
           providerConfigRef.name = "default";
         };
       }) cfg.digitalocean.loadBalancers;
+      k8sClusters = mapAttrs (name: cluster: {
+        apiVersion = "kubernetes.digitalocean.crossplane.io/v1alpha1";
+        kind = "Cluster";
+        metadata = {
+          name = name;
+          labels."app.kubernetes.io/managed-by" = "catallaxy";
+        };
+        spec = {
+          forProvider = {
+            region = cluster.region;
+            version = cluster.version;
+            name = name;
+            ha = cluster.ha;
+            autoUpgrade = cluster.autoUpgrade;
+            surgeUpgrade = cluster.surgeUpgrade;
+            nodePool = [
+              ({
+                name = cluster.nodePool.name;
+                size = cluster.nodePool.size;
+                nodeCount = cluster.nodePool.nodeCount;
+                autoScale = cluster.nodePool.autoScale;
+              }
+              // optionalAttrs (cluster.nodePool.minNodes != null) {
+                minNodes = cluster.nodePool.minNodes;
+              }
+              // optionalAttrs (cluster.nodePool.maxNodes != null) {
+                maxNodes = cluster.nodePool.maxNodes;
+              })
+            ];
+          };
+          providerConfigRef.name = "default";
+        };
+      }) cfg.digitalocean.kubernetesClusters;
     in
-    droplets // lbs;
+    droplets // lbs // k8sClusters;
 
   # Cloudflare managed resources
   cfResources =
@@ -329,7 +363,7 @@ in
         default = {
           name = "do-credentials";
           namespace = cfg.namespace;
-          key = "token";
+          key = "credentials";
         };
       };
 
@@ -395,6 +429,66 @@ in
         );
         default = { };
       };
+
+      # DOKS — DigitalOcean managed Kubernetes clusters
+      kubernetesClusters = mkOption {
+        type = types.attrsOf (
+          types.submodule {
+            options = {
+              region = mkOption {
+                type = types.str;
+                default = "nyc1";
+              };
+              version = mkOption {
+                type = types.str;
+                default = "1.36.0-do.0";
+                description = "Kubernetes version slug (e.g., '1.36.0-do.0'). Find valid versions with `doctl kubernetes options versions`.";
+              };
+              ha = mkOption {
+                type = types.bool;
+                default = false;
+                description = "Enable HA control plane";
+              };
+              autoUpgrade = mkOption {
+                type = types.bool;
+                default = false;
+              };
+              surgeUpgrade = mkOption {
+                type = types.bool;
+                default = true;
+              };
+              nodePool = {
+                name = mkOption {
+                  type = types.str;
+                  default = "default";
+                };
+                size = mkOption {
+                  type = types.str;
+                  default = "s-2vcpu-4gb";
+                };
+                nodeCount = mkOption {
+                  type = types.int;
+                  default = 2;
+                };
+                autoScale = mkOption {
+                  type = types.bool;
+                  default = false;
+                };
+                minNodes = mkOption {
+                  type = types.nullOr types.int;
+                  default = null;
+                };
+                maxNodes = mkOption {
+                  type = types.nullOr types.int;
+                  default = null;
+                };
+              };
+            };
+          }
+        );
+        default = { };
+        description = "DigitalOcean managed Kubernetes (DOKS) clusters";
+      };
     };
 
     # --- Cloudflare ---
@@ -415,7 +509,7 @@ in
         default = {
           name = "cf-credentials";
           namespace = cfg.namespace;
-          key = "token";
+          key = "credentials";
         };
       };
 
@@ -527,13 +621,13 @@ in
           do-credentials = {
             source = "do-token";
             namespace = cfg.namespace;
-            phase = "secrets";
+            phase = "infrastructure";
             keys = {
               token.from = "token";
               credentials = {
                 from = "token";
                 transform = "json-wrap";
-                jsonKey = "access_token";
+                jsonKey = "token";
               };
             };
           };
@@ -542,7 +636,7 @@ in
           cf-credentials = {
             source = "cf-token";
             namespace = cfg.namespace;
-            phase = "secrets";
+            phase = "infrastructure";
             keys = {
               token.from = "token";
               credentials = {
@@ -567,6 +661,36 @@ in
       phases.workloads.bundles.crossplane-resources.resources =
         (if cfg.digitalocean.enable then doResources else { })
         // (if cfg.cloudflare.enable then cfResources else { });
+
+      # Teardown: delete all Crossplane managed resources before destroying mgmt cluster
+      lifecycle.teardown = [
+        {
+          name = "crossplane-resources";
+          description = "Delete Crossplane managed resources and wait for cloud cleanup";
+          order = -20;
+          waitTimeout = "10m";
+          package = pkgs.writeShellApplication {
+            name = "crossplane-resources";
+            runtimeInputs = [ pkgs.kubectl ];
+            text = ''
+              CONTEXT="${config.cluster.ref.kubeContext}"
+              echo "Deleting all Crossplane managed resources..."
+              kubectl --context "$CONTEXT" delete managed --all --wait=false 2>/dev/null || true
+              echo "Waiting for external resources to be cleaned up..."
+              for i in $(seq 1 60); do
+                COUNT=$(kubectl --context "$CONTEXT" get managed --no-headers 2>/dev/null | wc -l)
+                if [ "$COUNT" -eq 0 ]; then
+                  echo "All Crossplane managed resources deleted"
+                  exit 0
+                fi
+                echo "  waiting... ($COUNT resources remaining)"
+                sleep 10
+              done
+              echo "Warning: some managed resources may still exist"
+            '';
+          };
+        }
+      ];
     })
   ];
 }

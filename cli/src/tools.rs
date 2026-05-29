@@ -357,6 +357,40 @@ pub mod k3d {
         Ok(())
     }
 
+    /// Stop a k3d cluster (preserves state, restartable with cluster_start)
+    pub fn cluster_stop(ctx: &CataContext, name: &str, docker_host: Option<&str>) -> Result<()> {
+        println!("{} Stopping k3d cluster '{name}'...", style(">>>").cyan());
+
+        let mut cmd = Command::new("k3d");
+        cmd.args(["cluster", "stop", name]);
+
+        if let Some(host) = docker_host {
+            cmd.env("DOCKER_HOST", host);
+        }
+
+        run_streaming(&mut cmd, ctx)?;
+
+        println!("{} Cluster stopped", style(">>>").green());
+        Ok(())
+    }
+
+    /// Start a stopped k3d cluster
+    pub fn cluster_start(ctx: &CataContext, name: &str, docker_host: Option<&str>) -> Result<()> {
+        println!("{} Starting k3d cluster '{name}'...", style(">>>").cyan());
+
+        let mut cmd = Command::new("k3d");
+        cmd.args(["cluster", "start", name]);
+
+        if let Some(host) = docker_host {
+            cmd.env("DOCKER_HOST", host);
+        }
+
+        run_streaming(&mut cmd, ctx)?;
+
+        println!("{} Cluster started", style(">>>").green());
+        Ok(())
+    }
+
     /// Check if a k3d cluster exists
     pub fn cluster_exists(name: &str, docker_host: Option<&str>) -> bool {
         let mut cmd = Command::new("k3d");
