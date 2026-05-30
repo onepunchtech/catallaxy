@@ -33,6 +33,10 @@
             ./labs/default.nix
             ./envs/prod.nix
           ];
+          "homelab.gitops" = mkLab [
+            ./labs/default.nix
+            ./envs/gitops-local.nix
+          ];
         };
 
         allOuts = nixpkgs.lib.mapAttrs (_: lab: lab.config.lab.out) allLabs;

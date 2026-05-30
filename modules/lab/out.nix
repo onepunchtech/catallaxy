@@ -63,6 +63,16 @@ in
         '';
       };
 
+      bootstrapManifests = mkOption {
+        type = types.attrsOf types.package;
+        readOnly = true;
+        description = ''
+          Per-cluster kapp-format manifests for direct-apply bootstrap.
+          When strategy is kapp, this equals manifests. Otherwise renders
+          with kapp for use by `lab up` (which always direct-applies).
+        '';
+      };
+
       package = mkOption {
         type = types.package;
         readOnly = true;
@@ -130,6 +140,10 @@ in
           }) sec.keys;
         }) config.lab.secrets.managed;
       };
+
+      # Deployment plan for the CLI executor
+      deploymentPlan = config.lab.out.deploymentPlan;
+      teardownPlan = config.lab.out.teardownPlan;
     };
 
     allClusters = config.lab.clusters;
@@ -171,6 +185,26 @@ in
         }
       ) config.lab.out.allClusters;
 
+    bootstrapManifests =
+      let
+        strategy = config.lab.cd.strategy;
+        prefix = config.lab.prefix;
+      in
+      if strategy == "kapp" then
+        config.lab.out.manifests
+      else
+        lib.mapAttrs (
+          name: clusterCfg:
+          renderers.kapp {
+            clusterName = name;
+            inherit prefix;
+            labNamespaces = config.lab.out.labNamespaces.${name};
+            phases = clusterCfg.cluster.out.phases;
+            phaseOrder = clusterCfg.cluster.out.phaseOrder;
+            deployConfig = config.lab.cd.kapp;
+          }
+        ) config.lab.out.allClusters;
+
     package =
       let
         metadata = {
@@ -203,6 +237,28 @@ in
             name: pkg: "ln -s ${pkg}/${name} $out/manifests/${name}"
           ) config.lab.out.manifests
         );
+        # Collect all teardown hook packages so they get built with the lab package
+        teardownHookLinks = lib.concatStringsSep "\n" (
+          lib.concatLists (
+            lib.mapAttrsToList (
+              clusterName: clusterCfg:
+              map (step:
+                "ln -s ${step.package}/bin/${step.name} $out/hooks/${clusterName}-${step.name}"
+              ) (clusterCfg.lifecycle.teardown or [ ])
+            ) config.lab.out.allClusters
+          )
+        );
+        hasTeardownHooks = teardownHookLinks != "";
+        strategy = config.lab.cd.strategy;
+        bootstrapLinks =
+          if strategy == "kapp" then
+            "ln -s $out/manifests $out/bootstrap"
+          else
+            lib.concatStringsSep "\n" (
+              lib.mapAttrsToList (
+                name: pkg: "ln -s ${pkg}/${name} $out/bootstrap/${name}"
+              ) config.lab.out.bootstrapManifests
+            );
       in
       pkgs.runCommand "lab-${config.lab.name}"
         {
@@ -212,8 +268,12 @@ in
         }
         ''
           mkdir -p $out/manifests $out/bin
+          ${lib.optionalString (strategy != "kapp") "mkdir -p $out/bootstrap"}
+          ${lib.optionalString hasTeardownHooks "mkdir -p $out/hooks"}
           jq . "$metadataTextPath" > $out/metadata.json
           ${manifestLinks}
+          ${bootstrapLinks}
+          ${teardownHookLinks}
           ${
             if config.lab.ops.out.tool != null then
               "ln -s ${config.lab.ops.out.tool}/bin/${config.lab.name}-ops $out/bin/${config.lab.name}-ops"

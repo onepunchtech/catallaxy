@@ -677,7 +677,7 @@ in
               echo "Deleting all Crossplane managed resources..."
               kubectl --context "$CONTEXT" delete managed --all --wait=false 2>/dev/null || true
               echo "Waiting for external resources to be cleaned up..."
-              for i in $(seq 1 60); do
+              for _i in $(seq 1 60); do
                 COUNT=$(kubectl --context "$CONTEXT" get managed --no-headers 2>/dev/null | wc -l)
                 if [ "$COUNT" -eq 0 ]; then
                   echo "All Crossplane managed resources deleted"
@@ -686,7 +686,9 @@ in
                 echo "  waiting... ($COUNT resources remaining)"
                 sleep 10
               done
-              echo "Warning: some managed resources may still exist"
+              echo "ERROR: timed out waiting for managed resources to be deleted"
+              echo "Cloud resources may be orphaned — check your provider console"
+              exit 1
             '';
           };
         }

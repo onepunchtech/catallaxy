@@ -155,11 +155,16 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
         manifests_path.clone()
     };
 
-    match strategy {
-        "kapp" => apply_kapp(ctx, &kube_context, &effective_path, &args, &config).await,
-        "argocd" => apply_gitops(ctx, "argocd", &effective_path, &config).await,
-        "fleet" => apply_gitops(ctx, "fleet", &effective_path, &config).await,
-        _ => bail!("Unknown deploy strategy: {strategy}"),
+    if args.force {
+        // Force mode: always direct-apply via kapp (used by lab up bootstrap)
+        apply_kapp(ctx, &kube_context, &effective_path, &args, &config).await
+    } else {
+        match strategy {
+            "kapp" => apply_kapp(ctx, &kube_context, &effective_path, &args, &config).await,
+            "argocd" => apply_gitops(ctx, "argocd", &effective_path, &config).await,
+            "fleet" => apply_gitops(ctx, "fleet", &effective_path, &config).await,
+            _ => bail!("Unknown deploy strategy: {strategy}"),
+        }
     }
 }
 

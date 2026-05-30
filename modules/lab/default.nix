@@ -9,6 +9,7 @@
     ./ingress.nix
     ./ops.nix
     ./secrets.nix
+    ./planner.nix
     ./bgp-router.nix
     ./out.nix
   ];

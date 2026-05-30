@@ -73,6 +73,16 @@ pub enum LabCommands {
         name: Option<String>,
     },
 
+    /// Show the computed deployment plan without executing
+    Plan {
+        /// Lab name (defaults to flake fragment if provided)
+        name: Option<String>,
+
+        /// Show teardown plan instead of deployment plan
+        #[arg(long)]
+        teardown: bool,
+    },
+
     /// Apply manifests to all lab clusters
     Apply {
         /// Lab name (defaults to flake fragment if provided)
@@ -191,6 +201,10 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
             apply(ctx, &name, phase, component, dry_run, force).await
+        }
+        LabCommands::Plan { name, teardown } => {
+            let name = ctx.resolve_lab_name(name.as_deref())?;
+            plan(ctx, &name, teardown).await
         }
         LabCommands::Down { name } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
@@ -948,226 +962,200 @@ async fn up(
     _phase: Option<String>,
     _component: Option<String>,
     dry_run: bool,
-    force: bool,
+    _force: bool,
 ) -> Result<()> {
-    // Init (services + cluster provisioning)
-    init(ctx, name).await?;
-
     let lab = crate::nix::get_lab_config(ctx, name)?;
 
-    let cluster_names: Vec<String> = lab["clusterNames"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
+    let steps = lab
+        .get("deploymentPlan")
+        .and_then(|v| v.as_array())
+        .cloned()
         .unwrap_or_default();
 
-    // Import the ingress CA into each cluster so cert-manager uses the same CA
-    if lab.pointer("/services/ingress").is_some() {
-        let ingress_dir = service_state_dir(name, "ingress");
-        let ca_crt = ingress_dir.join("ca.crt");
-        let ca_key = ingress_dir.join("ca.key");
-
-        if ca_crt.exists() && ca_key.exists() {
-            println!();
-            println!("{} Importing lab CA into clusters...", style(">>>").cyan());
-            for cluster_name in &cluster_names {
-                let context = resolve_cluster_context(&lab, cluster_name);
-                // Create cert-manager namespace if it doesn't exist
-                let _ = std::process::Command::new("kubectl")
-                    .args(["--context", &context, "create", "namespace", "cert-manager"])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-
-                // Create/update the CA secret
-                let _ = std::process::Command::new("kubectl")
-                    .args([
-                        "--context",
-                        &context,
-                        "delete",
-                        "secret",
-                        "lab-ca-ca-secret",
-                        "-n",
-                        "cert-manager",
-                    ])
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-
-                let status = std::process::Command::new("kubectl")
-                    .args([
-                        "--context",
-                        &context,
-                        "create",
-                        "secret",
-                        "tls",
-                        "lab-ca-ca-secret",
-                        "-n",
-                        "cert-manager",
-                        "--cert",
-                    ])
-                    .arg(&ca_crt)
-                    .args(["--key"])
-                    .arg(&ca_key)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .status();
-
-                match status {
-                    Ok(s) if s.success() => {
-                        println!(
-                            "{} Lab CA imported into cluster '{}'",
-                            style(">>>").green(),
-                            cluster_name
-                        );
-                    }
-                    _ => {
-                        println!(
-                            "{} Failed to import CA into '{}' (cluster may not be ready)",
-                            style(">>>").yellow(),
-                            cluster_name
-                        );
-                    }
-                }
-            }
-        }
+    if steps.is_empty() {
+        println!("{} No deployment steps for lab '{name}'", style(">>>").yellow());
+        return Ok(());
     }
 
-    // Build the lab package once — contains all clusters' rendered manifests
+    println!(
+        "{} Deploying lab '{name}' ({} steps)",
+        style("catallaxy").cyan().bold(),
+        steps.len()
+    );
+
+    if dry_run {
+        println!();
+        println!("{} Dry run — showing plan:", style("Note:").yellow());
+        plan(ctx, name, false).await?;
+        return Ok(());
+    }
+
+    // Determine CD strategy — lab up always direct-applies via bootstrap manifests
+    let strategy = lab
+        .pointer("/cd/strategy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("kapp");
+
+    // Build manifests once upfront
     println!();
     println!("{} Building lab manifests...", style(">>>").cyan());
     let lab_package = crate::nix::build_lab_package(ctx, name)?;
-    println!("{} Lab package built: {lab_package}", style(">>>").green());
+    println!("{} Lab package built", style(">>>").green());
 
-    // Step 3: Apply manifests to all clusters in parallel
-    println!();
-    println!(
-        "{}",
-        style(format!(
-            "Step 3: Apply manifests ({})",
-            cluster_names.join(", ")
-        ))
-        .bold()
-    );
+    // Execute each step
+    for (i, step) in steps.iter().enumerate() {
+        let step_type = step["type"].as_str().unwrap_or("unknown");
+        let description = step["description"].as_str().unwrap_or(step_type);
 
-    // Only apply to locally-provisioned clusters (k3d, talos).
-    // External/crossplane clusters are provisioned out-of-band (e.g., via CAPI).
-    let mut deployable_clusters = Vec::new();
-    for cluster_name in &cluster_names {
-        let provisioner = lab
-            .pointer(&format!("/clusters/{cluster_name}/provisioner"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("k3d");
-        match provisioner {
-            "external" | "crossplane" => {
-                println!(
-                    "{} Skipping '{}' — {} cluster (provisioned out-of-band)",
-                    style(">>>").yellow(),
-                    cluster_name,
-                    provisioner,
-                );
-            }
-            _ => {
-                deployable_clusters.push(cluster_name.clone());
-            }
-        }
-    }
-
-    let mut join_set = tokio::task::JoinSet::new();
-    for cluster_name in deployable_clusters.clone() {
-        let ctx = ctx.clone();
-        let lab_package = lab_package.clone();
-        join_set.spawn(async move {
-            let cluster_manifests = format!("{lab_package}/manifests/{cluster_name}");
-            apply_cluster_components(&ctx, &cluster_name, dry_run, force, Some(cluster_manifests))
-                .await
-                .map_err(|e| (cluster_name, e))
-        });
-    }
-
-    let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
-    while let Some(result) = join_set.join_next().await {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err((cluster_name, e))) => {
-                println!("{} [{}] Failed: {}", style("!!!").red(), cluster_name, e);
-                errors.push((cluster_name, e));
-            }
-            Err(e) => {
-                println!("{} Task panicked: {}", style("!!!").red(), e);
-                errors.push(("unknown".to_string(), anyhow::anyhow!("task panicked: {e}")));
-            }
-        }
-    }
-
-    if !errors.is_empty() {
         println!();
         println!(
-            "{} {} cluster(s) failed to deploy:",
-            style("!!!").red().bold(),
-            errors.len()
+            "{} Step {}/{}: {}",
+            style(">>>").cyan(),
+            i + 1,
+            steps.len(),
+            style(description).bold(),
         );
-        for (cluster_name, e) in &errors {
-            println!();
-            println!(
-                "  {} {}",
-                style(format!("[{cluster_name}]")).red().bold(),
-                e
-            );
-            let mut source = e.source();
-            while let Some(cause) = source {
-                println!("    {} {cause}", style("caused by:").dim());
-                source = cause.source();
+
+        match step_type {
+            "setup-services" => {
+                // Init services (DNS, registry, ingress, network)
+                init(ctx, name).await?;
             }
-        }
-        println!();
-        let names: Vec<&str> = errors.iter().map(|(n, _)| n.as_str()).collect();
-        bail!("Failed to deploy clusters: {}", names.join(", "));
-    }
 
-    // Step 4: Sync kubeconfigs for CAPI-managed clusters
-    if let Some((mgmt_name, mgmt_config)) = find_capi_mgmt_cluster(&lab) {
-        let mgmt_context = resolve_cluster_context(&lab, &mgmt_name);
-        let capi_clusters = get_capi_cluster_names(&mgmt_config);
+            "create-cluster" => {
+                let cluster_name = step["name"].as_str().unwrap_or("unknown");
+                let config = crate::nix::get_cluster_config_from_lab(&lab, cluster_name)?;
+                super::cluster::provision_cluster_with_registry(
+                    ctx,
+                    cluster_name,
+                    &config,
+                    None, // TODO: registry yaml
+                )?;
 
-        if !capi_clusters.is_empty() {
-            println!();
-            println!(
-                "{}",
-                style(format!(
-                    "Step 4: Syncing kubeconfigs for CAPI clusters ({})",
-                    capi_clusters.join(", ")
-                ))
-                .bold()
-            );
+                // Import lab CA if ingress is configured
+                if lab.pointer("/services/ingress").is_some() {
+                    import_lab_ca(name, &lab, cluster_name);
+                }
+            }
 
-            let capi_ns = mgmt_config
-                .pointer("/components/cluster-api/namespace")
-                .and_then(|v| v.as_str())
-                .unwrap_or("capi-system");
+            "deploy-manifests" => {
+                let target = step["target"].as_str().unwrap_or("unknown");
+                // Use bootstrap/ (kapp format) for direct-apply; manifests/ is strategy-specific
+                let subdir = if strategy == "kapp" { "manifests" } else { "bootstrap" };
+                let cluster_manifests = format!("{lab_package}/{subdir}/{target}");
 
-            for cluster_name in &capi_clusters {
-                println!(
-                    "{} Waiting for kubeconfig: {cluster_name}...",
-                    style(">>>").cyan()
-                );
-                match sync_capi_kubeconfig(&mgmt_context, cluster_name, capi_ns, "10m") {
-                    Ok(()) => {
-                        println!(
-                            "{} Kubeconfig synced: {cluster_name} (context: {cluster_name}-admin)",
-                            style(">>>").green()
-                        );
-                    }
-                    Err(e) => {
-                        println!(
-                            "{} Failed to sync kubeconfig for {cluster_name}: {e}",
-                            style("Warning:").yellow()
-                        );
+                if std::path::Path::new(&cluster_manifests).exists() {
+                    // lab up always forces — it's a bootstrap path
+                    apply_cluster_components(ctx, target, dry_run, true, Some(cluster_manifests))
+                        .await?;
+                } else {
+                    println!(
+                        "{} No manifests for '{}', skipping",
+                        style(">>>").yellow(),
+                        target
+                    );
+                }
+            }
+
+            "wait-for-resources" => {
+                let target = step["target"].as_str().unwrap_or("unknown");
+                let context = resolve_cluster_context(&lab, target);
+
+                if let Some(resources) = step["resources"].as_array() {
+                    for resource in resources {
+                        let res_name = resource["name"].as_str().unwrap_or("?");
+                        println!("{} Waiting for '{res_name}' to be ready...", style(">>>").cyan());
+
+                        // Poll until the resource is READY
+                        let start = std::time::Instant::now();
+                        let timeout = std::time::Duration::from_secs(600);
+                        loop {
+                            // Check Crossplane managed resource readiness
+                            let output = std::process::Command::new("kubectl")
+                                .args([
+                                    "--context", &context,
+                                    "get", "managed",
+                                    "--field-selector", &format!("metadata.name={res_name}"),
+                                    "-o", "jsonpath={.items[0].status.conditions[?(@.type==\"Ready\")].status}",
+                                ])
+                                .output();
+
+                            if let Ok(ref o) = output {
+                                let status = String::from_utf8_lossy(&o.stdout);
+                                if status.trim() == "True" {
+                                    println!("{} '{res_name}' is ready", style(">>>").green());
+                                    break;
+                                }
+                            }
+
+                            if start.elapsed() > timeout {
+                                bail!("Timed out waiting for '{res_name}' to be ready");
+                            }
+
+                            println!("  waiting... ({}s elapsed)", start.elapsed().as_secs());
+                            tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+                        }
                     }
                 }
+            }
+
+            "sync-kubeconfig" => {
+                if let Some(clusters) = step["clusters"].as_array() {
+                    let target = step.get("target")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| steps.iter()
+                            .find(|s| s["type"].as_str() == Some("create-cluster"))
+                            .and_then(|s| s["name"].as_str()))
+                        .unwrap_or("mgmt");
+                    let context = resolve_cluster_context(&lab, target);
+
+                    for cluster_val in clusters {
+                        let cluster_name = cluster_val.as_str().unwrap_or("?");
+                        println!("{} Syncing kubeconfig for '{cluster_name}'...", style(">>>").cyan());
+
+                        match sync_crossplane_kubeconfig(&context, cluster_name) {
+                            Ok(()) => {
+                                println!("{} Kubeconfig synced for '{cluster_name}'", style(">>>").green());
+                            }
+                            Err(e) => {
+                                println!(
+                                    "{} Failed to sync kubeconfig for '{cluster_name}': {e}",
+                                    style("Warning:").yellow()
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            "pivot" => {
+                let from = step["from"].as_str().unwrap_or("?");
+                let to = step["to"].as_str().unwrap_or("?");
+                println!("{} Pivoting from '{from}' to '{to}'...", style(">>>").cyan());
+                println!("{} Pivot not yet implemented", style("Warning:").yellow());
+            }
+
+            "destroy-cluster" => {
+                let cluster_name = step["name"].as_str().unwrap_or("unknown");
+                println!("{} Destroying ephemeral cluster '{cluster_name}'...", style(">>>").cyan());
+                let config = crate::nix::get_cluster_config_from_lab(&lab, cluster_name)?;
+                super::cluster::deprovision_cluster(ctx, cluster_name, &config)?;
+            }
+
+            "run-script" => {
+                let bin = step["bin"].as_str().unwrap_or("");
+                if !bin.is_empty() {
+                    let status = std::process::Command::new(bin).status();
+                    if let Ok(s) = status {
+                        if !s.success() {
+                            println!("{} Script failed (exit {})", style("Warning:").yellow(), s.code().unwrap_or(-1));
+                        }
+                    }
+                }
+            }
+
+            other => {
+                println!("{} Unknown step type: {other}", style("Warning:").yellow());
             }
         }
     }
@@ -1175,14 +1163,51 @@ async fn up(
     // Summary
     println!();
     println!("{} Lab '{}' is up", style("catallaxy").cyan().bold(), name);
-    println!();
-    println!("Clusters:");
-    for cluster_name in &cluster_names {
-        let context = resolve_cluster_context(&lab, cluster_name);
-        println!("  {} (context: {})", style(cluster_name).green(), context,);
-    }
 
     Ok(())
+}
+
+/// Import lab CA certificate into a cluster for cert-manager
+fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str) {
+    let ingress_dir = service_state_dir(lab_name, "ingress");
+    let ca_crt = ingress_dir.join("ca.crt");
+    let ca_key = ingress_dir.join("ca.key");
+
+    if !ca_crt.exists() || !ca_key.exists() {
+        return;
+    }
+
+    let context = resolve_cluster_context(lab, cluster_name);
+
+    let _ = std::process::Command::new("kubectl")
+        .args(["--context", &context, "create", "namespace", "cert-manager"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    let _ = std::process::Command::new("kubectl")
+        .args(["--context", &context, "delete", "secret", "lab-ca-ca-secret", "-n", "cert-manager"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    let status = std::process::Command::new("kubectl")
+        .args(["--context", &context, "create", "secret", "tls", "lab-ca-ca-secret", "-n", "cert-manager", "--cert"])
+        .arg(&ca_crt)
+        .args(["--key"])
+        .arg(&ca_key)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            println!("{} Lab CA imported into '{cluster_name}'", style(">>>").green());
+        }
+        _ => {
+            println!("{} Failed to import CA into '{cluster_name}'", style(">>>").yellow());
+        }
+    }
 }
 
 /// Find the CAPI management cluster in a lab config
@@ -1628,6 +1653,192 @@ fn chrono_simple_timestamp() -> String {
     format!("{}", secs)
 }
 
+/// Sync kubeconfig for a Crossplane-provisioned DOKS cluster.
+/// Gets the cluster ID from the Crossplane resource, the DO token from the credentials secret,
+/// and fetches the kubeconfig via the DO API.
+fn sync_crossplane_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<()> {
+    // Get cluster ID from Crossplane managed resource
+    let id_output = std::process::Command::new("kubectl")
+        .args([
+            "--context", mgmt_context,
+            "get", "clusters.kubernetes.digitalocean.crossplane.io", cluster_name,
+            "-o", "jsonpath={.status.atProvider.id}",
+        ])
+        .output()
+        .context("Failed to get cluster ID")?;
+
+    let cluster_id = String::from_utf8_lossy(&id_output.stdout).trim().to_string();
+    if cluster_id.is_empty() {
+        bail!("No cluster ID found for '{cluster_name}'");
+    }
+
+    // Get DO token from the credentials secret
+    let token_output = std::process::Command::new("kubectl")
+        .args([
+            "--context", mgmt_context,
+            "get", "secret", "do-credentials", "-n", "crossplane-system",
+            "-o", "jsonpath={.data.credentials}",
+        ])
+        .output()
+        .context("Failed to get DO credentials")?;
+
+    let creds_b64 = String::from_utf8_lossy(&token_output.stdout).trim().to_string();
+    let creds_json = String::from_utf8(
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &creds_b64)
+            .context("Failed to decode credentials")?,
+    )?;
+    let token: String = serde_json::from_str::<serde_json::Value>(&creds_json)?
+        .get("token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("No token in credentials"))?
+        .to_string();
+
+    // Fetch kubeconfig via DO API
+    let kubeconfig_output = std::process::Command::new("curl")
+        .args([
+            "-s",
+            "-H", &format!("Authorization: Bearer {token}"),
+            &format!("https://api.digitalocean.com/v2/kubernetes/clusters/{cluster_id}/kubeconfig"),
+        ])
+        .output()
+        .context("Failed to fetch kubeconfig from DO API")?;
+
+    let kubeconfig = String::from_utf8_lossy(&kubeconfig_output.stdout);
+    if !kubeconfig.contains("apiVersion") {
+        bail!("Invalid kubeconfig response from DO API");
+    }
+
+    // Save and merge
+    let kube_dir = dirs::home_dir().unwrap_or_default().join(".kube");
+    std::fs::create_dir_all(&kube_dir)?;
+    let kube_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
+    std::fs::write(&kube_path, kubeconfig.as_bytes())?;
+
+    tools::kube::merge_kubeconfig(&kube_path, cluster_name)?;
+
+    Ok(())
+}
+
+/// Show the computed deployment plan
+async fn plan(ctx: &CataContext, name: &str, teardown: bool) -> Result<()> {
+    let lab = crate::nix::get_lab_config(ctx, name)?;
+
+    let (plan_key, plan_label) = if teardown {
+        ("teardownPlan", "Teardown")
+    } else {
+        ("deploymentPlan", "Deployment")
+    };
+
+    println!(
+        "{} {} plan for '{name}'",
+        style("catallaxy").cyan().bold(),
+        plan_label,
+    );
+    println!();
+
+    if let Some(steps) = lab.get(plan_key).and_then(|v| v.as_array()) {
+        for (i, step) in steps.iter().enumerate() {
+            let step_type = step["type"].as_str().unwrap_or("unknown");
+            let description = step["description"].as_str().unwrap_or("");
+
+            let icon = match step_type {
+                "setup-services" => "🔧",
+                "create-cluster" => "📦",
+                "deploy-manifests" => "🚀",
+                "inject-secrets" => "🔑",
+                "wait-for-resources" => "⏳",
+                "sync-kubeconfig" => "🔗",
+                "pivot" => "🔄",
+                "destroy-cluster" => "💥",
+                "run-script" => "⚡",
+                "teardown-hooks" => "🧹",
+                "remove-services" => "🔧",
+                "remove-network" => "🌐",
+                "remove-trust" => "🔒",
+                _ => "•",
+            };
+
+            println!(
+                "  {} {} {}",
+                style(format!("{}.", i + 1)).dim(),
+                icon,
+                description,
+            );
+
+            // Show step details
+            match step_type {
+                "create-cluster" => {
+                    let provisioner = step["provisioner"].as_str().unwrap_or("unknown");
+                    let name = step["name"].as_str().unwrap_or("?");
+                    let ephemeral = step["ephemeral"].as_bool().unwrap_or(false);
+                    println!(
+                        "     {} provisioner={}, ephemeral={}",
+                        style("→").dim(),
+                        provisioner,
+                        ephemeral
+                    );
+                    let _ = name; // used in description
+                }
+                "deploy-manifests" => {
+                    let target = step["target"].as_str().unwrap_or("?");
+                    println!("     {} target={}", style("→").dim(), target);
+                }
+                "wait-for-resources" => {
+                    let target = step["target"].as_str().unwrap_or("?");
+                    if let Some(resources) = step["resources"].as_array() {
+                        let names: Vec<&str> = resources
+                            .iter()
+                            .filter_map(|r| r["name"].as_str())
+                            .collect();
+                        println!(
+                            "     {} on={}, waiting for: {}",
+                            style("→").dim(),
+                            target,
+                            names.join(", ")
+                        );
+                    }
+                }
+                "sync-kubeconfig" => {
+                    let source = step["source"].as_str().unwrap_or("?");
+                    if let Some(clusters) = step["clusters"].as_array() {
+                        let names: Vec<&str> =
+                            clusters.iter().filter_map(|c| c.as_str()).collect();
+                        println!(
+                            "     {} via={}, clusters: {}",
+                            style("→").dim(),
+                            source,
+                            names.join(", ")
+                        );
+                    }
+                }
+                "pivot" => {
+                    let from = step["from"].as_str().unwrap_or("?");
+                    let to = step["to"].as_str().unwrap_or("?");
+                    println!("     {} {} → {}", style("→").dim(), from, to);
+                }
+                "teardown-hooks" | "destroy-cluster" => {
+                    let target = step["target"]
+                        .as_str()
+                        .or_else(|| step["name"].as_str())
+                        .unwrap_or("?");
+                    println!("     {} cluster={}", style("→").dim(), target);
+                }
+                _ => {}
+            }
+        }
+
+        println!();
+        println!(
+            "  {} steps total",
+            style(steps.len().to_string()).bold()
+        );
+    } else {
+        println!("  (no {} plan computed)", plan_label.to_lowercase());
+    }
+
+    Ok(())
+}
+
 /// Stop lab clusters (preserves state, restartable with `lab up`)
 async fn down(ctx: &CataContext, name: &str) -> Result<()> {
     println!(
@@ -1696,98 +1907,137 @@ async fn destroy(ctx: &CataContext, name: &str) -> Result<()> {
 
     let lab = crate::nix::get_lab_config(ctx, name)?;
 
-    let cluster_names: Vec<String> = lab["clusterNames"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
+    let steps = lab
+        .get("teardownPlan")
+        .and_then(|v| v.as_array())
+        .cloned()
         .unwrap_or_default();
 
-    // 1. Run lifecycle teardown hooks, then destroy clusters
-    if !cluster_names.is_empty() {
+    if steps.is_empty() {
+        println!("{} No teardown steps for lab '{name}'", style(">>>").yellow());
+        return Ok(());
+    }
+
+    // Build lab package to realize teardown hook binaries (nix eval gives
+    // store paths but doesn't build them)
+    let has_hooks = steps.iter().any(|s| s["type"].as_str() == Some("teardown-hooks"));
+    if has_hooks {
+        println!("{} Building teardown hooks...", style(">>>").cyan());
+        crate::nix::build_lab_package(ctx, name)?;
+    }
+
+    println!(
+        "{} Teardown plan ({} steps)",
+        style(">>>").cyan(),
+        steps.len()
+    );
+
+    for (i, step) in steps.iter().enumerate() {
+        let step_type = step["type"].as_str().unwrap_or("unknown");
+        let description = step["description"].as_str().unwrap_or(step_type);
+
         println!();
-        println!("{}", style("Clusters:").bold());
+        println!(
+            "{} Step {}/{}: {}",
+            style(">>>").cyan(),
+            i + 1,
+            steps.len(),
+            style(description).bold(),
+        );
 
-        for cluster_name in &cluster_names {
-            match crate::nix::get_cluster_config_from_lab(&lab, cluster_name) {
-                Ok(config) => {
-                    // Execute teardown steps before destroying
-                    if let Some(steps) = config
-                        .pointer("/lifecycle/teardown")
-                        .and_then(|v| v.as_array())
-                    {
-                        for step in steps {
-                            let step_name = step["name"].as_str().unwrap_or("unknown");
-                            let description = step["description"].as_str().unwrap_or("");
-                            let bin = step["bin"].as_str().unwrap_or("");
+        match step_type {
+            "teardown-hooks" => {
+                let target = step["target"].as_str().unwrap_or("unknown");
+                let config = crate::nix::get_cluster_config_from_lab(&lab, target)?;
 
-                            if bin.is_empty() {
-                                continue;
+                if let Some(hooks) = config
+                    .pointer("/lifecycle/teardown")
+                    .and_then(|v| v.as_array())
+                {
+                    for hook in hooks {
+                        let hook_name = hook["name"].as_str().unwrap_or("unknown");
+                        let hook_desc = hook["description"].as_str().unwrap_or(hook_name);
+                        let bin = hook["bin"].as_str().unwrap_or("");
+
+                        if bin.is_empty() {
+                            continue;
+                        }
+
+                        println!(
+                            "{} [{}] {}...",
+                            style(">>>").cyan(),
+                            target,
+                            hook_desc,
+                        );
+
+                        match std::process::Command::new(bin).status() {
+                            Ok(s) if s.success() => {
+                                println!(
+                                    "{} [{}] {} complete",
+                                    style(">>>").green(),
+                                    target,
+                                    hook_name,
+                                );
                             }
-
-                            println!(
-                                "{} [{}] {}...",
-                                style(">>>").cyan(),
-                                cluster_name,
-                                if description.is_empty() {
-                                    step_name.to_string()
-                                } else {
-                                    description.to_string()
-                                },
-                            );
-
-                            match std::process::Command::new(bin).status() {
-                                Ok(s) if s.success() => {
-                                    println!(
-                                        "{} [{}] {} complete",
-                                        style(">>>").green(),
-                                        cluster_name,
-                                        step_name,
-                                    );
-                                }
-                                Ok(s) => {
-                                    println!(
-                                        "{} [{}] {} failed (exit {})",
-                                        style("Warning:").yellow(),
-                                        cluster_name,
-                                        step_name,
-                                        s.code().unwrap_or(-1),
-                                    );
-                                }
-                                Err(e) => {
-                                    println!(
-                                        "{} [{}] {} failed: {}",
-                                        style("Warning:").yellow(),
-                                        cluster_name,
-                                        step_name,
-                                        e,
-                                    );
-                                }
+                            Ok(s) => {
+                                println!(
+                                    "{} [{}] {} failed (exit {})",
+                                    style("ERROR").red(),
+                                    target,
+                                    hook_name,
+                                    s.code().unwrap_or(-1),
+                                );
+                                println!(
+                                    "{} Cloud resources may not have been fully cleaned up!",
+                                    style("Warning:").yellow(),
+                                );
+                            }
+                            Err(e) => {
+                                println!(
+                                    "{} [{}] {} failed: {}",
+                                    style("ERROR").red(),
+                                    target,
+                                    hook_name,
+                                    e,
+                                );
+                                println!(
+                                    "{} Cloud resources may not have been fully cleaned up!",
+                                    style("Warning:").yellow(),
+                                );
                             }
                         }
                     }
+                }
+            }
 
-                    // Destroy the cluster
-                    println!(
-                        "{} Destroying cluster '{cluster_name}'...",
-                        style(">>>").cyan()
-                    );
-                    if let Err(e) =
-                        super::cluster::deprovision_cluster(ctx, cluster_name, &config)
-                    {
+            "destroy-cluster" => {
+                let cluster_name = step["name"].as_str().unwrap_or("unknown");
+                match crate::nix::get_cluster_config_from_lab(&lab, cluster_name) {
+                    Ok(config) => {
+                        if let Err(e) =
+                            super::cluster::deprovision_cluster(ctx, cluster_name, &config)
+                        {
+                            println!(
+                                "{} Failed to destroy '{}': {}",
+                                style("Warning:").yellow(),
+                                cluster_name,
+                                e
+                            );
+                        }
+                    }
+                    Err(e) => {
                         println!(
-                            "{} Failed to destroy '{}': {}",
+                            "{} Failed to load config for '{}': {}",
                             style("Warning:").yellow(),
                             cluster_name,
                             e
                         );
                     }
                 }
-                Err(e) => {
+
+                if let Err(e) = kubeconfig::cleanup_kubeconfig(ctx, cluster_name) {
                     println!(
-                        "{} Failed to load config for '{}': {}",
+                        "{} Failed to cleanup kubeconfig for '{}': {}",
                         style("Warning:").yellow(),
                         cluster_name,
                         e
@@ -1795,68 +2045,64 @@ async fn destroy(ctx: &CataContext, name: &str) -> Result<()> {
                 }
             }
 
-            if let Err(e) = kubeconfig::cleanup_kubeconfig(ctx, cluster_name) {
-                println!(
-                    "{} Failed to cleanup kubeconfig for '{}': {}",
-                    style("Warning:").yellow(),
-                    cluster_name,
-                    e
-                );
-            }
-        }
-    }
+            "remove-services" => {
+                if let Some(services) = lab["services"].as_object() {
+                    for (svc_name, svc) in services {
+                        let container = svc["container"].as_str().unwrap_or("");
+                        let svc_desc = svc["description"].as_str().unwrap_or(svc_name);
 
-    // 2. Stop and remove infrastructure services
-    if let Some(services) = lab["services"].as_object() {
-        if !services.is_empty() {
-            println!();
-            println!("{}", style("Services:").bold());
-            for (svc_name, svc) in services {
-                let container = svc["container"].as_str().unwrap_or("");
-                let description = svc["description"].as_str().unwrap_or(svc_name);
+                        if container.is_empty() {
+                            continue;
+                        }
 
-                if container.is_empty() {
-                    continue;
+                        println!("{} Removing {}...", style(">>>").cyan(), svc_desc);
+                        tools::docker::stop_container(ctx, container)?;
+                        println!("{} {} removed", style(">>>").green(), svc_desc);
+                    }
                 }
+            }
 
-                println!("{} Removing {}...", style(">>>").cyan(), description);
-                tools::docker::stop_container(ctx, container)?;
-                println!("{} {} removed", style(">>>").green(), description);
+            "remove-network" => {
+                let network_name = lab
+                    .pointer("/network/name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(name);
+
+                println!(
+                    "{} Removing Docker network '{}'...",
+                    style(">>>").cyan(),
+                    network_name
+                );
+                let _ = std::process::Command::new("docker")
+                    .args(["network", "rm", network_name])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status();
+            }
+
+            "remove-trust" => {
+                println!("{} Cleaning up browser CA trust...", style(">>>").cyan());
+                if let Err(e) = trust_teardown(name).await {
+                    println!(
+                        "{} Failed to remove CA trust: {} (may not have been set up)",
+                        style(">>>").yellow(),
+                        e
+                    );
+                }
+            }
+
+            other => {
+                println!("{} Unknown teardown step type: {other}", style("Warning:").yellow());
             }
         }
     }
-
-    // 3. Remove the lab Docker network
-    let network_name = lab
-        .pointer("/network/name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(name);
 
     println!();
     println!(
-        "{} Removing Docker network '{}'...",
-        style(">>>").cyan(),
-        network_name
+        "{} Lab '{}' destroyed",
+        style("catallaxy").cyan().bold(),
+        name
     );
-    let _ = std::process::Command::new("docker")
-        .args(["network", "rm", network_name])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
-
-    // 4. Remove CA from browser trust store
-    println!();
-    println!("{} Cleaning up browser CA trust...", style(">>>").cyan());
-    if let Err(e) = trust_teardown(name).await {
-        println!(
-            "{} Failed to remove CA trust: {} (may not have been set up)",
-            style(">>>").yellow(),
-            e
-        );
-    }
-
-    println!();
-    println!("{} Lab '{name}' is down", style("catallaxy").cyan().bold());
 
     Ok(())
 }

@@ -59,7 +59,7 @@
   lab.clusters.core =
     { ... }:
     {
-      cluster.provisioner = lib.mkForce "external";
+      cluster.provisioner = lib.mkForce "crossplane";
       components.argocd.ha = true;
       components.cnpg.clusters.postgres.instances = lib.mkForce 2;
       components.cnpg.clusters.postgres.storage.size = lib.mkForce "20Gi";
@@ -68,7 +68,7 @@
   lab.clusters.obs =
     { ... }:
     {
-      cluster.provisioner = lib.mkForce "external";
+      cluster.provisioner = lib.mkForce "crossplane";
       components.otel-collector.gateway.replicas = 3;
     };
 }
