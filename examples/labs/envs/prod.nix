@@ -60,6 +60,23 @@
     { ... }:
     {
       cluster.provisioner = lib.mkForce "crossplane";
+
+      # Use Let's Encrypt for TLS on production clusters
+      components.cert-manager.selfSignedCA.enable = lib.mkForce false;
+      components.cert-manager.acme = {
+        enable = true;
+        email = "admin@homelab.prod";
+        dns01.provider = "cloudflare";
+      };
+
+      # Project CF token into cert-manager namespace for ACME DNS01
+      secrets.projections.cloudflare-api-token = {
+        source = "cf-token";
+        namespace = "cert-manager";
+        phase = "secrets";
+        keys.api-token.from = "token";
+      };
+
       components.argocd.ha = true;
       components.cnpg.clusters.postgres.instances = lib.mkForce 2;
       components.cnpg.clusters.postgres.storage.size = lib.mkForce "20Gi";
@@ -69,6 +86,23 @@
     { ... }:
     {
       cluster.provisioner = lib.mkForce "crossplane";
+
+      # Use Let's Encrypt for TLS on production clusters
+      components.cert-manager.selfSignedCA.enable = lib.mkForce false;
+      components.cert-manager.acme = {
+        enable = true;
+        email = "admin@homelab.prod";
+        dns01.provider = "cloudflare";
+      };
+
+      # Project CF token into cert-manager namespace for ACME DNS01
+      secrets.projections.cloudflare-api-token = {
+        source = "cf-token";
+        namespace = "cert-manager";
+        phase = "secrets";
+        keys.api-token.from = "token";
+      };
+
       components.otel-collector.gateway.replicas = 3;
     };
 }

@@ -7,10 +7,7 @@ in
   components.argocd = {
     enable = true;
     domain = "argocd.${dns.zone}";
-    tls.issuerRef = {
-      name = "lab-ca";
-      kind = "ClusterIssuer";
-    };
+    tls.issuerRef = config.components.cert-manager.ref.defaultIssuerRef;
     repositories.manifests = {
       url = "https://git.${dns.zone}/infrastructure/manifests.git";
       type = "git";

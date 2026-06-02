@@ -76,6 +76,23 @@ let
     }
   ) localClusters;
 
+  # Step: ensure secrets exist before deploying (when lab has managed secrets)
+  secretsSteps =
+    let
+      hasSecrets = (cfg.secrets.managed or { }) != { };
+      storeNames = lib.attrNames (cfg.secrets.stores or { });
+    in
+    if hasSecrets then
+      [
+        {
+          type = "ensure-secrets";
+          description = "Ensure lab secrets are generated and available";
+          stores = storeNames;
+        }
+      ]
+    else
+      [ ];
+
   # Steps: deploy manifests to local clusters
   deployLocalSteps = map (
     c: {
@@ -127,6 +144,7 @@ let
   fullPlan =
     serviceSteps
     ++ createLocalSteps
+    ++ secretsSteps
     ++ deployLocalSteps
     ++ crossplaneSteps;
 

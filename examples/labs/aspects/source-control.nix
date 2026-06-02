@@ -18,10 +18,7 @@ in
   components.forgejo = {
     enable = true;
     domain = "git.${dns.zone}";
-    tls.issuerRef = {
-      name = "lab-ca";
-      kind = "ClusterIssuer";
-    };
+    tls.issuerRef = config.components.cert-manager.ref.defaultIssuerRef;
     database = {
       host = config.components.cnpg.clusters.postgres.ref.host;
       name = "app";

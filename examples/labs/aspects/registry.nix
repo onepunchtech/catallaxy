@@ -7,10 +7,7 @@ in
   components.zot = {
     enable = true;
     domain = "registry.${dns.zone}";
-    tls.issuerRef = {
-      name = "lab-ca";
-      kind = "ClusterIssuer";
-    };
+    tls.issuerRef = config.components.cert-manager.ref.defaultIssuerRef;
     oidc = {
       enable = true;
       clientId = "zot";

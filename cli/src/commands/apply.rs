@@ -168,23 +168,30 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
     }
 }
 
-/// Resolve the kubectl context name for a cluster
+/// Resolve the kubectl context name for a cluster.
+/// Prefers the explicit `kubeContext` field from Nix config (set by provisioner modules).
+/// Falls back to provisioner-specific conventions for backward compatibility.
 fn resolve_kube_context(config: &serde_json::Value, cluster: &str) -> String {
-    let is_k3d = config["provisioner"].as_str().unwrap_or("k3d") == "k3d";
-
-    if is_k3d {
-        let default_name = format!("catallaxy-{cluster}");
-        let k3d_name = config
-            .pointer("/provisionerConfig/k3d/clusterName")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&default_name);
-        format!("k3d-{k3d_name}")
-    } else {
-        let provisioner = config["provisioner"].as_str().unwrap_or("k3d");
-        match provisioner {
-            "talos" => format!("{cluster}-admin@{cluster}"),
-            _ => cluster.to_string(),
+    // Use explicit kubeContext if available (set by cluster.ref.kubeContext in Nix)
+    if let Some(ctx) = config.get("kubeContext").and_then(|v| v.as_str()) {
+        if !ctx.is_empty() {
+            return ctx.to_string();
         }
+    }
+
+    // Fallback: provisioner-specific conventions
+    let provisioner = config["provisioner"].as_str().unwrap_or("k3d");
+    match provisioner {
+        "k3d" => {
+            let default_name = format!("catallaxy-{cluster}");
+            let k3d_name = config
+                .pointer("/provisionerConfig/k3d/clusterName")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&default_name);
+            format!("k3d-{k3d_name}")
+        }
+        "talos" => format!("{cluster}-admin@{cluster}"),
+        _ => cluster.to_string(),
     }
 }
 

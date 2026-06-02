@@ -1,5 +1,5 @@
 # Kanidm — central OIDC identity provider
-{ lab, ... }:
+{ config, lab, ... }:
 let
   dns = lab.dns;
 in
@@ -10,10 +10,7 @@ in
     enable = true;
     domain = "idm.${dns.zone}";
     origin = "https://idm.${dns.zone}";
-    tls.issuerRef = {
-      name = "lab-ca";
-      kind = "ClusterIssuer";
-    };
+    tls.issuerRef = config.components.cert-manager.ref.defaultIssuerRef;
     oauth2ClientNamespaceSelector = { }; # watch all namespaces for OAuth2Client CRs
 
     users = {

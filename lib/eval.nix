@@ -35,6 +35,7 @@ let
   # Separated from evalClusterJSON so it can be reused by lab evaluation.
   clusterConfigToJSON = config: {
     inherit (config.cluster) name provider provisioner;
+    kubeContext = config.cluster.ref.kubeContext;
     kubernetes = config.cluster.kubernetes;
     talos = config.cluster.talos;
     network = config.cluster.network;

@@ -172,6 +172,14 @@ in
             cfg.selfSignedCA.issuerName
           else
             null;
+        # Unified issuer ref — prefers ACME, falls back to self-signed CA
+        defaultIssuerRef =
+          if cfg.acme.enable then
+            { name = cfg.acme.issuerName; kind = "ClusterIssuer"; }
+          else if cfg.selfSignedCA.enable then
+            { name = cfg.selfSignedCA.issuerName; kind = "ClusterIssuer"; }
+          else
+            { };
         # Issuer refs for Certificate resources
         selfSignedIssuerRef = mkIf cfg.selfSignedCA.enable {
           name = cfg.selfSignedCA.issuerName;

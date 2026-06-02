@@ -29,10 +29,7 @@ in
     domain = "grafana.${dns.zone}";
     sidecar.dashboards.searchNamespace = "ALL";
     plugins = [ "grafana-lokiexplore-app" ];
-    tls.issuerRef = {
-      name = "lab-ca";
-      kind = "ClusterIssuer";
-    };
+    tls.issuerRef = config.components.cert-manager.ref.defaultIssuerRef;
     oidc = {
       enable = true;
       name = "Kanidm";

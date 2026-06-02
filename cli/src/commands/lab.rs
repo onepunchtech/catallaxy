@@ -765,9 +765,17 @@ fn resolve_cluster_context(lab: &serde_json::Value, cluster_name: &str) -> Strin
     crate::nix::get_cluster_config_from_lab(lab, cluster_name)
         .ok()
         .and_then(|c| {
-            c.pointer("/provisionerConfig/k3d/clusterName")
+            // Prefer explicit kubeContext from Nix config
+            c.get("kubeContext")
                 .and_then(|v| v.as_str())
-                .map(|k3d_name| format!("k3d-{k3d_name}"))
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .or_else(|| {
+                    // Fallback: k3d naming convention
+                    c.pointer("/provisionerConfig/k3d/clusterName")
+                        .and_then(|v| v.as_str())
+                        .map(|k3d_name| format!("k3d-{k3d_name}"))
+                })
         })
         .unwrap_or_else(|| format!("k3d-catallaxy-{cluster_name}"))
 }
@@ -1035,6 +1043,42 @@ async fn up(
                 // Import lab CA if ingress is configured
                 if lab.pointer("/services/ingress").is_some() {
                     import_lab_ca(name, &lab, cluster_name);
+                }
+            }
+
+            "ensure-secrets" => {
+                let stores: Vec<&str> = step["stores"]
+                    .as_array()
+                    .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+                    .unwrap_or_default();
+
+                let flake_root = std::path::PathBuf::from(ctx.flake_uri());
+                let mut missing = Vec::new();
+                for store_name in &stores {
+                    let enc_path = flake_root
+                        .join("secrets")
+                        .join(name)
+                        .join(format!("{store_name}.enc.yaml"));
+                    if enc_path.exists() {
+                        println!(
+                            "{} Store '{}' exists",
+                            style(">>>").green(),
+                            store_name
+                        );
+                    } else {
+                        missing.push(*store_name);
+                    }
+                }
+
+                if !missing.is_empty() {
+                    bail!(
+                        "Missing secret stores: {}\n\
+                         Run these commands first:\n  \
+                         cata secrets generate\n  \
+                         cata secrets edit {}",
+                        missing.join(", "),
+                        missing.first().unwrap_or(&""),
+                    );
                 }
             }
 
@@ -1708,11 +1752,36 @@ fn sync_crossplane_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<
         bail!("Invalid kubeconfig response from DO API");
     }
 
-    // Save and merge
+    // Save and rename context to match cluster name
     let kube_dir = dirs::home_dir().unwrap_or_default().join(".kube");
     std::fs::create_dir_all(&kube_dir)?;
     let kube_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
     std::fs::write(&kube_path, kubeconfig.as_bytes())?;
+
+    // Find the original context name from the downloaded kubeconfig and rename it
+    let orig_ctx = std::process::Command::new("kubectl")
+        .env("KUBECONFIG", kube_path.display().to_string())
+        .args(["config", "current-context"])
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+            } else {
+                None
+            }
+        });
+
+    if let Some(ref orig) = orig_ctx {
+        if orig != cluster_name {
+            let _ = std::process::Command::new("kubectl")
+                .env("KUBECONFIG", kube_path.display().to_string())
+                .args(["config", "rename-context", orig, cluster_name])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status();
+        }
+    }
 
     tools::kube::merge_kubeconfig(&kube_path, cluster_name)?;
 
@@ -1745,7 +1814,7 @@ async fn plan(ctx: &CataContext, name: &str, teardown: bool) -> Result<()> {
                 "setup-services" => "🔧",
                 "create-cluster" => "📦",
                 "deploy-manifests" => "🚀",
-                "inject-secrets" => "🔑",
+                "inject-secrets" | "ensure-secrets" => "🔑",
                 "wait-for-resources" => "⏳",
                 "sync-kubeconfig" => "🔗",
                 "pivot" => "🔄",
