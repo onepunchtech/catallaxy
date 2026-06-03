@@ -114,6 +114,9 @@ let
           }
         ];
         validation = {
+          hostname = cfg.domain;
+        }
+        // (if hasTrustBundle then {
           caCertificateRefs = [
             {
               group = "";
@@ -121,8 +124,9 @@ let
               name = caBundleConfigMap;
             }
           ];
-          hostname = cfg.domain;
-        };
+        } else {
+          wellKnownCACertificates = "System";
+        });
       };
     };
   };
@@ -190,8 +194,10 @@ let
         };
         dnsNames = [
           cfg.domain
-          "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local"
-        ];
+        ]
+        # Internal SAN only works with local CAs — ACME rejects non-public suffixes
+        ++ optional (!(config.components.cert-manager.acme.enable or false))
+          "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local";
       };
     };
   };
@@ -813,13 +819,18 @@ in
     {
       components.kanidm.ref =
         let
-          host = "kanidm.${cfg.namespace}.svc.cluster.local";
+          internalHost = "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local";
+          # With ACME, the cert only covers the public domain — internal services
+          # must use the public URL (routed in-cluster through the gateway).
+          useAcme = config.components.cert-manager.acme.enable or false;
+          effectiveHost = if useAcme then cfg.domain else internalHost;
+          effectiveUrl = if useAcme then cfg.origin else "https://${internalHost}:8443";
         in
         {
-          inherit host;
+          host = effectiveHost;
           namespace = cfg.namespace;
-          port = 8443;
-          url = "https://${host}:8443";
+          port = if useAcme then 443 else 8443;
+          url = effectiveUrl;
           externalUrl = cfg.origin;
           domain = cfg.domain;
           instanceName = cfg.instanceName;
@@ -827,7 +838,7 @@ in
           oidcDiscovery = "${cfg.origin}/.well-known/openid-configuration";
           oauth2Clients = mapAttrs (name: _: {
             issuer = "${cfg.origin}/oauth2/openid/${name}";
-            internalIssuer = "https://${host}:8443/oauth2/openid/${name}";
+            internalIssuer = "${effectiveUrl}/oauth2/openid/${name}";
             clientId = name;
           }) cfg.oauth2Clients;
           caSecretRef = {

@@ -942,6 +942,7 @@ async fn apply_cluster_components(
     dry_run: bool,
     force: bool,
     manifests_dir: Option<String>,
+    secrets_cache: Option<crate::commands::apply::SecretsCache>,
 ) -> Result<()> {
     println!(
         "{} Applying manifests to cluster '{}'...",
@@ -959,6 +960,7 @@ async fn apply_cluster_components(
             force,
             sequential: false,
             manifests_dir,
+            secrets_cache,
         },
     )
     .await
@@ -1010,6 +1012,10 @@ async fn up(
     let lab_package = crate::nix::build_lab_package(ctx, name)?;
     println!("{} Lab package built", style(">>>").green());
 
+    // Pre-decrypted SOPS cache — populated during ensure-secrets, reused across all clusters.
+    // Avoids repeated YubiKey PIN prompts when Crossplane provisioning creates a long gap.
+    let mut secrets_cache: Option<crate::commands::apply::SecretsCache> = None;
+
     // Execute each step
     for (i, step) in steps.iter().enumerate() {
         let step_type = step["type"].as_str().unwrap_or("unknown");
@@ -1052,19 +1058,17 @@ async fn up(
                     .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
 
-                let flake_root = std::path::PathBuf::from(ctx.flake_uri());
                 let mut missing = Vec::new();
+                let mut store_paths = Vec::new();
                 for store_name in &stores {
-                    let enc_path = flake_root
-                        .join("secrets")
-                        .join(name)
-                        .join(format!("{store_name}.enc.yaml"));
+                    let enc_path = crate::commands::secrets::store_file_path(ctx, name, store_name);
                     if enc_path.exists() {
                         println!(
                             "{} Store '{}' exists",
                             style(">>>").green(),
                             store_name
                         );
+                        store_paths.push((store_name.to_string(), enc_path));
                     } else {
                         missing.push(*store_name);
                     }
@@ -1080,6 +1084,37 @@ async fn up(
                         missing.first().unwrap_or(&""),
                     );
                 }
+
+                // Decrypt all stores now while the YubiKey session is active.
+                // The cache persists across all cluster deployments.
+                if !store_paths.is_empty() {
+                    println!(
+                        "{} Decrypting secret stores (cached for all clusters)...",
+                        style(">>>").cyan(),
+                    );
+                    let mut cache = std::collections::HashMap::new();
+                    for (store_name, enc_path) in &store_paths {
+                        match crate::commands::secrets::decrypt_sops_store(enc_path) {
+                            Ok(data) => {
+                                println!(
+                                    "{} Decrypted store '{}'",
+                                    style(">>>").green(),
+                                    store_name
+                                );
+                                cache.insert(store_name.clone(), data);
+                            }
+                            Err(e) => {
+                                println!(
+                                    "{} Failed to decrypt store '{}': {e}",
+                                    style("!!!").red(),
+                                    store_name,
+                                );
+                                bail!("SOPS decryption failed — is your key available?");
+                            }
+                        }
+                    }
+                    secrets_cache = Some(std::sync::Arc::new(cache));
+                }
             }
 
             "deploy-manifests" => {
@@ -1090,7 +1125,7 @@ async fn up(
 
                 if std::path::Path::new(&cluster_manifests).exists() {
                     // lab up always forces — it's a bootstrap path
-                    apply_cluster_components(ctx, target, dry_run, true, Some(cluster_manifests))
+                    apply_cluster_components(ctx, target, dry_run, true, Some(cluster_manifests), secrets_cache.clone())
                         .await?;
                 } else {
                     println!(
@@ -1375,6 +1410,7 @@ async fn apply(
                 force,
                 sequential: false,
                 manifests_dir: Some(cluster_manifests),
+                secrets_cache: None,
             },
         )
         .await?;

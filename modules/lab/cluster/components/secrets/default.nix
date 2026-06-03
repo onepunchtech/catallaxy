@@ -108,6 +108,41 @@ let
       ) proj.keys
     ) config.secrets.projections
   );
+
+  # Validate that projection phases don't come after phases that deploy
+  # components into the same namespace. A projection in phase Y is useless
+  # if the component needing it deploys in phase X where X < Y.
+  projectionPhaseAssertions = lib.concatLists (
+    lib.mapAttrsToList (
+      projName: proj:
+      let
+        projPhaseOrder = config.phases.${proj.phase}.order;
+        # Find the earliest phase that creates the projection's target namespace
+        namespacePhasePairs = lib.concatLists (
+          lib.mapAttrsToList (
+            phaseName: phaseCfg:
+            let
+              bundles = lib.attrValues phaseCfg.bundles;
+              nsInPhase = lib.concatMap (b: b.createNamespaces or [ ]) bundles;
+            in
+            if builtins.elem proj.namespace nsInPhase
+            then [ { name = phaseName; order = phaseCfg.order; } ]
+            else [ ]
+          ) config.phases
+        );
+        earliestOrder = lib.foldl' (
+          acc: p: if p.order < acc then p.order else acc
+        ) 999 namespacePhasePairs;
+        earliestPhase = lib.findFirst (
+          p: p.order == earliestOrder
+        ) { name = "unknown"; } namespacePhasePairs;
+      in
+      lib.optional (namespacePhasePairs != [ ] && earliestOrder < projPhaseOrder) {
+        assertion = false;
+        message = "Projection '${projName}' is in phase '${proj.phase}' (order ${toString projPhaseOrder}) but namespace '${proj.namespace}' has components deploying in phase '${earliestPhase.name}' (order ${toString earliestOrder}). The secret won't exist when the component deploys. Move the projection to phase '${earliestPhase.name}' or earlier.";
+      }
+    ) config.secrets.projections
+  );
 in
 {
   imports = [
@@ -133,5 +168,5 @@ in
     description = "Deprecated — use lab.secrets.managed + secrets.projections";
   };
 
-  config.assertions = projectionAssertions;
+  config.assertions = projectionAssertions ++ projectionPhaseAssertions;
 }

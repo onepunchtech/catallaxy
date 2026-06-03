@@ -80,6 +80,14 @@ in
           }
         ) allNamespaces;
 
+        # Check if any secret projections target a given phase.
+        # Projections are CLI-injected (not rendered), but the phase must exist
+        # in the output so the CLI knows to run injection at the right point.
+        projectionPhases = lib.unique (
+          map (proj: proj.phase)
+            (lib.attrValues config.secrets.projections)
+        );
+
         mergePhase =
           phaseName: phaseCfg:
           let
@@ -92,8 +100,9 @@ in
             phaseYamls = if phaseName == "namespaces" then allYamls ++ namespaceYamls else allYamls;
 
             hasContent = allHelmCharts != { } || allResources != { } || phaseYamls != [ ];
+            hasProjections = builtins.elem phaseName projectionPhases;
           in
-          if hasContent then
+          if hasContent || hasProjections then
             {
               inherit (phaseCfg)
                 order

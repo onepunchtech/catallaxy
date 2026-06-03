@@ -17,10 +17,10 @@ use crate::{generators, nix};
 
 #[derive(Subcommand)]
 pub enum SecretsCommands {
-    /// Decrypt, edit, and re-encrypt a secrets file
+    /// Decrypt, edit, and re-encrypt a secrets store
     Edit {
-        /// Path to the encrypted file
-        file: String,
+        /// Store name (e.g. 'cloud-creds') or path to encrypted file
+        store: String,
     },
 
     /// Encrypt a plaintext file
@@ -33,16 +33,16 @@ pub enum SecretsCommands {
         output: Option<String>,
     },
 
-    /// Decrypt a file to stdout
+    /// Decrypt a secrets store to stdout
     Decrypt {
-        /// Path to the encrypted file
-        file: String,
+        /// Store name (e.g. 'cloud-creds') or path to encrypted file
+        store: String,
     },
 
-    /// Rotate encryption keys on a SOPS file
+    /// Rotate encryption keys on a secrets store
     Rotate {
-        /// Path to the encrypted file
-        file: String,
+        /// Store name (e.g. 'cloud-creds') or path to encrypted file
+        store: String,
     },
 
     /// Generate values for managed secrets and encrypt with SOPS
@@ -117,21 +117,24 @@ struct LabSecrets {
 
 pub async fn run(ctx: &CataContext, command: SecretsCommands) -> Result<()> {
     match command {
-        SecretsCommands::Edit { file } => {
+        SecretsCommands::Edit { store } => {
             crate::tools::check_tool("sops")?;
-            edit(ctx, &file).await
+            let path = resolve_store_or_path(ctx, &store)?;
+            edit(ctx, &path).await
         }
         SecretsCommands::Encrypt { file, output } => {
             crate::tools::check_tool("sops")?;
             encrypt(ctx, &file, output.as_deref()).await
         }
-        SecretsCommands::Decrypt { file } => {
+        SecretsCommands::Decrypt { store } => {
             crate::tools::check_tool("sops")?;
-            decrypt(ctx, &file).await
+            let path = resolve_store_or_path(ctx, &store)?;
+            decrypt(ctx, &path).await
         }
-        SecretsCommands::Rotate { file } => {
+        SecretsCommands::Rotate { store } => {
             crate::tools::check_tool("sops")?;
-            rotate(ctx, &file).await
+            let path = resolve_store_or_path(ctx, &store)?;
+            rotate(ctx, &path).await
         }
         SecretsCommands::Generate {
             cluster,
@@ -260,12 +263,47 @@ fn get_lab_secrets(ctx: &CataContext, name: Option<&str>) -> Result<LabSecrets> 
     })
 }
 
-fn store_file_path(ctx: &CataContext, lab_name: &str, store_name: &str) -> PathBuf {
+/// Resolve the path to a SOPS store file.
+/// Searches `{flake_root}/secrets/{lab_name}/` first, then falls back to
+/// `{flake_root}/examples/labs/secrets/{lab_name}/` for repos where the main
+/// flake auto-discovers example lab definitions.
+pub fn store_file_path(ctx: &CataContext, lab_name: &str, store_name: &str) -> PathBuf {
     let flake_root = PathBuf::from(ctx.flake_uri());
-    flake_root
-        .join("secrets")
+    let filename = format!("{store_name}.enc.yaml");
+
+    let primary = flake_root.join("secrets").join(lab_name).join(&filename);
+    if primary.exists() {
+        return primary;
+    }
+
+    let fallback = flake_root
+        .join("examples/labs/secrets")
         .join(lab_name)
-        .join(format!("{store_name}.enc.yaml"))
+        .join(&filename);
+    if fallback.exists() {
+        return fallback;
+    }
+
+    // Return primary path (for error messages / generation)
+    primary
+}
+
+/// Resolve a store name to its file path, or pass through if it looks like a path already.
+fn resolve_store_or_path(ctx: &CataContext, input: &str) -> Result<String> {
+    // If it contains a path separator or ends in .yaml, treat as a file path
+    if input.contains('/') || input.contains('.') {
+        return Ok(input.to_string());
+    }
+    // Otherwise treat as a store name — resolve via lab config
+    let lab_name = ctx.resolve_lab_name(None)?;
+    let path = store_file_path(ctx, &lab_name, input);
+    if !path.exists() {
+        bail!(
+            "Store file not found: {}\nRun 'secrets generate' first, or pass a file path directly.",
+            path.display()
+        );
+    }
+    Ok(path.display().to_string())
 }
 
 async fn generate(
@@ -347,8 +385,10 @@ async fn generate(
         tmpfile.flush()?;
 
         let sops_match_path = format!("secrets/{}/{store_name}.enc.yaml", lab.lab_name);
+        let flake_root = PathBuf::from(ctx.flake_uri());
 
         let status = std::process::Command::new("sops")
+            .current_dir(&flake_root)
             .args([
                 "--encrypt",
                 "--input-type",
@@ -478,18 +518,23 @@ async fn list(ctx: &CataContext, cluster: Option<&str>) -> Result<()> {
 
 /// Decrypt a SOPS store file and return nested data.
 /// Store files are structured as: { managed_secret_name: { key: value } }
+/// Stderr is inherited so YubiKey/age plugins can prompt for PINs.
 pub fn decrypt_sops_store(
     path: &std::path::Path,
 ) -> Result<HashMap<String, HashMap<String, String>>> {
+    use std::process::Stdio;
+
     let output = std::process::Command::new("sops")
         .args(["--decrypt", "--output-type", "yaml"])
         .arg(path)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
         .output()
         .context("Failed to run sops decrypt")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("sops decrypt failed for {}: {stderr}", path.display());
+        bail!("sops decrypt failed for {}", path.display());
     }
 
     let yaml_str = String::from_utf8_lossy(&output.stdout);

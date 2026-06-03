@@ -42,6 +42,8 @@ let
 
       storage = {
         size = cluster.storage.size;
+      }
+      // lib.optionalAttrs (cluster.storage.storageClass != null) {
         storageClass = cluster.storage.storageClass;
       };
 
@@ -212,9 +214,9 @@ in
                 };
 
                 storageClass = mkOption {
-                  type = types.str;
-                  default = "local-path";
-                  description = "Storage class for PVCs (e.g., local-path, openebs-hostpath)";
+                  type = types.nullOr types.str;
+                  default = null;
+                  description = "Storage class for PVCs. Null uses the cluster default.";
                 };
               };
 

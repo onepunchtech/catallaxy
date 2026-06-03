@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
@@ -15,6 +16,9 @@ use serde::Deserialize;
 use crate::commands::secrets as secrets_mod;
 use crate::config::Context as CataContext;
 use crate::{nix, tools};
+
+/// Pre-decrypted SOPS store cache: { store_name → { managed_secret_name → { key → value } } }
+pub type SecretsCache = Arc<HashMap<String, HashMap<String, HashMap<String, String>>>>;
 
 #[derive(Args)]
 pub struct ApplyArgs {
@@ -45,6 +49,11 @@ pub struct ApplyArgs {
     /// Used by lab commands that build the lab package once for all clusters.
     #[arg(skip)]
     pub manifests_dir: Option<String>,
+
+    /// Pre-decrypted SOPS secrets cache (populated by `lab up` to avoid
+    /// repeated YubiKey PIN prompts across cluster deployments).
+    #[arg(skip)]
+    pub secrets_cache: Option<SecretsCache>,
 }
 
 /// A phase discovered from rendered manifest output
@@ -109,17 +118,9 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
     );
     println!();
 
-    // Get cluster config — try lab-scoped first (has labName), fall back to global
-    let config = ctx
-        .resolve_lab_name(None)
-        .ok()
-        .and_then(|lab_name| {
-            nix::get_lab_config(ctx, &lab_name)
-                .ok()
-                .and_then(|lab| nix::get_cluster_config_from_lab(&lab, &cluster).ok())
-        })
-        .or_else(|| nix::get_cluster_config(ctx, &cluster).ok())
-        .ok_or_else(|| anyhow::anyhow!("Failed to load config for cluster '{cluster}'"))?;
+    // Get cluster config. When a pre-built package is available (lab up),
+    // read from metadata.json to avoid a nix eval. Otherwise eval the flake.
+    let config = load_cluster_config(ctx, &cluster, args.manifests_dir.as_deref())?;
     let strategy = config
         .pointer("/deploy/strategy")
         .and_then(|v| v.as_str())
@@ -142,7 +143,15 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
         dir.clone()
     } else {
         println!("{} Building manifests...", style(">>>").cyan());
-        let path = nix::build_manifests(ctx, &cluster)?;
+        // When a lab name is available, build the lab package to get lab-specific
+        // manifests. The top-level manifests output is flattened across all labs
+        // and clusters with the same name from different labs can collide.
+        let path = if let Ok(lab_name) = ctx.resolve_lab_name(None) {
+            let lab_pkg = nix::build_lab_package(ctx, &lab_name)?;
+            format!("{lab_pkg}/manifests")
+        } else {
+            nix::build_manifests(ctx, &cluster)?
+        };
         println!("{} Manifests built: {path}", style(">>>").green());
         path
     };
@@ -193,6 +202,89 @@ fn resolve_kube_context(config: &serde_json::Value, cluster: &str) -> String {
         "talos" => format!("{cluster}-admin@{cluster}"),
         _ => cluster.to_string(),
     }
+}
+
+/// Load cluster config from package metadata or nix eval.
+///
+/// When a pre-built manifests dir is provided (e.g., from `lab up`), reads
+/// metadata.json from the package root. This avoids a nix eval at runtime.
+/// Falls back to nix eval for standalone `apply` commands.
+fn load_cluster_config(
+    ctx: &CataContext,
+    cluster: &str,
+    manifests_dir: Option<&str>,
+) -> Result<serde_json::Value> {
+    // Try reading from package metadata.json (lab up path)
+    if let Some(dir) = manifests_dir {
+        let manifests_path = Path::new(dir);
+        // manifests_dir is either "{pkg}/manifests/{cluster}" or "{pkg}/manifests"
+        // metadata.json is at the package root (parent of manifests/)
+        let pkg_root = manifests_path
+            .ancestors()
+            .find(|p| p.join("metadata.json").exists());
+
+        if let Some(root) = pkg_root {
+            let metadata_path = root.join("metadata.json");
+            if let Ok(content) = fs::read_to_string(&metadata_path) {
+                if let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(cluster_meta) = metadata.pointer(&format!("/clusters/{cluster}")) {
+                        // Build a config that has what apply needs: projections, kubeContext, deploy strategy, labName
+                        let mut config = serde_json::json!({});
+                        // Copy projections from metadata
+                        if let Some(projs) = cluster_meta.get("projections") {
+                            config["projections"] = projs.clone();
+                        }
+                        // Copy secrets metadata for SOPS resolution
+                        if let Some(secrets) = metadata.get("secrets") {
+                            config["secrets"] = secrets.clone();
+                        }
+                        config["labName"] = serde_json::Value::String(
+                            metadata.get("name").and_then(|v| v.as_str()).unwrap_or("default").to_string()
+                        );
+                        // Still need kubeContext and deploy strategy from nix eval
+                        // for now, merge with nix eval if available
+                        if let Ok(nix_config) = load_cluster_config_from_nix(ctx, cluster) {
+                            // Nix config is authoritative for runtime fields
+                            let mut merged = nix_config;
+                            // But use package projections (build-time truth)
+                            if let Some(projs) = cluster_meta.get("projections") {
+                                merged["projections"] = projs.clone();
+                            }
+                            return Ok(merged);
+                        }
+                        return Ok(config);
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: nix eval
+    load_cluster_config_from_nix(ctx, cluster)
+}
+
+/// Load cluster config via nix eval.
+/// Merges lab-level secrets metadata into the per-cluster config so
+/// inject_projections can resolve store names without a separate eval.
+fn load_cluster_config_from_nix(ctx: &CataContext, cluster: &str) -> Result<serde_json::Value> {
+    let config = ctx
+        .resolve_lab_name(None)
+        .ok()
+        .and_then(|lab_name| {
+            nix::get_lab_config(ctx, &lab_name)
+                .ok()
+                .and_then(|lab| {
+                    let mut cluster_config = nix::get_cluster_config_from_lab(&lab, cluster).ok()?;
+                    // Merge lab-level secrets (stores + managed) into per-cluster config
+                    if let Some(secrets) = lab.get("secrets") {
+                        cluster_config["secrets"] = secrets.clone();
+                    }
+                    Some(cluster_config)
+                })
+        })
+        .or_else(|| nix::get_cluster_config(ctx, cluster).ok())
+        .ok_or_else(|| anyhow::anyhow!("Failed to load config for cluster '{cluster}'"))?;
+    Ok(config)
 }
 
 /// Discover phases from the rendered manifest directory.
@@ -281,9 +373,10 @@ async fn apply_kapp(
     let sops_secrets = parse_projections(config);
     if !sops_secrets.is_empty() {
         println!(
-            "{} Found projections for phases: {}",
+            "{} Found projections for phases: {}{}",
             style(">>>").cyan(),
-            sops_secrets.keys().cloned().collect::<Vec<_>>().join(", ")
+            sops_secrets.keys().cloned().collect::<Vec<_>>().join(", "),
+            if args.secrets_cache.is_some() { " (cached)" } else { "" },
         );
     }
     let cluster_name = ctx.resolve_cluster_name(args.cluster.as_deref())?;
@@ -334,21 +427,49 @@ async fn apply_kapp(
 
         // Inject projected secrets before deploying phase
         if let Some(projections) = sops_secrets.get(&phase.name) {
-            inject_projections(ctx, kube_context, &cluster_name, config, projections, &timeout)?;
+            inject_projections(ctx, kube_context, &cluster_name, config, projections, &timeout, args.secrets_cache.as_deref())?;
         }
 
-        println!(
-            "{} Deploying {}...",
-            style(">>>").cyan(),
-            style(&phase.name).bold(),
-        );
-        tools::kapp::deploy(
-            ctx,
-            kube_context,
-            &phase.name,
-            &phase.dir.display().to_string(),
-            &timeout,
-        )?;
+        // Skip kapp deploy for phases with no manifest content (projection-only phases)
+        let has_manifests = fs::read_dir(&phase.dir)
+            .map(|entries| entries.filter_map(|e| e.ok()).any(|e| {
+                e.path().extension().map_or(false, |ext| ext == "yaml" || ext == "yml")
+            }))
+            .unwrap_or(false);
+
+        if has_manifests {
+            // Restart deployments stuck in ProgressDeadlineExceeded from previous failures.
+            // Without this, kapp sees no spec change (noop) and fails on the stale status.
+            if let Ok(stuck) = tools::kube::get_stuck_deployments(kube_context) {
+                for (ns, name) in &stuck {
+                    println!(
+                        "{} Restarting stuck deployment {}/{}",
+                        style(">>>").yellow(),
+                        ns, name
+                    );
+                    let _ = tools::kube::rollout_restart(kube_context, "deployment", ns, name);
+                }
+            }
+
+            println!(
+                "{} Deploying {}...",
+                style(">>>").cyan(),
+                style(&phase.name).bold(),
+            );
+            tools::kapp::deploy(
+                ctx,
+                kube_context,
+                &phase.name,
+                &phase.dir.display().to_string(),
+                &timeout,
+            )?;
+        } else {
+            println!(
+                "{} Skipping deploy for {} (no manifests, secrets-only)",
+                style(">>>").yellow(),
+                style(&phase.name).bold(),
+            );
+        }
     }
 
     println!();
@@ -367,6 +488,7 @@ fn inject_projections(
     config: &serde_json::Value,
     projections: &[(String, ProjectionConfig)],
     timeout: &str,
+    pre_cache: Option<&HashMap<String, HashMap<String, HashMap<String, String>>>>,
 ) -> Result<()> {
     // Get lab name from cluster config to find SOPS store files
     let lab_name = config
@@ -377,29 +499,25 @@ fn inject_projections(
         .unwrap_or_else(|| "default".to_string());
 
     let secrets_tmp = tempfile::tempdir()?;
-    let lab_config = nix::get_lab_config(ctx, &lab_name).ok();
 
-    // Cache decrypted store files: { store_name → { managed_secret_name → { key → value } } }
+    // Per-call cache for standalone apply (when no pre-populated cache is provided)
     let mut store_cache: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
 
     for (proj_name, proj) in projections {
         // Resolve which store this projection's source managed secret lives in.
-        let store_name = lab_config
-            .as_ref()
-            .and_then(|lc| {
-                lc.pointer(&format!("/secrets/managed/{}/store", proj.source))
-                    .and_then(|v| v.as_str())
-            })
+        // Uses secrets metadata from config (package or nix eval — no extra eval needed).
+        let store_name = config
+            .pointer(&format!("/secrets/managed/{}/store", proj.source))
+            .and_then(|v| v.as_str())
             .unwrap_or(&proj.source);
 
-        // Decrypt store file (cached)
-        let store_data = if let Some(cached) = store_cache.get(store_name) {
+        // Resolve decrypted store data: pre-populated cache → per-call cache → decrypt
+        let store_data = if let Some(cached) = pre_cache.and_then(|c| c.get(store_name)) {
+            cached.clone()
+        } else if let Some(cached) = store_cache.get(store_name) {
             cached.clone()
         } else {
-            let enc_path = PathBuf::from(ctx.flake_uri())
-                .join("secrets")
-                .join(&lab_name)
-                .join(format!("{store_name}.enc.yaml"));
+            let enc_path = secrets_mod::store_file_path(ctx, &lab_name, store_name);
 
             if !enc_path.exists() {
                 println!(

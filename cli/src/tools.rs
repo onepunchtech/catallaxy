@@ -507,6 +507,66 @@ pub mod kube {
         }
     }
 
+    /// Find deployments stuck in ProgressDeadlineExceeded across all namespaces.
+    /// Returns a list of (namespace, name) tuples.
+    pub fn get_stuck_deployments(context: &str) -> Result<Vec<(String, String)>> {
+        let output = Command::new("kubectl")
+            .args([
+                "--context", context,
+                "get", "deployments", "-A",
+                "-o", "json",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .context("Failed to run kubectl")?;
+
+        if !output.status.success() {
+            return Ok(vec![]);
+        }
+
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or(serde_json::Value::Null);
+
+        let mut stuck = Vec::new();
+        if let Some(items) = json["items"].as_array() {
+            for item in items {
+                let ns = item["metadata"]["namespace"].as_str().unwrap_or("");
+                let name = item["metadata"]["name"].as_str().unwrap_or("");
+                if let Some(conditions) = item["status"]["conditions"].as_array() {
+                    let is_stuck = conditions.iter().any(|c| {
+                        c["type"].as_str() == Some("Progressing")
+                            && c["reason"].as_str() == Some("ProgressDeadlineExceeded")
+                    });
+                    if is_stuck {
+                        stuck.push((ns.to_string(), name.to_string()));
+                    }
+                }
+            }
+        }
+        Ok(stuck)
+    }
+
+    /// Restart a stuck deployment/statefulset/daemonset.
+    pub fn rollout_restart(context: &str, kind: &str, namespace: &str, name: &str) -> Result<()> {
+        let status = Command::new("kubectl")
+            .args([
+                "--context", context,
+                "rollout", "restart",
+                &format!("{kind}/{name}"),
+                "-n", namespace,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .context("Failed to run kubectl rollout restart")?;
+
+        if !status.success() {
+            bail!("Failed to restart {kind}/{name} in {namespace}");
+        }
+        Ok(())
+    }
+
     fn parse_timeout(timeout: &str) -> std::time::Duration {
         let s = timeout.trim_end_matches('m').trim_end_matches('s');
         if timeout.ends_with('m') {

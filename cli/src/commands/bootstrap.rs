@@ -401,6 +401,7 @@ async fn init(
                 force: true, // bootstrap always applies directly
                 sequential: false,
                 manifests_dir: None,
+                secrets_cache: None,
             },
         )
         .await?;

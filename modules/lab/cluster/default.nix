@@ -37,7 +37,6 @@ in
     type = types.attrsOf types.attrs;
     default = { };
   };
-  # secrets.managed is declared in components/secrets/default.nix
   options.databases.postgres = mkOption {
     type = types.attrsOf types.attrs;
     default = { };

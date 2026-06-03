@@ -273,9 +273,13 @@
             pkgs.rust-analyzer
             pkgs.mdbook
             pkgs.mdbook-mermaid
+            (pkgs.writeShellScriptBin "cata-dev" ''
+              exec cargo run --manifest-path "''${CATALLAXY_ROOT:-$(git rev-parse --show-toplevel)}/cli/Cargo.toml" -- "$@"
+            '')
           ];
           shellHook = ''
             echo "catallaxy dev shell"
+            echo "  cata-dev             # run CLI from source (cargo build + run)"
             echo "  cargo build          # build CLI"
             echo "  cargo watch -x run   # watch and rebuild"
           '';

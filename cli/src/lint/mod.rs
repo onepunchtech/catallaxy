@@ -7,7 +7,7 @@
 pub mod checks;
 pub mod manifest;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -26,10 +26,28 @@ pub struct LabMetadata {
     pub cluster_names: Vec<String>,
     #[serde(default)]
     pub lab_namespaces: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub clusters: HashMap<String, ClusterMetadata>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterMetadata {
+    #[serde(default)]
+    pub projections: HashMap<String, ProjectionMetadata>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectionMetadata {
+    pub namespace: String,
+    pub phase: String,
+    #[serde(default)]
+    pub source: String,
 }
 
 /// Available lint checks
-const ALL_CHECKS: &[&str] = &["schema", "identity", "prefix", "selector", "reference", "crd-schema", "missing-crd"];
+const ALL_CHECKS: &[&str] = &["schema", "identity", "prefix", "selector", "reference", "projection-ref", "crd-schema", "missing-crd"];
 
 /// Run all lint checks against a built lab package.
 ///
@@ -83,6 +101,12 @@ pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
             resources.len(),
         );
 
+        // Collect projection names for this cluster (secrets injected at runtime, not in manifests)
+        let cluster_meta = metadata.clusters.get(cluster_name);
+        let projection_names: HashSet<String> = cluster_meta
+            .map(|c| c.projections.keys().cloned().collect())
+            .unwrap_or_default();
+
         let mut cluster_diags = Vec::new();
 
         for check_name in &active_checks {
@@ -98,7 +122,14 @@ pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
                     checks::check_prefix(&resources, cluster_name, &metadata.prefix, lab_ns)
                 }
                 "selector" => checks::check_selectors(&resources, cluster_name),
-                "reference" => checks::check_references(&resources, cluster_name),
+                "reference" => checks::check_references(&resources, cluster_name, &projection_names),
+                "projection-ref" => {
+                    if let Some(cm) = cluster_meta {
+                        checks::check_projection_refs(&resources, cluster_name, cm)
+                    } else {
+                        Vec::new()
+                    }
+                }
                 "crd-schema" => checks::check_crd_schema(&resources, cluster_name),
                 "missing-crd" => checks::check_missing_crds(&resources, cluster_name),
                 _ => Vec::new(),

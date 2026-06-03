@@ -484,6 +484,7 @@ async fn up(
             force,
             sequential: false,
             manifests_dir: None,
+            secrets_cache: None,
         },
     )
     .await

@@ -35,10 +35,11 @@ in
       name = "Kanidm";
       clientId = "grafana";
       issuerUrl = lab.clusters.core.components.kanidm.ref.externalUrl;
-      tlsCaBundleConfigMap = {
-        name = config.components.cert-manager.ref.caBundleConfigMap;
-        key = config.components.cert-manager.ref.caBundleKey;
-      };
+      tlsCaBundleConfigMap =
+        if config.components.cert-manager.selfSignedCA.enable then {
+          name = config.components.cert-manager.ref.caBundleConfigMap;
+          key = config.components.cert-manager.ref.caBundleKey;
+        } else null;
       # Kanidm returns group SPNs (e.g. grafana-admins@homelab.test), so use
       # join + contains for substring matching instead of exact array membership.
       roleAttributePath = "contains(join(' ', groups[*]), 'grafana-admins') && 'Admin' || contains(join(' ', groups[*]), 'grafana-editors') && 'Editor' || 'Viewer'";

@@ -216,6 +216,20 @@ in
             config = config.lab.cd.${config.lab.cd.strategy};
           };
           labNamespaces = config.lab.out.labNamespaces;
+          # Lab-level secrets metadata (stores + managed) so CLI can resolve
+          # store → SOPS file path without nix eval at runtime.
+          secrets = {
+            stores = lib.mapAttrs (_: store: {
+              inherit (store) backend;
+            }) config.lab.secrets.stores;
+            managed = lib.mapAttrs (_: sec: {
+              inherit (sec) store;
+              keys = lib.mapAttrs (_: key: {
+                inherit (key) generator length;
+              }) sec.keys;
+            }) config.lab.secrets.managed;
+          };
+
           clusters = lib.mapAttrs (
             name: clusterCfg:
             let
@@ -228,6 +242,14 @@ in
             in
             {
               inherit topology sbom;
+              # Per-cluster projection metadata — drives CLI secret injection
+              projections = lib.mapAttrs (_: proj: {
+                inherit (proj) source namespace phase;
+                keys = lib.mapAttrs (_: key: {
+                  inherit (key) from transform;
+                  jsonKey = key.jsonKey or null;
+                }) proj.keys;
+              }) clusterCfg.secrets.projections;
             }
           ) config.lab.out.allClusters;
         };

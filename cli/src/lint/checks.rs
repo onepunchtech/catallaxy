@@ -710,18 +710,20 @@ fn is_operator_generated_secret(name: &str, resources: &[K8sResource]) -> bool {
     false
 }
 
-/// ConfigMap/Secret names that are provided by other phases or by trust-manager
-/// at runtime and are expected to exist before workloads start.
-const CROSS_PHASE_RESOURCES: &[&str] = &[
+/// ConfigMap/Secret names that are provided by trust-manager or other
+/// controllers at runtime and are expected to exist before workloads start.
+const RUNTIME_MANAGED_RESOURCES: &[&str] = &[
     "lab-ca-bundle",
 ];
 
-fn is_cross_phase_resource(name: &str) -> bool {
-    CROSS_PHASE_RESOURCES.contains(&name)
+fn is_runtime_managed_resource(name: &str) -> bool {
+    RUNTIME_MANAGED_RESOURCES.contains(&name)
 }
 
 /// Verify ConfigMap/Secret references point to existing resources in the same namespace.
-pub fn check_references(resources: &[K8sResource], cluster: &str) -> Vec<Diagnostic> {
+/// `projection_names` are secrets injected at runtime by the CLI — they won't appear
+/// in rendered manifests but are valid references.
+pub fn check_references(resources: &[K8sResource], cluster: &str, projection_names: &HashSet<String>) -> Vec<Diagnostic> {
     // Index existing ConfigMaps and Secrets by (namespace, name)
     let mut configmaps: HashSet<(Option<&str>, &str)> = HashSet::new();
     let mut secrets: HashSet<(Option<&str>, &str)> = HashSet::new();
@@ -746,7 +748,7 @@ pub fn check_references(resources: &[K8sResource], cluster: &str) -> Vec<Diagnos
             if configmaps.contains(&(r.namespace.as_deref(), cm_ref.as_str())) {
                 continue;
             }
-            if is_cross_phase_resource(cm_ref) {
+            if is_runtime_managed_resource(cm_ref) {
                 continue;
             }
             diags.push(Diagnostic {
@@ -765,6 +767,10 @@ pub fn check_references(resources: &[K8sResource], cluster: &str) -> Vec<Diagnos
             if is_operator_generated_secret(secret_ref, resources) {
                 continue;
             }
+            // Projected secrets are injected at runtime by the CLI
+            if projection_names.contains(secret_ref.as_str()) {
+                continue;
+            }
             diags.push(Diagnostic {
                 severity: Severity::Warning,
                 check: "reference",
@@ -773,6 +779,111 @@ pub fn check_references(resources: &[K8sResource], cluster: &str) -> Vec<Diagnos
                 resource: r.display_id(),
                 message: format!("references Secret '{}' which does not exist", secret_ref),
             });
+        }
+    }
+
+    diags
+}
+
+/// Well-known phase ordering for projection validation.
+/// Maps phase names to their numeric order for comparison.
+fn phase_order(phase: &str) -> i32 {
+    match phase {
+        "crds" => -10,
+        "namespaces" => -5,
+        "networking" => 0,
+        "operators" => 10,
+        "secrets" => 20,
+        "infrastructure" => 30,
+        "gitops" => 40,
+        "databases" => 50,
+        "apps" => 90,
+        "workloads" => 100,
+        _ => 999,
+    }
+}
+
+/// Extract the phase name from a resource's source file path.
+/// Phase directories are named "NN-phasename" (e.g., "03-operators").
+fn phase_from_path(path: &std::path::Path) -> Option<String> {
+    for component in path.components() {
+        if let std::path::Component::Normal(s) = component {
+            let s = s.to_string_lossy();
+            if let Some((_, phase)) = s.split_once('-') {
+                if phase_order(phase) < 999 {
+                    return Some(phase.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Validate that secretKeyRef references to projected secrets are in the right phase.
+///
+/// For each workload with env.valueFrom.secretKeyRef referencing a projection:
+/// - Verify the workload's phase is >= the projection's phase
+/// - Warn if a secretKeyRef name isn't in manifests OR projections (likely typo)
+pub fn check_projection_refs(
+    resources: &[K8sResource],
+    cluster: &str,
+    cluster_meta: &super::ClusterMetadata,
+) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+
+    // Build set of all secret names in manifests
+    let manifest_secrets: HashSet<(Option<&str>, &str)> = resources
+        .iter()
+        .filter(|r| r.is_secret())
+        .map(|r| (r.namespace.as_deref(), r.name.as_str()))
+        .collect();
+
+    for r in resources {
+        if r.has_lint_skip("projection-ref") || !r.is_workload() {
+            continue;
+        }
+
+        let resource_phase = phase_from_path(&r.source_file);
+
+        for secret_ref in &r.secret_refs {
+            // Check if this secretRef matches a projection
+            if let Some(proj) = cluster_meta.projections.get(secret_ref.as_str()) {
+                // Verify namespace matches
+                if let Some(ref ns) = r.namespace {
+                    if proj.namespace != *ns {
+                        diags.push(Diagnostic {
+                            severity: Severity::Warning,
+                            check: "projection-ref",
+                            cluster: cluster.to_string(),
+                            file: r.source_file.clone(),
+                            resource: r.display_id(),
+                            message: format!(
+                                "references projected secret '{}' which targets namespace '{}', not '{}'",
+                                secret_ref, proj.namespace, ns
+                            ),
+                        });
+                    }
+                }
+
+                // Verify phase ordering
+                if let Some(ref res_phase) = resource_phase {
+                    let res_order = phase_order(res_phase);
+                    let proj_order = phase_order(&proj.phase);
+                    if proj_order > res_order {
+                        diags.push(Diagnostic {
+                            severity: Severity::Error,
+                            check: "projection-ref",
+                            cluster: cluster.to_string(),
+                            file: r.source_file.clone(),
+                            resource: r.display_id(),
+                            message: format!(
+                                "references projected secret '{}' (phase '{}') but deploys in phase '{}' which runs earlier — secret won't exist yet",
+                                secret_ref, proj.phase, res_phase
+                            ),
+                        });
+                    }
+                }
+            }
         }
     }
 

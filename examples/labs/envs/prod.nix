@@ -3,9 +3,12 @@
 {
   lab.name = "homelab.prod";
   lab.environment = "production";
+  lab.dns.zone = "lab.praxioticsystems.com";
 
   # Secret stores — each becomes one SOPS file
-  lab.secrets.stores.cloud-creds = { backend = "sops"; };
+  lab.secrets.stores.cloud-creds = {
+    backend = "sops";
+  };
 
   # Managed secrets — source of truth for credential values
   lab.secrets.managed = {
@@ -50,7 +53,7 @@
           nodePool = {
             name = "default";
             size = "s-2vcpu-4gb";
-            nodeCount = 1;
+            nodeCount = 2;
           };
         };
       };
@@ -65,15 +68,39 @@
       components.cert-manager.selfSignedCA.enable = lib.mkForce false;
       components.cert-manager.acme = {
         enable = true;
-        email = "admin@homelab.prod";
+        email = "admin@praxioticsystems.com";
         dns01.provider = "cloudflare";
       };
 
-      # Project CF token into cert-manager namespace for ACME DNS01
+      # Project CF token into cert-manager namespace for ACME DNS01.
+      # Must be in operators phase — cert-manager ClusterIssuer needs it in infrastructure.
       secrets.projections.cloudflare-api-token = {
         source = "cf-token";
         namespace = "cert-manager";
-        phase = "secrets";
+        phase = "operators";
+        keys.api-token.from = "token";
+      };
+
+      # ExternalDNS via Cloudflare (overrides local RFC2136 from networking aspect)
+      components.external-dns = {
+        enable = lib.mkForce true;
+        domainFilters = [ "praxioticsystems.com" ];
+        env = [
+          {
+            name = "CF_API_TOKEN";
+            valueFrom.secretKeyRef = {
+              name = "cloudflare-extdns-token";
+              key = "api-token";
+            };
+          }
+        ];
+      };
+
+      # Project CF token into external-dns namespace (before external-dns deploys)
+      secrets.projections.cloudflare-extdns-token = {
+        source = "cf-token";
+        namespace = "external-dns";
+        phase = "operators";
         keys.api-token.from = "token";
       };
 
@@ -91,18 +118,41 @@
       components.cert-manager.selfSignedCA.enable = lib.mkForce false;
       components.cert-manager.acme = {
         enable = true;
-        email = "admin@homelab.prod";
+        email = "admin@praxioticsystems.com";
         dns01.provider = "cloudflare";
       };
 
-      # Project CF token into cert-manager namespace for ACME DNS01
+      # Project CF token into cert-manager namespace (operators phase — before ACME issuer)
       secrets.projections.cloudflare-api-token = {
         source = "cf-token";
         namespace = "cert-manager";
-        phase = "secrets";
+        phase = "operators";
         keys.api-token.from = "token";
       };
 
-      components.otel-collector.gateway.replicas = 3;
+      # ExternalDNS via Cloudflare (overrides local RFC2136 from networking aspect)
+      components.external-dns = {
+        enable = lib.mkForce true;
+        domainFilters = [ "praxioticsystems.com" ];
+        env = [
+          {
+            name = "CF_API_TOKEN";
+            valueFrom.secretKeyRef = {
+              name = "cloudflare-extdns-token";
+              key = "api-token";
+            };
+          }
+        ];
+      };
+
+      # Project CF token into external-dns namespace (before external-dns deploys)
+      secrets.projections.cloudflare-extdns-token = {
+        source = "cf-token";
+        namespace = "external-dns";
+        phase = "operators";
+        keys.api-token.from = "token";
+      };
+
+      components.otel-collector.gateway.replicas = 1;
     };
 }

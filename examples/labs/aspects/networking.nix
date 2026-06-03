@@ -1,5 +1,5 @@
 # Gateway API, TLS, and DNS
-{ lab, ... }:
+{ config, lib, lab, ... }:
 let
   dns = lab.dns;
 in
@@ -9,6 +9,7 @@ in
     tls = {
       enable = true;
       domain = dns.zone;
+      issuerRef = config.components.cert-manager.ref.defaultIssuerRef;
       passthrough.enable = true;
     };
   };
@@ -20,12 +21,12 @@ in
 
   components.trust-manager.enable = true;
 
-  # Forward lab DNS zone to the Knot DNS server so pods can resolve
+  # Forward lab DNS zone to the local Knot DNS server so pods can resolve
   # lab domains (e.g., grafana in obs cluster can reach idm.homelab.test).
-  # Knot stores real Docker-network IPs published by external-dns.
+  # Only applies when running a local DNS server (lab.dns.enable = true).
   # k3s CoreDNS imports from coredns-custom ConfigMap via:
   #   import /etc/coredns/custom/*.server
-  phases.networking.bundles.coredns-lab-dns.resources = {
+  phases.networking.bundles.coredns-lab-dns.resources = lib.mkIf dns.enable {
     coredns-custom = {
       apiVersion = "v1";
       kind = "ConfigMap";
@@ -45,8 +46,10 @@ in
     };
   };
 
-  components.external-dns = {
-    enable = dns.enable;
+  # Local dev: RFC2136 against Knot DNS
+  # Prod clusters override with their own external-dns config (e.g. Cloudflare)
+  components.external-dns = lib.mkIf dns.enable {
+    enable = true;
     provider = "rfc2136";
     domainFilters = [ dns.zone ];
     policy = "sync";
