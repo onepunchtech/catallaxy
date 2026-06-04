@@ -7,6 +7,7 @@
   ...
 }:
 let
+  coreContext = config.lab.clusters.core.cluster.ref.kubeContext;
   kanidmRef = config.lab.clusters.core.components.kanidm.ref;
 in
 {
@@ -41,7 +42,7 @@ in
         runtimeInputs = [ pkgs.kubectl ];
         text = ''
           USER="''${1:?Usage: init-user <username>}"
-          CONTEXT="k3d-core"
+          CONTEXT="${coreContext}"
           NS="${kanidmRef.namespace}"
           POD="kanidm-default-0"
 
@@ -82,7 +83,7 @@ in
         ];
         text = ''
           NS="forgejo"
-          CONTEXT="k3d-core"
+          CONTEXT="${coreContext}"
           PASS=$(kubectl --context "$CONTEXT" get secret postgres-app -n "$NS" -o jsonpath='{.data.password}' | base64 -d)
           kubectl --context "$CONTEXT" run -n "$NS" db-shell --rm -it --restart=Never \
             --image=postgres:16 \

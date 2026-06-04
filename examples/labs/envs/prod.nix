@@ -35,8 +35,20 @@
         "cloudflare"
       ];
 
-      # DOKS managed Kubernetes clusters on DigitalOcean
+      # DOKS managed Kubernetes clusters on DigitalOcean.
+      # Including 'mgmt' here makes it self-provisioning — the planner
+      # detects this and generates bootstrap + pivot steps automatically.
       components.crossplane.digitalocean.kubernetesClusters = {
+        mgmt = {
+          region = "nyc1";
+          version = "1.36.0-do.0";
+          nodePool = {
+            name = "default";
+            size = "s-2vcpu-4gb";
+            nodeCount = 1;
+          };
+        };
+
         core = {
           region = "nyc1";
           version = "1.36.0-do.0";

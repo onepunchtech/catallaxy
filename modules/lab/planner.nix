@@ -42,14 +42,36 @@ let
 
   needsBootstrap = crossplaneClusters != [ ];
 
-  # Find the management cluster (has crossplane enabled for provisioning)
+  # Find the management cluster (has crossplane or CAPI enabled for provisioning)
   mgmtCluster =
     let
       candidates = filter (
         c: (c.config.components.crossplane.enable or false)
+            || (c.config.components.cluster-api.enable or false)
       ) localClusters;
     in
     if candidates != [ ] then builtins.head candidates else null;
+
+  # Detect self-provisioning clusters: a local cluster that runs a provisioner
+  # which creates a cloud cluster with the same name. This implies bootstrap + pivot.
+  selfProvisioningClusters = filter (
+    c:
+    let
+      xpClusterNames = lib.attrNames (
+        c.config.components.crossplane.digitalocean.kubernetesClusters or { }
+      );
+      capiClusterNames = lib.attrNames (
+        c.config.components.cluster-api.clusters or { }
+      );
+      provisionedNames = xpClusterNames ++ capiClusterNames;
+    in
+    builtins.elem c.name provisionedNames
+  ) localClusters;
+
+  # Non-self-provisioning crossplane clusters (deployed after pivot)
+  nonSelfCrossplaneClusters = filter (
+    c: !(lib.any (sp: sp.name == c.name) selfProvisioningClusters)
+  ) crossplaneClusters;
 
   # ── Plan computation ──────────────────────────────────────────────────
 
@@ -102,43 +124,63 @@ let
     }
   ) localClusters;
 
-  # Steps for crossplane-provisioned clusters
+  # All cloud-provisioned cluster names: explicit crossplane clusters + self-provisioning clusters
+  allCloudClusterNames =
+    (map (c: c.name) crossplaneClusters)
+    ++ (map (c: c.name) selfProvisioningClusters);
+
+  # Steps for crossplane/CAPI-provisioned clusters
   crossplaneSteps =
-    if crossplaneClusters == [ ] then
+    if allCloudClusterNames == [ ] then
       [ ]
     else
       let
-        clusterNames = map (c: c.name) crossplaneClusters;
-        waitResources = map (
-          c: {
-            name = c.name;
-          }
-        ) crossplaneClusters;
+        waitResources = map (name: { inherit name; }) allCloudClusterNames;
+        mgmtTarget = if mgmtCluster != null then mgmtCluster.name else (builtins.head localClusters).name;
       in
       [
-        # Wait for crossplane to provision the clusters
         {
           type = "wait-for-resources";
           description = "Wait for Crossplane to provision cloud clusters";
-          target = if mgmtCluster != null then mgmtCluster.name else (builtins.head localClusters).name;
+          target = mgmtTarget;
           resources = waitResources;
         }
-        # Sync kubeconfigs (via DO API from mgmt cluster)
         {
           type = "sync-kubeconfig";
           description = "Sync kubeconfigs for cloud clusters";
-          target = if mgmtCluster != null then mgmtCluster.name else (builtins.head localClusters).name;
-          clusters = clusterNames;
+          target = mgmtTarget;
+          clusters = allCloudClusterNames;
         }
-      ]
-      # Deploy manifests to each provisioned cluster
-      ++ map (
-        c: {
-          type = "deploy-manifests";
-          description = "Deploy manifests to '${c.name}'";
-          target = c.name;
-        }
-      ) crossplaneClusters;
+      ];
+
+  # Pivot steps for self-provisioning clusters
+  pivotSteps = map (
+    c:
+    let
+      hasXp = c.config.components.crossplane.enable or false;
+      hasCapi = c.config.components.cluster-api.enable or false;
+      provisioner = if hasXp then "crossplane" else if hasCapi then "capi" else "unknown";
+      bootstrapContext = c.config.cluster.ref.kubeContext;
+    in
+    {
+      type = "pivot";
+      description = "Migrate '${c.name}' from bootstrap to cloud";
+      cluster = c.name;
+      bootstrapContext = bootstrapContext;
+      targetContext = c.name;
+      inherit provisioner;
+      skipIfReachable = c.name;
+    }
+  ) selfProvisioningClusters;
+
+  # Deploy manifests to non-self-provisioning cloud clusters (after pivot)
+  deployCloudSteps = map (
+    c: {
+      type = "deploy-manifests";
+      description = "Deploy manifests to '${c.name}'";
+      target = c.name;
+    }
+  ) nonSelfCrossplaneClusters;
 
   # Assemble the full plan
   fullPlan =
@@ -146,7 +188,9 @@ let
     ++ createLocalSteps
     ++ secretsSteps
     ++ deployLocalSteps
-    ++ crossplaneSteps;
+    ++ crossplaneSteps
+    ++ pivotSteps
+    ++ deployCloudSteps;
 
   # ── Teardown plan (reverse of deployment) ──────────────────────────────
 

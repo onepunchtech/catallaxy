@@ -567,6 +567,115 @@ pub mod kube {
         Ok(())
     }
 
+    /// Wait for Crossplane operator + providers to be healthy on a cluster.
+    pub fn wait_crossplane_healthy(context: &str) -> Result<()> {
+        use std::time::{Duration, Instant};
+        let timeout = Duration::from_secs(300);
+        let start = Instant::now();
+
+        loop {
+            // Check if all providers are HEALTHY
+            let output = Command::new("kubectl")
+                .args(["--context", context, "get", "providers", "-o", "json"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output();
+
+            if let Ok(ref o) = output {
+                if o.status.success() {
+                    let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+                    if let Some(items) = json["items"].as_array() {
+                        let all_healthy = !items.is_empty() && items.iter().all(|p| {
+                            p["status"]["conditions"].as_array()
+                                .map(|conds| conds.iter().any(|c|
+                                    c["type"].as_str() == Some("Healthy")
+                                    && c["status"].as_str() == Some("True")
+                                ))
+                                .unwrap_or(false)
+                        });
+                        if all_healthy {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
+            if start.elapsed() > timeout {
+                bail!("Timed out waiting for Crossplane providers to be healthy on {context}");
+            }
+            std::thread::sleep(Duration::from_secs(10));
+        }
+    }
+
+    /// Wait for all managed resources to be SYNCED + READY on a cluster.
+    pub fn wait_managed_ready(context: &str, timeout_secs: u64) -> Result<()> {
+        use std::time::{Duration, Instant};
+        let timeout = Duration::from_secs(timeout_secs);
+        let start = Instant::now();
+
+        loop {
+            let output = Command::new("kubectl")
+                .args(["--context", context, "get", "managed", "-o", "json"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .output();
+
+            if let Ok(ref o) = output {
+                if o.status.success() {
+                    let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+                    if let Some(items) = json["items"].as_array() {
+                        if items.is_empty() {
+                            // No managed resources yet — wait for them
+                        } else {
+                            let all_ready = items.iter().all(|r| {
+                                let conds = r["status"]["conditions"].as_array();
+                                let synced = conds.as_ref().map(|cs| cs.iter().any(|c|
+                                    c["type"].as_str() == Some("Synced")
+                                    && c["status"].as_str() == Some("True")
+                                )).unwrap_or(false);
+                                let ready = conds.as_ref().map(|cs| cs.iter().any(|c|
+                                    c["type"].as_str() == Some("Ready")
+                                    && c["status"].as_str() == Some("True")
+                                )).unwrap_or(false);
+                                synced && ready
+                            });
+                            if all_ready {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+
+            if start.elapsed() > timeout {
+                bail!("Timed out waiting for managed resources on {context}");
+            }
+            println!("  waiting for managed resources... ({}s)", start.elapsed().as_secs());
+            std::thread::sleep(Duration::from_secs(15));
+        }
+    }
+
+    /// Set deletionPolicy: Orphan on all managed resources so they survive cluster teardown.
+    pub fn orphan_managed_resources(context: &str) -> Result<()> {
+        let status = Command::new("kubectl")
+            .args([
+                "--context", context,
+                "patch", "managed", "--all",
+                "--type=merge",
+                "-p", r#"{"spec":{"deletionPolicy":"Orphan"}}"#,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .status()
+            .context("Failed to orphan managed resources")?;
+
+        if !status.success() {
+            // Non-fatal — bootstrap destruction will skip teardown hooks anyway
+            eprintln!("Warning: failed to orphan some managed resources");
+        }
+        Ok(())
+    }
+
     fn parse_timeout(timeout: &str) -> std::time::Duration {
         let s = timeout.trim_end_matches('m').trim_end_matches('s');
         if timeout.ends_with('m') {

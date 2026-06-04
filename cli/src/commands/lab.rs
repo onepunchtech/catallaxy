@@ -1208,10 +1208,93 @@ async fn up(
             }
 
             "pivot" => {
-                let from = step["from"].as_str().unwrap_or("?");
-                let to = step["to"].as_str().unwrap_or("?");
-                println!("{} Pivoting from '{from}' to '{to}'...", style(">>>").cyan());
-                println!("{} Pivot not yet implemented", style("Warning:").yellow());
+                let cluster = step["cluster"].as_str().unwrap_or("?");
+                let bootstrap_ctx = step["bootstrapContext"].as_str().unwrap_or("?");
+                let target_ctx = step["targetContext"].as_str().unwrap_or("?");
+                let provisioner = step["provisioner"].as_str().unwrap_or("crossplane");
+
+                // Idempotency: skip if target is already reachable
+                if let Some(skip_ctx) = step["skipIfReachable"].as_str() {
+                    if tools::kube::api_reachable(skip_ctx) {
+                        println!(
+                            "{} Skipping pivot — cloud cluster '{}' is already reachable",
+                            style(">>>").green(),
+                            cluster
+                        );
+                        // Still deploy manifests to ensure it's up to date
+                        let subdir = if strategy == "kapp" { "manifests" } else { "bootstrap" };
+                        let cluster_manifests = format!("{lab_package}/{subdir}/{cluster}");
+                        if std::path::Path::new(&cluster_manifests).exists() {
+                            apply_cluster_components(ctx, cluster, dry_run, true, Some(cluster_manifests), secrets_cache.clone())
+                                .await?;
+                        }
+                        continue;
+                    }
+                }
+
+                println!(
+                    "{} Pivoting '{}': {} → {}",
+                    style(">>>").cyan(),
+                    cluster,
+                    style(bootstrap_ctx).dim(),
+                    style(target_ctx).bold(),
+                );
+
+                // Step 1: Deploy manifests to cloud target (same manifests as bootstrap)
+                let subdir = if strategy == "kapp" { "manifests" } else { "bootstrap" };
+                let cluster_manifests = format!("{lab_package}/{subdir}/{cluster}");
+                if std::path::Path::new(&cluster_manifests).exists() {
+                    println!("{} Deploying manifests to cloud '{}'...", style(">>>").cyan(), cluster);
+                    apply_cluster_components(ctx, cluster, dry_run, true, Some(cluster_manifests), secrets_cache.clone())
+                        .await?;
+                }
+
+                if dry_run {
+                    println!("{} Would migrate {} state and destroy bootstrap", style(">>>").yellow(), provisioner);
+                    continue;
+                }
+
+                match provisioner {
+                    "crossplane" => {
+                        // Step 2: Wait for Crossplane healthy on target
+                        println!("{} Waiting for Crossplane to be healthy on '{}'...", style(">>>").cyan(), cluster);
+                        tools::kube::wait_crossplane_healthy(target_ctx)?;
+
+                        // Step 3: Wait for managed resources to be adopted on target
+                        println!("{} Waiting for managed resources on '{}'...", style(">>>").cyan(), cluster);
+                        tools::kube::wait_managed_ready(target_ctx, 600)?;
+
+                        // Step 4: Orphan managed resources on bootstrap
+                        println!("{} Orphaning managed resources on bootstrap...", style(">>>").cyan());
+                        tools::kube::orphan_managed_resources(bootstrap_ctx)?;
+                    }
+                    "capi" => {
+                        println!("{} CAPI pivot: using clusterctl move...", style(">>>").cyan());
+                        // clusterctl move from bootstrap to target
+                        let status = std::process::Command::new("clusterctl")
+                            .args([
+                                "move",
+                                "--to-kubeconfig-context", target_ctx,
+                                "--kubeconfig-context", bootstrap_ctx,
+                            ])
+                            .status();
+                        if let Ok(s) = status {
+                            if !s.success() {
+                                bail!("clusterctl move failed");
+                            }
+                        }
+                    }
+                    _ => {
+                        println!("{} Unknown provisioner '{}' for pivot", style("Warning:").yellow(), provisioner);
+                    }
+                }
+
+                // Step 5: Destroy bootstrap cluster
+                println!("{} Destroying bootstrap cluster '{}'...", style(">>>").cyan(), cluster);
+                let bootstrap_config = crate::nix::get_cluster_config_from_lab(&lab, cluster)?;
+                super::cluster::deprovision_cluster(ctx, cluster, &bootstrap_config)?;
+
+                println!("{} Pivot complete — '{}' is now running in the cloud", style(">>>").green(), cluster);
             }
 
             "destroy-cluster" => {
@@ -1420,30 +1503,27 @@ async fn apply(
 }
 
 async fn ops(ctx: &CataContext, name: &str, args: &[String]) -> Result<()> {
-    let lab = crate::nix::get_lab_config(ctx, name)?;
+    // Build the lab package to ensure the ops tool derivation exists in the store
+    let lab_package = crate::nix::build_lab_package(ctx, name)?;
+    let ops_bin = format!("{lab_package}/bin/{name}-ops");
 
-    let ops_tool_path = lab.pointer("/opsToolPath").and_then(|v| v.as_str());
+    if std::path::Path::new(&ops_bin).exists() {
+        let status = std::process::Command::new(&ops_bin)
+            .args(args)
+            .status()
+            .with_context(|| format!("Failed to run ops tool: {}", ops_bin))?;
 
-    match ops_tool_path {
-        Some(path) if !path.is_empty() => {
-            let status = std::process::Command::new(path)
-                .args(args)
-                .status()
-                .with_context(|| format!("Failed to run ops tool: {}", path))?;
-
-            if !status.success() {
-                std::process::exit(status.code().unwrap_or(1));
-            }
-            Ok(())
+        if !status.success() {
+            std::process::exit(status.code().unwrap_or(1));
         }
-        _ => {
-            println!(
-                "{} No ops commands defined for lab '{name}'.",
-                style(">>>").yellow()
-            );
-            println!("  Define commands in lab.ops.commands in your lab config.");
-            Ok(())
-        }
+        Ok(())
+    } else {
+        println!(
+            "{} No ops commands defined for lab '{name}'.",
+            style(">>>").yellow()
+        );
+        println!("  Define commands in lab.ops.commands in your lab config.");
+        Ok(())
     }
 }
 

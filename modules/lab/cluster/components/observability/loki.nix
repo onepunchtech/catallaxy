@@ -223,9 +223,9 @@ in
 
             gateway.enabled = false;
 
-            # Disable memcached-exporter sidecars (image tag issues)
-            chunksCache.writebackSizeLimit = "500MB";
-            resultsCache.writebackSizeLimit = "500MB";
+            # Disable caches and memcached-exporter sidecars
+            chunksCache.enabled = false;
+            resultsCache.enabled = false;
             memcachedExporter.enabled = false;
 
             # Disable test/monitoring sub-charts
