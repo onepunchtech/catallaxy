@@ -58,12 +58,6 @@ cata --flake ./examples/labs#homelab lab down
 - **Consumer flake support** — define your lab in your own flake, import
   catallaxy as an input
 
-## Status
-
-**v0.5** — The homelab example boots multi-cluster environments on k3d with
-full-stack services and domain-based access. Cloud provisioning and GitOps
-integration are next. See the [roadmap](https://onepunchtech.github.io/catallaxy/roadmap.html).
-
 ## Build and development
 
 ```bash
