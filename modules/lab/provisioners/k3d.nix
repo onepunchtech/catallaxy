@@ -111,23 +111,39 @@ in
     };
   };
 
-  config.cluster.ref.kubeContext = mkIf (config.cluster.provisioner == "k3d")
-    "k3d-${config.provisioner.k3d.clusterName}";
+  config.cluster.ref.kubeContext = mkIf (
+    config.cluster.provisioner == "k3d"
+  ) "k3d-${config.provisioner.k3d.clusterName}";
 
   config.provisioner.k3d = mkIf (config.cluster.provisioner == "k3d") {
     extraApiServerArgs =
       # OIDC args
       (lib.optionals oidcCfg.enable (mapAttrsToList (k: v: "${k}=${v}") oidcCfg.ref.apiServerArgs))
       # PKI client-ca-file
-      ++ (lib.optionals pkiCfg.enable (mapAttrsToList (k: v: "${k}=${v}") pkiCfg.ref.apiServerArgs));
+      ++ (lib.optionals pkiCfg.enable (mapAttrsToList (k: v: "${k}=${v}") pkiCfg.ref.apiServerArgs))
+      # Audit logging
+      ++ (lib.optionals config.cluster.security.auditLogging.enable [
+        "audit-policy-file=/etc/kubernetes/audit/policy.yaml"
+        "audit-log-path=/var/log/kubernetes/audit.log"
+        "audit-log-maxage=7"
+        "audit-log-maxbackup=3"
+        "audit-log-maxsize=100"
+      ]);
 
     # Mount the CA cert into k3d nodes so the API server can trust client certs.
     # The actual file is created by `cata pki init` before cluster creation.
-    extraVolumes = lib.optionals pkiCfg.enable [
-      {
-        hostPath = "{{STATE_DIR}}/pki/{{CLUSTER_NAME}}/ca.crt";
-        containerPath = pkiCfg.ref.clientCaPath;
-      }
-    ];
+    extraVolumes =
+      lib.optionals pkiCfg.enable [
+        {
+          hostPath = "{{STATE_DIR}}/pki/{{CLUSTER_NAME}}/ca.crt";
+          containerPath = pkiCfg.ref.clientCaPath;
+        }
+      ]
+      ++ lib.optionals config.cluster.security.auditLogging.enable [
+        {
+          hostPath = "{{STATE_DIR}}/audit/{{CLUSTER_NAME}}/policy.yaml";
+          containerPath = "/etc/kubernetes/audit/policy.yaml";
+        }
+      ];
   };
 }

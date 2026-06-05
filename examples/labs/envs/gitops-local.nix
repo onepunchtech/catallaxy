@@ -10,7 +10,7 @@
 
   lab.dns.enable = true;
   lab.registry.enable = true;
-  lab.ingress.enable = true;
+  lab.proxy.enable = true;
 
   # ArgoCD strategy — manifests rendered as ArgoCD Applications
   lab.cd.strategy = "argocd";

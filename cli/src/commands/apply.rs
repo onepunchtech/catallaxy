@@ -92,14 +92,14 @@ fn parse_projections(
         None => return by_phase,
     };
 
-    let projs: HashMap<String, ProjectionConfig> =
-        match serde_json::from_value(projs_value.clone()) {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Warning: failed to parse projections: {e}");
-                return by_phase;
-            }
-        };
+    let projs: HashMap<String, ProjectionConfig> = match serde_json::from_value(projs_value.clone())
+    {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Warning: failed to parse projections: {e}");
+            return by_phase;
+        }
+    };
 
     for (name, proj) in projs {
         let phase = proj.phase.clone();
@@ -145,13 +145,9 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
         println!("{} Building manifests...", style(">>>").cyan());
         // When a lab name is available, build the lab package to get lab-specific
         // manifests. The top-level manifests output is flattened across all labs
-        // and clusters with the same name from different labs can collide.
-        let path = if let Ok(lab_name) = ctx.resolve_lab_name(None) {
-            let lab_pkg = nix::build_lab_package(ctx, &lab_name)?;
-            format!("{lab_pkg}/manifests")
-        } else {
-            nix::build_manifests(ctx, &cluster)?
-        };
+        let lab_name = ctx.resolve_lab_name(None)?;
+        let lab_pkg = nix::build_lab_package(ctx, &lab_name)?;
+        let path = format!("{lab_pkg}/manifests");
         println!("{} Manifests built: {path}", style(">>>").green());
         path
     };
@@ -239,7 +235,11 @@ fn load_cluster_config(
                             config["secrets"] = secrets.clone();
                         }
                         config["labName"] = serde_json::Value::String(
-                            metadata.get("name").and_then(|v| v.as_str()).unwrap_or("default").to_string()
+                            metadata
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("default")
+                                .to_string(),
                         );
                         // Still need kubeContext and deploy strategy from nix eval
                         // for now, merge with nix eval if available
@@ -271,16 +271,14 @@ fn load_cluster_config_from_nix(ctx: &CataContext, cluster: &str) -> Result<serd
         .resolve_lab_name(None)
         .ok()
         .and_then(|lab_name| {
-            nix::get_lab_config(ctx, &lab_name)
-                .ok()
-                .and_then(|lab| {
-                    let mut cluster_config = nix::get_cluster_config_from_lab(&lab, cluster).ok()?;
-                    // Merge lab-level secrets (stores + managed) into per-cluster config
-                    if let Some(secrets) = lab.get("secrets") {
-                        cluster_config["secrets"] = secrets.clone();
-                    }
-                    Some(cluster_config)
-                })
+            nix::get_lab_config(ctx, &lab_name).ok().and_then(|lab| {
+                let mut cluster_config = nix::get_cluster_config_from_lab(&lab, cluster).ok()?;
+                // Merge lab-level secrets (stores + managed) into per-cluster config
+                if let Some(secrets) = lab.get("secrets") {
+                    cluster_config["secrets"] = secrets.clone();
+                }
+                Some(cluster_config)
+            })
         })
         .or_else(|| nix::get_cluster_config(ctx, cluster).ok())
         .ok_or_else(|| anyhow::anyhow!("Failed to load config for cluster '{cluster}'"))?;
@@ -376,7 +374,11 @@ async fn apply_kapp(
             "{} Found projections for phases: {}{}",
             style(">>>").cyan(),
             sops_secrets.keys().cloned().collect::<Vec<_>>().join(", "),
-            if args.secrets_cache.is_some() { " (cached)" } else { "" },
+            if args.secrets_cache.is_some() {
+                " (cached)"
+            } else {
+                ""
+            },
         );
     }
     let cluster_name = ctx.resolve_cluster_name(args.cluster.as_deref())?;
@@ -427,14 +429,26 @@ async fn apply_kapp(
 
         // Inject projected secrets before deploying phase
         if let Some(projections) = sops_secrets.get(&phase.name) {
-            inject_projections(ctx, kube_context, &cluster_name, config, projections, &timeout, args.secrets_cache.as_deref())?;
+            inject_projections(
+                ctx,
+                kube_context,
+                &cluster_name,
+                config,
+                projections,
+                &timeout,
+                args.secrets_cache.as_deref(),
+            )?;
         }
 
         // Skip kapp deploy for phases with no manifest content (projection-only phases)
         let has_manifests = fs::read_dir(&phase.dir)
-            .map(|entries| entries.filter_map(|e| e.ok()).any(|e| {
-                e.path().extension().map_or(false, |ext| ext == "yaml" || ext == "yml")
-            }))
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    e.path()
+                        .extension()
+                        .map_or(false, |ext| ext == "yaml" || ext == "yml")
+                })
+            })
             .unwrap_or(false);
 
         if has_manifests {
@@ -445,7 +459,8 @@ async fn apply_kapp(
                     println!(
                         "{} Restarting stuck deployment {}/{}",
                         style(">>>").yellow(),
-                        ns, name
+                        ns,
+                        name
                     );
                     let _ = tools::kube::rollout_restart(kube_context, "deployment", ns, name);
                 }

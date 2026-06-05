@@ -1,5 +1,10 @@
 # Gateway API, TLS, and DNS
-{ config, lib, lab, ... }:
+{
+  config,
+  lib,
+  lab,
+  ...
+}:
 let
   dns = lab.dns;
 in

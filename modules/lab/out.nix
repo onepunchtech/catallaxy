@@ -11,8 +11,8 @@ let
     types
     ;
 
-  renderers = import ../../lib/renderers { inherit lib pkgs; };
-  catallaxyLib = import ../../lib/eval.nix { inherit lib pkgs; };
+  renderers = import ../../lib/render { inherit lib pkgs; };
+  catallaxyLib = import ../../lib/eval/cluster.nix { inherit lib pkgs; };
 
 in
 {
@@ -95,8 +95,8 @@ in
         // lib.optionalAttrs config.lab.registry.enable {
           registry = config.lab.registry.service;
         }
-        // lib.optionalAttrs config.lab.ingress.enable {
-          ingress = config.lab.ingress.out.service;
+        // lib.optionalAttrs config.lab.proxy.enable {
+          proxy = config.lab.proxy.out.service;
         }
         // lib.optionalAttrs config.lab.bgpRouter.enable {
           bgpRouter = config.lab.bgpRouter.out.service;
@@ -122,7 +122,8 @@ in
       # Per-cluster configs for CLI consumption (provisioner details, components, etc.)
       clusters = lib.mapAttrs (
         _: clusterCfg:
-        (catallaxyLib.clusterConfigToJSON clusterCfg) // {
+        (catallaxyLib.clusterConfigToJSON clusterCfg)
+        // {
           labName = config.lab.name;
         }
       ) config.lab.out.allClusters;
@@ -218,6 +219,24 @@ in
           labNamespaces = config.lab.out.labNamespaces;
           # Lab-level secrets metadata (stores + managed) so CLI can resolve
           # store → SOPS file path without nix eval at runtime.
+          # Custom lint checks
+          lint.checks = lib.mapAttrs (name: check: {
+            inherit (check) description severity;
+          }) config.lab.lint.checks;
+
+          # Image policy for lint checks
+          images = {
+            inherit (config.lab.images) requireDigest allowedRegistries;
+            pins = lib.mapAttrs (_: pin: {
+              inherit (pin)
+                image
+                tag
+                digest
+                ref
+                ;
+            }) config.lab.images.pins;
+          };
+
           secrets = {
             stores = lib.mapAttrs (_: store: {
               inherit (store) backend;
@@ -264,13 +283,48 @@ in
           lib.concatLists (
             lib.mapAttrsToList (
               clusterName: clusterCfg:
-              map (step:
-                "ln -s ${step.package}/bin/${step.name} $out/hooks/${clusterName}-${step.name}"
-              ) (clusterCfg.lifecycle.teardown or [ ])
+              map (step: "ln -s ${step.package}/bin/${step.name} $out/hooks/${clusterName}-${step.name}") (
+                clusterCfg.lifecycle.teardown or [ ]
+              )
             ) config.lab.out.allClusters
           )
         );
         hasTeardownHooks = teardownHookLinks != "";
+
+        # Auto-deploy manifests (k3d boot-time CNI etc.) — baked into package
+        autoDeployLinks = lib.concatStringsSep "\n" (
+          lib.concatLists (
+            lib.mapAttrsToList (
+              clusterName: clusterCfg:
+              let
+                manifests = clusterCfg.provisioner.k3d.autoDeployManifests or [ ];
+              in
+              lib.optionals (manifests != [ ]) (
+                [ "mkdir -p $out/autodeploy/${clusterName}" ]
+                ++ map (m: "ln -s ${m.content} $out/autodeploy/${clusterName}/${m.name}.yaml") manifests
+              )
+            ) config.lab.out.allClusters
+          )
+        );
+
+        # Custom lint check scripts
+        lintCheckScripts = lib.mapAttrs (
+          name: check:
+          pkgs.writeShellApplication {
+            inherit name;
+            runtimeInputs = [
+              pkgs.yq-go
+              pkgs.jq
+              pkgs.coreutils
+            ];
+            text = check.command;
+          }
+        ) config.lab.lint.checks;
+        lintCheckLinks = lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (name: script: "ln -s ${script}/bin/${name} $out/lint/${name}") lintCheckScripts
+        );
+        hasLintChecks = config.lab.lint.checks != { };
+
         strategy = config.lab.cd.strategy;
         bootstrapLinks =
           if strategy == "kapp" then
@@ -284,7 +338,10 @@ in
       in
       pkgs.runCommand "lab-${config.lab.name}"
         {
-          nativeBuildInputs = [ pkgs.jq ];
+          nativeBuildInputs = [
+            pkgs.jq
+            pkgs.yq-go
+          ];
           passAsFile = [ "metadataText" ];
           metadataText = metadataJson;
         }
@@ -292,10 +349,28 @@ in
           mkdir -p $out/manifests $out/bin
           ${lib.optionalString (strategy != "kapp") "mkdir -p $out/bootstrap"}
           ${lib.optionalString hasTeardownHooks "mkdir -p $out/hooks"}
+          ${lib.optionalString hasLintChecks "mkdir -p $out/lint"}
           jq . "$metadataTextPath" > $out/metadata.json
           ${manifestLinks}
           ${bootstrapLinks}
           ${teardownHookLinks}
+          ${lintCheckLinks}
+          ${autoDeployLinks}
+
+          # Extract all container images from rendered manifests into images.txt.
+          # Targets container specs in Deployments, StatefulSets, DaemonSets, Jobs, CronJobs.
+          touch $out/images-raw.txt
+          ${lib.concatStringsSep "\n" (
+            lib.mapAttrsToList (name: pkg: ''
+              for f in $(find ${pkg}/${name} -name '*.yaml' -type f); do
+                yq -N 'select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "DaemonSet" or .kind == "Job" or .kind == "CronJob" or .kind == "Pod") | .spec.template.spec.containers[].image' "$f" 2>/dev/null >> $out/images-raw.txt || true
+                yq -N 'select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "DaemonSet" or .kind == "Job" or .kind == "CronJob" or .kind == "Pod") | .spec.template.spec.initContainers[].image' "$f" 2>/dev/null >> $out/images-raw.txt || true
+                yq -N 'select(.kind == "CronJob") | .spec.jobTemplate.spec.template.spec.containers[].image' "$f" 2>/dev/null >> $out/images-raw.txt || true
+              done
+            '') config.lab.out.manifests
+          )}
+          sort -u $out/images-raw.txt | grep -v '^$' | grep -v '^null$' > $out/images.txt || touch $out/images.txt
+          rm -f $out/images-raw.txt
           ${
             if config.lab.ops.out.tool != null then
               "ln -s ${config.lab.ops.out.tool}/bin/${config.lab.name}-ops $out/bin/${config.lab.name}-ops"

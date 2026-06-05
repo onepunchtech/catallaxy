@@ -6,7 +6,7 @@
 
   lab.dns.enable = true;
   lab.registry.enable = true;
-  lab.ingress.enable = true;
+  lab.proxy.enable = true;
 
   lab.clusters.core =
     { ... }:

@@ -14,6 +14,7 @@
     ./provisioning
     ./registries
     ./secrets
+    ./security
     ./source-control
     ./vpn
     ./gitops

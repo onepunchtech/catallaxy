@@ -15,7 +15,7 @@ mod tools;
 use clap::{Parser, Subcommand};
 use std::process::ExitCode;
 
-use commands::{apply, bootstrap, cluster, generate, kubeconfig, lab, pki, secrets};
+use commands::{apply, cluster, generate, images, kubeconfig, lab, pki, secrets};
 
 /// Catallaxy - Declarative Kubernetes Platform Management
 #[derive(Parser)]
@@ -52,9 +52,6 @@ enum Commands {
     /// Apply manifests to a cluster
     Apply(apply::ApplyArgs),
 
-    /// Bootstrap a CAPI management cluster
-    Bootstrap(bootstrap::BootstrapArgs),
-
     /// Manage PKI certificates and YubiKey provisioning
     Pki {
         #[command(subcommand)]
@@ -71,6 +68,12 @@ enum Commands {
     Kubeconfig {
         #[command(subcommand)]
         command: kubeconfig::KubeconfigCommands,
+    },
+
+    /// Manage container images (list, mirror, prefetch)
+    Images {
+        #[command(subcommand)]
+        command: images::ImagesCommands,
     },
 
     /// Generate Kubernetes API types from packaged OpenAPI specs and CRDs
@@ -99,10 +102,10 @@ async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Cluster { command } => cluster::run(&ctx, command).await,
         Commands::Lab { command } => lab::run(&ctx, command).await,
         Commands::Apply(args) => apply::run(&ctx, args).await,
-        Commands::Bootstrap(args) => bootstrap::run(&ctx, args).await,
         Commands::Pki { command } => pki::run(&ctx, command).await,
         Commands::Secrets { command } => secrets::run(&ctx, command).await,
         Commands::Kubeconfig { command } => kubeconfig::run(&ctx, command).await,
+        Commands::Images { command } => images::run(&ctx, command).await,
         Commands::Generate(args) => generate::run(&ctx, args).await,
     }
 }

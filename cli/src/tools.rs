@@ -374,23 +374,6 @@ pub mod k3d {
         Ok(())
     }
 
-    /// Start a stopped k3d cluster
-    pub fn cluster_start(ctx: &CataContext, name: &str, docker_host: Option<&str>) -> Result<()> {
-        println!("{} Starting k3d cluster '{name}'...", style(">>>").cyan());
-
-        let mut cmd = Command::new("k3d");
-        cmd.args(["cluster", "start", name]);
-
-        if let Some(host) = docker_host {
-            cmd.env("DOCKER_HOST", host);
-        }
-
-        run_streaming(&mut cmd, ctx)?;
-
-        println!("{} Cluster started", style(">>>").green());
-        Ok(())
-    }
-
     /// Check if a k3d cluster exists
     pub fn cluster_exists(name: &str, docker_host: Option<&str>) -> bool {
         let mut cmd = Command::new("k3d");
@@ -490,17 +473,20 @@ pub mod kube {
 
             match result {
                 Ok(output) if output.status.success() => {
-                    println!(
-                        "  CRD {crd_name} established"
-                    );
+                    println!("  CRD {crd_name} established");
                     return Ok(());
                 }
                 _ => {
                     if start.elapsed() > timeout_duration {
-                        bail!("Timed out waiting for CRD: {crd_name} ({}s elapsed)", timeout_duration.as_secs());
+                        bail!(
+                            "Timed out waiting for CRD: {crd_name} ({}s elapsed)",
+                            timeout_duration.as_secs()
+                        );
                     }
                     let elapsed = start.elapsed().as_secs();
-                    println!("  waiting... ({elapsed}s elapsed, CRD not yet registered by provider)");
+                    println!(
+                        "  waiting... ({elapsed}s elapsed, CRD not yet registered by provider)"
+                    );
                     std::thread::sleep(Duration::from_secs(5));
                 }
             }
@@ -512,9 +498,13 @@ pub mod kube {
     pub fn get_stuck_deployments(context: &str) -> Result<Vec<(String, String)>> {
         let output = Command::new("kubectl")
             .args([
-                "--context", context,
-                "get", "deployments", "-A",
-                "-o", "json",
+                "--context",
+                context,
+                "get",
+                "deployments",
+                "-A",
+                "-o",
+                "json",
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -525,8 +515,8 @@ pub mod kube {
             return Ok(vec![]);
         }
 
-        let json: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .unwrap_or(serde_json::Value::Null);
+        let json: serde_json::Value =
+            serde_json::from_slice(&output.stdout).unwrap_or(serde_json::Value::Null);
 
         let mut stuck = Vec::new();
         if let Some(items) = json["items"].as_array() {
@@ -551,10 +541,13 @@ pub mod kube {
     pub fn rollout_restart(context: &str, kind: &str, namespace: &str, name: &str) -> Result<()> {
         let status = Command::new("kubectl")
             .args([
-                "--context", context,
-                "rollout", "restart",
+                "--context",
+                context,
+                "rollout",
+                "restart",
                 &format!("{kind}/{name}"),
-                "-n", namespace,
+                "-n",
+                namespace,
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -583,16 +576,21 @@ pub mod kube {
 
             if let Ok(ref o) = output {
                 if o.status.success() {
-                    let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+                    let json: serde_json::Value =
+                        serde_json::from_slice(&o.stdout).unwrap_or_default();
                     if let Some(items) = json["items"].as_array() {
-                        let all_healthy = !items.is_empty() && items.iter().all(|p| {
-                            p["status"]["conditions"].as_array()
-                                .map(|conds| conds.iter().any(|c|
-                                    c["type"].as_str() == Some("Healthy")
-                                    && c["status"].as_str() == Some("True")
-                                ))
-                                .unwrap_or(false)
-                        });
+                        let all_healthy = !items.is_empty()
+                            && items.iter().all(|p| {
+                                p["status"]["conditions"]
+                                    .as_array()
+                                    .map(|conds| {
+                                        conds.iter().any(|c| {
+                                            c["type"].as_str() == Some("Healthy")
+                                                && c["status"].as_str() == Some("True")
+                                        })
+                                    })
+                                    .unwrap_or(false)
+                            });
                         if all_healthy {
                             return Ok(());
                         }
@@ -622,21 +620,32 @@ pub mod kube {
 
             if let Ok(ref o) = output {
                 if o.status.success() {
-                    let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+                    let json: serde_json::Value =
+                        serde_json::from_slice(&o.stdout).unwrap_or_default();
                     if let Some(items) = json["items"].as_array() {
                         if items.is_empty() {
                             // No managed resources yet — wait for them
                         } else {
                             let all_ready = items.iter().all(|r| {
                                 let conds = r["status"]["conditions"].as_array();
-                                let synced = conds.as_ref().map(|cs| cs.iter().any(|c|
-                                    c["type"].as_str() == Some("Synced")
-                                    && c["status"].as_str() == Some("True")
-                                )).unwrap_or(false);
-                                let ready = conds.as_ref().map(|cs| cs.iter().any(|c|
-                                    c["type"].as_str() == Some("Ready")
-                                    && c["status"].as_str() == Some("True")
-                                )).unwrap_or(false);
+                                let synced = conds
+                                    .as_ref()
+                                    .map(|cs| {
+                                        cs.iter().any(|c| {
+                                            c["type"].as_str() == Some("Synced")
+                                                && c["status"].as_str() == Some("True")
+                                        })
+                                    })
+                                    .unwrap_or(false);
+                                let ready = conds
+                                    .as_ref()
+                                    .map(|cs| {
+                                        cs.iter().any(|c| {
+                                            c["type"].as_str() == Some("Ready")
+                                                && c["status"].as_str() == Some("True")
+                                        })
+                                    })
+                                    .unwrap_or(false);
                                 synced && ready
                             });
                             if all_ready {
@@ -650,7 +659,10 @@ pub mod kube {
             if start.elapsed() > timeout {
                 bail!("Timed out waiting for managed resources on {context}");
             }
-            println!("  waiting for managed resources... ({}s)", start.elapsed().as_secs());
+            println!(
+                "  waiting for managed resources... ({}s)",
+                start.elapsed().as_secs()
+            );
             std::thread::sleep(Duration::from_secs(15));
         }
     }
@@ -659,10 +671,14 @@ pub mod kube {
     pub fn orphan_managed_resources(context: &str) -> Result<()> {
         let status = Command::new("kubectl")
             .args([
-                "--context", context,
-                "patch", "managed", "--all",
+                "--context",
+                context,
+                "patch",
+                "managed",
+                "--all",
                 "--type=merge",
-                "-p", r#"{"spec":{"deletionPolicy":"Orphan"}}"#,
+                "-p",
+                r#"{"spec":{"deletionPolicy":"Orphan"}}"#,
             ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

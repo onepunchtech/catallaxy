@@ -18,9 +18,10 @@ in
       issuerUrl = config.components.kanidm.ref.oauth2Clients.argocd.issuer;
       name = "Kanidm";
       caBundleConfigMap =
-        if config.components.cert-manager.selfSignedCA.enable
-        then config.components.cert-manager.ref.caBundleConfigMap
-        else null;
+        if config.components.cert-manager.selfSignedCA.enable then
+          config.components.cert-manager.ref.caBundleConfigMap
+        else
+          null;
       caBundleKey = config.components.cert-manager.ref.caBundleKey;
     };
   };

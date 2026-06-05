@@ -186,10 +186,7 @@ let
     # Velero plugins as init containers
     initContainers =
       optional
-        (
-          cfg.backupStorageLocation.provider == "aws"
-          || cfg.backupStorageLocation.provider == "seaweedfs"
-        )
+        (cfg.backupStorageLocation.provider == "aws" || cfg.backupStorageLocation.provider == "seaweedfs")
         {
           name = "velero-plugin-for-aws";
           image = "velero/velero-plugin-for-aws:v1.11.1";

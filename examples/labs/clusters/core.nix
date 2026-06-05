@@ -1,5 +1,10 @@
 # Core cluster — identity, git, registry, gitops
-{ config, lib, lab, ... }:
+{
+  config,
+  lib,
+  lab,
+  ...
+}:
 {
   imports = [
     ../aspects/networking.nix
@@ -26,15 +31,17 @@
     retention = "2h";
     externalLabels.cluster = "core";
     remoteWrite = [
-      ({
-        url = "https://prometheus-rw.${lab.dns.zone}/api/v1/write";
-      }
-      // lib.optionalAttrs config.components.cert-manager.selfSignedCA.enable {
-        tlsConfig.ca.configMap = {
-          name = config.components.cert-manager.ref.caBundleConfigMap;
-          key = config.components.cert-manager.ref.caBundleKey;
-        };
-      })
+      (
+        {
+          url = "https://prometheus-rw.${lab.dns.zone}/api/v1/write";
+        }
+        // lib.optionalAttrs config.components.cert-manager.selfSignedCA.enable {
+          tlsConfig.ca.configMap = {
+            name = config.components.cert-manager.ref.caBundleConfigMap;
+            key = config.components.cert-manager.ref.caBundleKey;
+          };
+        }
+      )
     ];
   };
 
@@ -43,9 +50,10 @@
     enable = true;
     # CA bundle only needed with self-signed CA (local dev); ACME certs use public CAs
     tls.caBundleConfigMap =
-      if config.components.cert-manager.selfSignedCA.enable
-      then config.components.cert-manager.ref.caBundleConfigMap
-      else null;
+      if config.components.cert-manager.selfSignedCA.enable then
+        config.components.cert-manager.ref.caBundleConfigMap
+      else
+        null;
     tls.caBundleKey = config.components.cert-manager.ref.caBundleKey;
     agent = {
       enable = true;

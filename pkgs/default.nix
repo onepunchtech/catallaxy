@@ -8,6 +8,8 @@
   pkgs,
   craneLib,
   rustToolchain,
+  cataCharts ? null,
+  k8sSpecs ? null,
 }:
 
 let
@@ -70,6 +72,51 @@ let
     '';
   };
 
+  # Option docs — auto-generated from Nix module system
+  optionDocs =
+    if cataCharts != null && k8sSpecs != null then
+      let
+        raw = import ../lib/docs/options.nix {
+          inherit
+            lib
+            pkgs
+            cataCharts
+            k8sSpecs
+            ;
+          sourceRoot = toString self;
+        };
+      in
+      pkgs.runCommand "catallaxy-option-docs" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+        python3 ${../lib/docs/render.py} \
+          ${raw.json}/share/doc/nixos/options.json \
+          $out
+      ''
+    else
+      null;
+
+  # Documentation site
+  docs =
+    if optionDocs != null then
+      pkgs.runCommand "catallaxy-docs"
+        {
+          nativeBuildInputs = [
+            pkgs.mdbook
+            pkgs.mdbook-mermaid
+          ];
+        }
+        ''
+          cp -r ${../docs/book} src
+          chmod -R u+w src
+          mkdir -p src/src/reference/options/components
+          cp ${optionDocs}/lab.md src/src/reference/options/
+          cp ${optionDocs}/cluster.md src/src/reference/options/
+          cp ${optionDocs}/components/*.md src/src/reference/options/components/
+          mdbook-mermaid install src
+          mdbook build src -d $out
+        ''
+    else
+      null;
+
 in
 {
   inherit
@@ -77,5 +124,7 @@ in
     cata
     cataWrapped
     mkScript
+    optionDocs
+    docs
     ;
 }

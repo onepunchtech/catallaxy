@@ -292,7 +292,12 @@ let
     outputs = config.cluster.out;
     lifecycle = {
       teardown = map (step: {
-        inherit (step) name description order waitTimeout;
+        inherit (step)
+          name
+          description
+          order
+          waitTimeout
+          ;
         bin = "${step.package}/bin/${step.name}";
       }) (lib.sort (a: b: a.order < b.order) (config.lifecycle.teardown or [ ]));
     };

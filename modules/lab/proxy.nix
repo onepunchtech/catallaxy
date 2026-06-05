@@ -13,7 +13,7 @@ let
     map
     unique
     ;
-  cfg = config.lab.ingress;
+  cfg = config.lab.proxy;
 
   # Discover exposed services from all clusters
   exposedServices = concatLists (
@@ -158,7 +158,7 @@ let
     '';
 in
 {
-  options.lab.ingress = {
+  options.lab.proxy = {
     enable = mkEnableOption "Lab ingress (HAProxy for domain-based routing to k3d clusters)";
 
     httpPort = mkOption {
@@ -194,7 +194,7 @@ in
     };
   };
 
-  config.lab.ingress.out = mkIf cfg.enable {
+  config.lab.proxy.out = mkIf cfg.enable {
     service = {
       description = "HAProxy lab ingress (${config.lab.dns.zone})";
       container = cfg.containerName;

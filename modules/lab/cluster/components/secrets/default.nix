@@ -3,7 +3,12 @@
 # Projections map lab-level managed secrets into Kubernetes Secrets
 # within a specific namespace, with optional key transforms.
 # Components declare projections; the CLI resolves them at deploy time.
-{ config, lib, lab, ... }:
+{
+  config,
+  lib,
+  lab,
+  ...
+}:
 
 let
   inherit (lib) mkOption types;
@@ -100,12 +105,10 @@ let
           message = "Projection '${projName}' references managed secret '${proj.source}' which does not exist in lab.secrets.managed";
         }
       ]
-      ++ lib.mapAttrsToList (
-        keyName: keyDef: {
-          assertion = managedSecret == null || builtins.elem keyDef.from managedSecretKeys;
-          message = "Projection '${projName}' key '${keyName}' references source key '${keyDef.from}' which does not exist in managed secret '${proj.source}'. Available keys: ${builtins.concatStringsSep ", " managedSecretKeys}";
-        }
-      ) proj.keys
+      ++ lib.mapAttrsToList (keyName: keyDef: {
+        assertion = managedSecret == null || builtins.elem keyDef.from managedSecretKeys;
+        message = "Projection '${projName}' key '${keyName}' references source key '${keyDef.from}' which does not exist in managed secret '${proj.source}'. Available keys: ${builtins.concatStringsSep ", " managedSecretKeys}";
+      }) proj.keys
     ) config.secrets.projections
   );
 
@@ -125,17 +128,21 @@ let
               bundles = lib.attrValues phaseCfg.bundles;
               nsInPhase = lib.concatMap (b: b.createNamespaces or [ ]) bundles;
             in
-            if builtins.elem proj.namespace nsInPhase
-            then [ { name = phaseName; order = phaseCfg.order; } ]
-            else [ ]
+            if builtins.elem proj.namespace nsInPhase then
+              [
+                {
+                  name = phaseName;
+                  order = phaseCfg.order;
+                }
+              ]
+            else
+              [ ]
           ) config.phases
         );
-        earliestOrder = lib.foldl' (
-          acc: p: if p.order < acc then p.order else acc
-        ) 999 namespacePhasePairs;
-        earliestPhase = lib.findFirst (
-          p: p.order == earliestOrder
-        ) { name = "unknown"; } namespacePhasePairs;
+        earliestOrder = lib.foldl' (acc: p: if p.order < acc then p.order else acc) 999 namespacePhasePairs;
+        earliestPhase = lib.findFirst (p: p.order == earliestOrder) {
+          name = "unknown";
+        } namespacePhasePairs;
       in
       lib.optional (namespacePhasePairs != [ ] && earliestOrder < projPhaseOrder) {
         assertion = false;

@@ -92,6 +92,7 @@ struct ManagedKeyDef {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct Projection {
     source: String,
     namespace: String,
@@ -101,6 +102,7 @@ struct Projection {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct ProjectionKeyDef {
     from: String,
     transform: Option<String>,
@@ -405,9 +407,7 @@ async fn generate(
             .context("Failed to run sops encrypt")?;
 
         if !status.success() {
-            bail!(
-                "Failed to encrypt store '{store_name}'. Is .sops.yaml configured?"
-            );
+            bail!("Failed to encrypt store '{store_name}'. Is .sops.yaml configured?");
         }
 
         let key_count: usize = store_secrets.iter().map(|(_, s)| s.keys.len()).sum();

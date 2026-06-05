@@ -27,6 +27,8 @@
 - [Homelab OIDC Setup](./recipes/homelab-oidc.md)
 - [Backup and Restore](./recipes/backup-restore.md)
 - [Custom Components](./recipes/custom-component.md)
+- [Secrets Management](./recipes/secrets-management.md)
+- [Operational Runbook](./recipes/operations.md)
 
 # Reference
 
@@ -47,6 +49,14 @@
   - [Provisioning](./reference/options/components/provisioning.md)
   - [Other](./reference/options/components/other.md)
 - [Phases](./reference/phases.md)
+- [Security](./reference/security.md)
+- [Images](./reference/images.md)
+- [Lint](./reference/lint.md)
+
+# Extending
+
+- [Overview](./extending/index.md)
+- [Writing Components](./extending/components.md)
 
 # Contributing
 

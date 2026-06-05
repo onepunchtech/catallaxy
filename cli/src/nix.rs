@@ -66,26 +66,28 @@ pub fn get_cluster_config_from_lab(
         })
 }
 
-/// Get the cluster configuration as JSON from flake output (legacy, for non-lab contexts)
+/// Get the cluster configuration as JSON.
+/// Requires a lab context — resolves lab name from flake fragment, then extracts cluster config.
 pub fn get_cluster_config(ctx: &CataContext, cluster_name: &str) -> Result<serde_json::Value> {
-    let system = current_system();
-    eval_flake(ctx, &format!("clusters.{system}.{cluster_name}"))
+    let lab_name = ctx.resolve_lab_name(None)?;
+    let lab = get_lab_config(ctx, &lab_name)?;
+    get_cluster_config_from_lab(&lab, cluster_name)
 }
 
-/// List available cluster names from the flake
+/// List available cluster names from the lab.
 pub fn list_clusters(ctx: &CataContext) -> Result<Vec<String>> {
-    let uri = ctx.flake_uri();
-    let system = current_system();
-    let installable = format!("{uri}#clusters.{system}");
-
-    let stdout = run_nix(&[
-        "eval",
-        "--json",
-        &installable,
-        "--apply",
-        "builtins.attrNames",
-    ])?;
-    serde_json::from_str(&stdout).context("Failed to parse cluster list")
+    let lab_name = ctx.resolve_lab_name(None)?;
+    let lab = get_lab_config(ctx, &lab_name)?;
+    let names = lab
+        .get("clusterNames")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(names)
 }
 
 /// Get the current nix system string (e.g., "aarch64-darwin", "x86_64-linux")
@@ -128,12 +130,6 @@ pub fn list_labs(ctx: &CataContext) -> Result<Vec<String>> {
         "builtins.attrNames",
     ])?;
     serde_json::from_str(&stdout).context("Failed to parse lab list")
-}
-
-/// Build rendered manifests for a cluster and return the output path
-pub fn build_manifests(ctx: &CataContext, cluster_name: &str) -> Result<String> {
-    let system = current_system();
-    build(ctx, &format!("manifests.{system}.{cluster_name}"))
 }
 
 /// Build a lab's output package and return the store path

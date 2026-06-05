@@ -2,108 +2,127 @@
 
 The example lab is bundled with catallaxy for reference, but real usage starts with your own flake. You define your lab topology in Nix modules and catallaxy evaluates them into rendered manifests and runtime tooling.
 
-## Minimal flake
+## Quick start
 
-Create a new directory for your lab and add a `flake.nix`:
+```bash
+nix flake init -t github:onepunchtech/catallaxy#consumer
+```
+
+This creates a working consumer flake with a custom component example.
+
+## Minimal flake
 
 ```nix
 {
   inputs = {
-    catallaxy.url = "github:onepunchtech/catallaxy";
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    catallaxy.url = "github:onepunchtech/catallaxy";
   };
 
-  outputs = { catallaxy, nixpkgs, ... }:
-  let
-    lab = catallaxy.lib.mkLab {
-      modules = [ ./lab.nix ];
-    };
-  in {
-    # use lab outputs
-  };
+  outputs = { nixpkgs, flake-utils, catallaxy, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        mkLab = catallaxy.${system}.mkLab;
+      in {
+        labs."my-platform" = (mkLab {
+          modules = [ ./lab.nix ];
+        }).config.lab.out.cliConfig;
+      }
+    );
 }
 ```
 
-The key function is `catallaxy.lib.mkLab`. It takes a list of NixOS-style modules and evaluates them through catallaxy's module system — the same one that powers the example lab.
+`mkLab` takes a list of NixOS-style modules and evaluates them through catallaxy's module system — the same one that powers the example labs.
 
 ## Define your lab topology
 
-Create `lab.nix` alongside the flake. This is where you declare clusters, enable components, and wire things together:
+Create `lab.nix` alongside the flake:
 
 ```nix
 { config, lib, ... }:
 {
-  lab = {
-    name = "mylab";
-    domain = "mylab.test";
+  lab.name = "my-platform";
+  lab.dns.zone = "mylab.test";
 
-    clusters.primary = {
-      components = {
-        cert-manager.enable = true;
-        gateway.enable = true;
-        argocd.enable = true;
-      };
+  lab.clusters.app = { ... }: {
+    cluster.name = "app";
+    cluster.kubernetes = {
+      distribution = "k3s";
+      controlPlanes = 1;
+      workers = 0;
     };
+
+    components.cert-manager.enable = true;
+    components.gateway.enable = true;
   };
 }
 ```
 
-Each component is a self-contained module. Enabling it causes it to write its Helm charts, resources, and configuration into the appropriate deployment phase. You do not need to manage ordering or dependencies — the phase system handles that.
+Each component is a self-contained module. Enabling it causes it to write its Helm charts, resources, and configuration into the appropriate deployment phase. The phase system handles ordering and dependencies.
+
+## Custom components
+
+Add your own components as modules:
+
+```nix
+mkLab {
+  modules = [
+    ./lab.nix
+    ./components/my-app.nix    # Custom component
+  ];
+}
+```
+
+See [Writing Components](../extending/components.md) for the full guide.
 
 ## Splitting configuration across files
 
-As your lab grows, split it into multiple modules. The `modules` list in `mkLab` accepts any number of files, and the module system merges them:
+As your lab grows, split it into aspects (features), clusters, and environment overlays:
 
 ```nix
-lab = catallaxy.lib.mkLab {
+mkLab {
   modules = [
-    ./topology.nix        # cluster definitions
-    ./networking.nix       # gateway, DNS, cert-manager config
-    ./identity.nix         # kanidm users, groups, oauth2
-    ./observability.nix    # prometheus, loki, grafana
-    ./env/local.nix        # environment-specific overrides
+    ./topology.nix        # Cluster definitions
+    ./networking.nix       # Gateway, DNS, cert-manager
+    ./identity.nix         # Kanidm users, groups, OAuth2
+    ./observability.nix    # Prometheus, Loki, Grafana
+    ./env/local.nix        # Environment-specific overrides
   ];
 };
 ```
 
-This is the pattern the example lab uses: **aspects** define features (networking, identity, GitOps), **clusters** compose aspects, and **environments** provide thin overrides for local, staging, or production targets. No environment logic leaks into the aspects themselves.
+This is the pattern the example lab uses: **aspects** define features, **clusters** compose aspects, and **environments** provide thin overrides for local, staging, or production targets.
 
 ## Cross-cluster references
 
 Components can reference values from other clusters through the `lab` argument:
 
 ```nix
-{ config, lib, lab, ... }:
+{ config, lab, ... }:
 {
-  lab.clusters.apps = {
-    components.otel-collector = {
-      enable = true;
-      exporters.otlp.endpoint =
-        lab.clusters.obs.components.tempo.ref.otlpGrpc;
-    };
+  components.otel-collector = {
+    enable = true;
+    exporters.otlp.endpoint = lab.clusters.obs.components.tempo.ref.otlpGrpc;
   };
 }
 ```
 
-Every component exposes a `ref` attribute set with computed, read-only values — endpoints, namespaces, service names. These refs are always available, even when the referenced component is disabled, so your configuration does not break when toggling features.
+Every component exposes a `ref` attribute set with computed, read-only values — endpoints, namespaces, service names. Refs are always available, even when the component is disabled.
 
 ## Running your lab
 
-From your flake directory, enter the dev shell and use `cata` as shown in the [Quick Start](./quick-start.md):
-
 ```bash
 nix develop github:onepunchtech/catallaxy
-cata --flake .#mylab lab up
+cata --flake '.#my-platform' lab up
+cata --flake '.#my-platform' lab down       # Stop (preserves state)
+cata --flake '.#my-platform' lab destroy    # Delete everything
 ```
-
-The `--flake .#mylab` argument points to the current directory's flake and selects the lab named `mylab` — the name you set in `lab.name`.
 
 ## Building manifests without applying
 
-You can also build the rendered manifests as a Nix derivation without standing up any clusters:
-
 ```bash
-nix build '.#labPackages.x86_64-linux."mylab"'
+nix build '.#labPackages.x86_64-linux."my-platform"'
 ```
 
-This produces the full deployment package — manifests organized by cluster and phase, metadata, and ops tooling — as a store path you can inspect, diff, or ship to a CI pipeline.
+This produces the full deployment package — manifests, metadata, images list, and ops tooling — as a store path you can inspect, diff, or ship to CI.

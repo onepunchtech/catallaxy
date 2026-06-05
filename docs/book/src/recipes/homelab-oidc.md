@@ -70,17 +70,17 @@ lab.ops.commands.init-user = {
 
 ## Step 5: Log in to Kanidm
 
-Open [https://kanidm.homelab.test](https://kanidm.homelab.test) in your browser. Log in with the `lab-admin` username and the temporary password from the previous step. You will be prompted to set a new password and configure WebAuthn or TOTP.
+Open [https://idm.homelab.test](https://idm.homelab.test) in your browser. Log in with the `lab-admin` username and the temporary password from the previous step. You will be prompted to set a new password and configure WebAuthn or TOTP.
 
 ## Step 6: Access services via OIDC
 
 With your Kanidm account set up, all OIDC-enabled services authenticate through it:
 
-| Service | URL | Notes |
-|---------|-----|-------|
-| ArgoCD | [https://argocd.homelab.test](https://argocd.homelab.test) | Click "Log in via Kanidm" |
-| Grafana | [https://grafana.homelab.test](https://grafana.homelab.test) | Click "Sign in with Kanidm" |
-| Forgejo | [https://forgejo.homelab.test](https://forgejo.homelab.test) | Click the Kanidm OAuth2 option |
+| Service | URL                                                          | Notes                          |
+| ------- | ------------------------------------------------------------ | ------------------------------ |
+| ArgoCD  | [https://argocd.homelab.test](https://argocd.homelab.test)   | Click "Log in via Kanidm"      |
+| Grafana | [https://grafana.homelab.test](https://grafana.homelab.test) | Click "Sign in with Kanidm"    |
+| Forgejo | [https://git.homelab.test](https://git.homelab.test)         | Click the Kanidm OAuth2 option |
 
 Each service has its OAuth2 client registered in Kanidm automatically via the kaniop operator. Group memberships in Kanidm map to roles in each service -- for example, members of the `grafana-editors` group get the Editor role in Grafana.
 

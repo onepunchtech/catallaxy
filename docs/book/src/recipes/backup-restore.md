@@ -1,8 +1,8 @@
 # Backup and Restore
 
-Catallaxy uses [Velero](https://velero.io/) for cluster backup and restore. For local development, backups are stored in [SeaweedFS](https://github.com/seaweedfs/seaweedfs) (S3-compatible). For production, Velero supports AWS S3, GCP Cloud Storage, and Azure Blob Storage.
+Catallaxy uses [Velero](https://velero.io/) for cluster backup and restore in it's example. However you can extend catallaxy to use whatever k8s backup strategy you want. For local development, backups are stored in [SeaweedFS](https://github.com/seaweedfs/seaweedfs) (S3-compatible). For production, Velero supports AWS S3, GCP Cloud Storage, and Azure Blob Storage.
 
-## Enabling backups
+## Enabling Backups
 
 Enable Velero and a storage backend on the cluster that holds your stateful workloads:
 
@@ -23,23 +23,11 @@ Enable Velero and a storage backend on the cluster that holds your stateful work
 }
 ```
 
-Import this aspect in your cluster definition:
-
-```nix
-# clusters/core.nix
-{
-  imports = [
-    ../aspects/networking.nix
-    ../aspects/backups.nix
-  ];
-}
-```
-
 Deploy with `cata lab up` or `cata lab apply`. Velero will start taking scheduled backups automatically.
 
-## Cloud storage (production)
+## Cloud Storage (Production)
 
-For production, point Velero at a real S3 bucket instead of SeaweedFS:
+For production, point Velero at a real S3 bucket:
 
 ```nix
 components.velero = {
@@ -49,93 +37,59 @@ components.velero = {
     bucket = "my-velero-backups";
     s3 = {
       region = "us-east-1";
-      # For S3-compatible services (MinIO, Ceph, etc.):
-      # endpoint = "https://s3.example.com";
-      # s3ForcePathStyle = true;
     };
   };
 };
 ```
 
-Velero credentials are managed via a Kubernetes Secret in the `velero` namespace. Create it with SOPS or your preferred secret management approach.
+## Using Velero
 
-## CLI commands
+Backups are managed directly via the `velero` CLI or through lab ops commands.
 
-### On-demand backup
+### On-Demand Backup
 
 ```bash
-# Backup all namespaces (excludes kube-system, velero by default)
-cata backup create --cluster core
+# Via ops commands (if configured in your lab)
+cata lab ops backup create
 
-# Backup specific namespaces
-cata backup create --cluster core --namespaces forgejo,kanidm
-
-# Backup with a custom name
-cata backup create --cluster core --name pre-upgrade
+# Or directly via velero CLI
+velero backup create my-backup --include-namespaces forgejo,kanidm
 ```
 
-### List and inspect
+### List and Inspect
 
 ```bash
-cata backup list --cluster core
-cata backup describe --cluster core --name pre-upgrade
-cata backup logs --cluster core --name pre-upgrade
+velero backup get
+velero backup describe my-backup
+velero backup logs my-backup
 ```
 
 ### Restore
 
 ```bash
-# Restore everything from a backup
-cata backup restore --cluster core --backup pre-upgrade
-
-# Restore specific namespaces only
-cata backup restore --cluster core --backup pre-upgrade --namespaces forgejo
+velero restore create --from-backup my-backup
+velero restore create --from-backup my-backup --include-namespaces forgejo
 ```
 
 ### Schedules
 
 ```bash
-# List configured schedules
-cata backup schedules --cluster core
-
-# Manually trigger a schedule
-cata backup trigger --cluster core --schedule daily
+velero schedule get
+velero schedule trigger daily
 ```
 
-## Cross-cluster migration
+## Cross-Cluster Migration
 
-Migrate workloads from one cluster to another. Both clusters must have Velero configured with access to the same backup storage.
+Migrate workloads between clusters by backing up on one and restoring on another. Both clusters must have Velero configured with access to the same backup storage location.
 
 ```bash
-# Migrate all workloads from core to core-v2
-cata backup migrate --from core --to core-v2
+# On source cluster
+velero backup create migration-backup
 
-# Migrate specific namespaces
-cata backup migrate --from core --to core-v2 --namespaces forgejo,kanidm
-
-# Skip confirmation prompt
-cata backup migrate --from core --to core-v2 --yes
+# On target cluster
+velero restore create --from-backup migration-backup
 ```
 
-The migrate command creates a backup on the source cluster, restores it on the target, and prints next steps (DNS updates, ingress changes, source decommissioning).
+## Management Cluster Pivot
 
-## Pre-shutdown stabilization
-
-Before tearing down a cluster, create a full backup:
-
-```bash
-cata backup stabilize --cluster core
-```
-
-This ensures all data is captured before the cluster is destroyed. The stabilize command will auto-deploy Velero if it isn't already running.
-
-## Management cluster pivot
-
-For CAPI-managed environments, `cata bootstrap init` handles the full management cluster lifecycle including pivot:
-
-1. Creates a temporary bootstrap cluster
-2. Provisions the management cluster via CAPI
-3. Pivots CAPI resources from bootstrap to management cluster
-4. Tears down the bootstrap cluster
-
-The pivot is resumable — if it fails partway, `cata bootstrap resume` picks up where it left off.
+For environments with cloud management clusters, catallaxy handles the pivot automatically during `lab up` when a cluster self-provisions (declares itself in its own Crossplane `kubernetesClusters`). The planner generates bootstrap → pivot → destroy steps. See [Bootstrap & Pivot](../architecture/overview.md) for details.

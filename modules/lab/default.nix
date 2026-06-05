@@ -6,9 +6,11 @@
     ./dns.nix
     ./network.nix
     ./registry.nix
-    ./ingress.nix
+    ./proxy.nix
     ./ops.nix
     ./secrets.nix
+    ./images.nix
+    ./lint.nix
     ./planner.nix
     ./bgp-router.nix
     ./out.nix

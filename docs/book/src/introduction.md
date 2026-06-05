@@ -25,7 +25,7 @@ The system has two layers:
 
 ## Status
 
-Catallaxy is at **v0.5** — functional and in active use, but the API is not yet stable. Expect breaking changes between minor versions. Feedback and contributions are welcome.
+Catallaxy is functional and in active use, but the API is not yet stable. Expect breaking changes between minor versions. Feedback and contributions are welcome.
 
 ## Where to go from here
 

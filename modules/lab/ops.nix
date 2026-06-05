@@ -32,7 +32,11 @@ let
   optionType = types.submodule {
     options = {
       type = mkOption {
-        type = types.enum [ "string" "enum" "bool" ];
+        type = types.enum [
+          "string"
+          "enum"
+          "bool"
+        ];
         default = "string";
       };
       description = mkOption {
@@ -156,7 +160,10 @@ let
         description = "Target cluster";
       };
 
-      finalOptions = { cluster = clusterOption; } // mergedOptions;
+      finalOptions = {
+        cluster = clusterOption;
+      }
+      // mergedOptions;
 
       # Build packages attrset: { clusterName → package }
       packages = builtins.listToAttrs (map (e: nameValuePair e.clusterName e.cmd.package) entries);
@@ -172,16 +179,14 @@ let
 
   # Step 3: User commands (lab-global, no merge needed)
   # Convert to the merged format (single package, no cluster dispatch)
-  userOps = mapAttrs (
-    name: cmd: {
-      inherit (cmd) description category args;
-      options = cmd.options or { };
-      packages = { };
-      isSingleCluster = false;
-      userCommand = true;
-      package = cmd.package;
-    }
-  ) cfg.commands;
+  userOps = mapAttrs (name: cmd: {
+    inherit (cmd) description category args;
+    options = cmd.options or { };
+    packages = { };
+    isSingleCluster = false;
+    userCommand = true;
+    package = cmd.package;
+  }) cfg.commands;
 
   # Step 4: Final merged commands (user overrides cluster)
   allCommands = mergedClusterOps // userOps;
@@ -230,12 +235,7 @@ let
             opt = cmd.options.${n};
             var = shellVar n;
           in
-          if opt.type == "bool" then
-            ''
-                        --${n}) ${var}=true; shift ;;''
-          else
-            ''
-                        --${n}) ${var}="$2"; shift 2 ;;''
+          if opt.type == "bool" then "--${n}) ${var}=true; shift ;;" else ''--${n}) ${var}="$2"; shift 2 ;;''
         ) optNames
       );
       # Validation for required options
@@ -247,10 +247,7 @@ let
               opt = cmd.options.${n};
               var = shellVar n;
               enumHelp =
-                if opt.type == "enum" && opt.values != [ ] then
-                  " (${concatStringsSep ", " opt.values})"
-                else
-                  "";
+                if opt.type == "enum" && opt.values != [ ] then " (${concatStringsSep ", " opt.values})" else "";
             in
             if opt.required then
               # Use printf %s to avoid shellcheck literal-string warnings
@@ -321,18 +318,13 @@ let
       # Cluster command: dispatch by OPT_cluster
       let
         clusterBranches = concatStringsSep "\n" (
-          mapAttrsToList (
-            clusterName: pkg: ''
-                          ${clusterName}) exec ${pkg}/bin/${name} "$@" ;;''
-          ) cmd.packages
+          mapAttrsToList (clusterName: pkg: ''${clusterName}) exec ${pkg}/bin/${name} "$@" ;;'') cmd.packages
         );
       in
       ''
         case "$OPT_cluster" in
         ${clusterBranches}
-                        *) echo "Error: --cluster is required (${
-                          concatStringsSep ", " (attrNames cmd.packages)
-                        })"; exit 1 ;;
+                        *) echo "Error: --cluster is required (${concatStringsSep ", " (attrNames cmd.packages)})"; exit 1 ;;
                       esac'';
 
   # Generate help for a command's options and args
@@ -419,18 +411,18 @@ let
                 "";
           in
           ''
-                ${name})
-                  shift
-                  SHOW_HELP=false
-                  ${parsed.parse}
-                  if [ "$SHOW_HELP" = true ]; then
-                    ${helpText}
-                    exit 0
-                  fi
-                  ${parsed.validate}
-                  ${argValidation}
-                  ${execDispatch}
-                  ;;''
+            ${name})
+              shift
+              SHOW_HELP=false
+              ${parsed.parse}
+              if [ "$SHOW_HELP" = true ]; then
+                ${helpText}
+                exit 0
+              fi
+              ${parsed.validate}
+              ${argValidation}
+              ${execDispatch}
+              ;;''
         ) commands
       );
       helpLines = concatStringsSep "\n" (
@@ -458,9 +450,7 @@ let
   # Generate the top-level script
   toolScript =
     let
-      categoryBranches = concatStringsSep "\n" (
-        mapAttrsToList mkCategoryCase commandsByCategory
-      );
+      categoryBranches = concatStringsSep "\n" (mapAttrsToList mkCategoryCase commandsByCategory);
       categoryHelp = concatStringsSep "\n" (
         map (
           cat:

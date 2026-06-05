@@ -20,7 +20,7 @@ This drops you into a shell with every tool catallaxy needs: `cata`, `kubectl`, 
 ## Bring the lab up
 
 ```bash
-cata --flake ./examples/labs#homelab lab up
+cata --flake ./examples/labs#homelab.local lab up
 ```
 
 This is the main command. It evaluates the lab configuration defined in `examples/labs/flake.nix` for the lab named `homelab`, provisions k3d clusters, and applies all rendered manifests in phase order. Phases run from CRDs and namespaces through networking, operators, infrastructure, GitOps, databases, and applications.
@@ -30,7 +30,7 @@ The `--flake ./examples/labs#homelab` argument points to the flake directory and
 ## Set up DNS
 
 ```bash
-cata --flake ./examples/labs#homelab lab dns --setup
+cata --flake ./examples/labs#homelab.local lab dns --setup
 ```
 
 Configures your local DNS resolution so that `*.homelab.test` domains route to the lab's ingress. This lets you access services by name in your browser without editing `/etc/hosts`.
@@ -38,7 +38,7 @@ Configures your local DNS resolution so that `*.homelab.test` domains route to t
 ## Trust the lab CA
 
 ```bash
-cata --flake ./examples/labs#homelab lab trust --setup
+cata --flake ./examples/labs#homelab.local lab trust --setup
 ```
 
 Adds the lab's certificate authority to your system's trust store. The lab generates its own CA via cert-manager, and this command ensures your browser and CLI tools trust the TLS certificates it issues. Without this, you will see certificate warnings on every service.
@@ -46,7 +46,7 @@ Adds the lab's certificate authority to your system's trust store. The lab gener
 ## Verify the lab is running
 
 ```bash
-cata --flake ./examples/labs#homelab lab status
+cata --flake ./examples/labs#homelab.local lab status
 ```
 
 Shows the state of each cluster and its components. Once everything is healthy, the lab's services are accessible at their configured domains:
@@ -59,10 +59,11 @@ Additional services depend on which components are enabled in the lab configurat
 ## Tear it down
 
 ```bash
-cata --flake ./examples/labs#homelab lab down
+cata --flake ./examples/labs#homelab.local lab down      # stop clusters (preserves state)
+cata --flake ./examples/labs#homelab.local lab destroy    # delete everything
 ```
 
-Destroys the k3d clusters and cleans up associated resources. Your lab configuration is unchanged — run `lab up` again to recreate it from scratch.
+`lab down` stops clusters but preserves state — run `lab up` to restart. `lab destroy` deletes clusters, services, and network completely.
 
 ## Next steps
 

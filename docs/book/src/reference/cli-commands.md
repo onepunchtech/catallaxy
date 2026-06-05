@@ -1,45 +1,53 @@
 # CLI Commands
 
-The `cata` CLI orchestrates runtime operations for Catallaxy labs. It evaluates Nix expressions, applies manifests to clusters, and manages secrets, PKI, backups, and more.
+The `cata` CLI orchestrates runtime operations for Catallaxy labs. It evaluates Nix expressions, applies manifests to clusters, and manages secrets, PKI, and images.
 
 Most commands require a `--flake` argument pointing to your lab flake:
 
 ```bash
-cata --flake ./examples/labs#homelab.local <command>
+cata --flake '.#homelab.local' <command>
 ```
 
-## Lab lifecycle
+## Lab Lifecycle
 
 ### `cata lab up`
 
-Provision all clusters in the lab, render manifests, and apply them phase by phase.
+Provision all clusters, render manifests, and apply them phase by phase.
 
 ```bash
-cata --flake ./examples/labs#homelab lab up
+cata lab up
 ```
 
 ### `cata lab down`
 
-Tear down all clusters in the lab and clean up resources.
+Stop lab clusters. Preserves state — clusters can be restarted with `lab up`.
 
 ```bash
-cata --flake ./examples/labs#homelab lab down
+cata lab down
+```
+
+### `cata lab destroy`
+
+Destroy lab completely — deletes clusters, cloud resources, services, and network. Not reversible.
+
+```bash
+cata lab destroy
 ```
 
 ### `cata lab init`
 
-Initialize lab infrastructure without applying manifests. Sets up provisioners, generates PKI if needed, and prepares the environment.
+Initialize lab infrastructure without applying manifests.
 
 ```bash
-cata --flake ./examples/labs#homelab lab init
+cata lab init
 ```
 
 ### `cata lab status`
 
-Show the status of all clusters and their components.
+Show the status of all clusters and services.
 
 ```bash
-cata --flake ./examples/labs#homelab lab status
+cata lab status
 ```
 
 ### `cata lab list`
@@ -47,46 +55,69 @@ cata --flake ./examples/labs#homelab lab status
 List all labs defined in the flake.
 
 ```bash
-cata --flake ./examples/labs lab list
+cata lab list
+```
+
+### `cata lab plan`
+
+Show the computed deployment plan without executing.
+
+```bash
+cata lab plan
+cata lab plan --teardown   # show teardown plan
 ```
 
 ### `cata lab lint`
 
-Validate lab configuration. Evaluates the Nix modules and checks for errors without applying anything. This is what `nix flake check` runs.
+Validate rendered manifests against property checks.
 
 ```bash
-cata --flake ./examples/labs#homelab lab lint
+cata lab lint
+cata lab lint --skip image-pin,crd-schema   # skip specific checks
+cata lab lint --path /nix/store/...-lab-*    # lint a pre-built package
 ```
 
 ### `cata lab apply`
 
-Apply manifests to all clusters in the lab. Unlike `lab up`, this does not provision clusters -- it only renders and applies.
+Apply manifests to all clusters without provisioning.
 
 ```bash
-cata --flake ./examples/labs#homelab lab apply
+cata lab apply
+cata lab apply --phase operators   # specific phase
 ```
 
-## Lab publishing
+## Lab Publishing
 
 ### `cata lab publish`
 
-Render manifests and push them to a Git repository for GitOps consumption.
+Render manifests and push to a Git repository for GitOps consumption.
 
 ```bash
-cata --flake ./examples/labs#homelab lab publish
-cata --flake ./examples/labs#homelab lab publish --pr       # create a pull request
-cata --flake ./examples/labs#homelab lab publish --dry-run  # render without pushing
+cata lab publish
+cata lab publish --pr         # create a pull request
+cata lab publish --dry-run    # preview without pushing
 ```
 
-## Local environment
+## Lab Ops
+
+### `cata lab ops <args...>`
+
+Run lab-defined operational commands.
+
+```bash
+cata lab ops idm init-user lab-admin
+cata lab ops database shell
+```
+
+## Local Environment
 
 ### `cata lab dns`
 
-Configure or remove local DNS resolution for lab domains.
+Configure local DNS resolution for lab domains.
 
 ```bash
-cata --flake ./examples/labs#homelab lab dns --setup
-cata --flake ./examples/labs#homelab lab dns --teardown
+cata lab dns --setup
+cata lab dns --teardown
 ```
 
 ### `cata lab trust`
@@ -94,183 +125,178 @@ cata --flake ./examples/labs#homelab lab dns --teardown
 Install or remove the lab CA from the system trust store.
 
 ```bash
-cata --flake ./examples/labs#homelab lab trust --setup
-cata --flake ./examples/labs#homelab lab trust --teardown
+cata lab trust --setup
+cata lab trust --teardown
+cata lab trust --export   # print CA PEM to stdout
 ```
 
-## Lab ops
-
-### `cata lab ops <command> [args...]`
-
-Run lab-defined operational commands. These are custom scripts declared in the lab configuration that understand the lab topology.
-
-```bash
-cata --flake ./examples/labs#homelab lab ops init-user lab-admin
-```
-
-List available ops commands:
-
-```bash
-cata --flake ./examples/labs#homelab lab ops --list
-```
-
-## Cluster lifecycle
+## Cluster Lifecycle
 
 ### `cata cluster up`
 
-Provision a single cluster.
+Provision and apply manifests to a single cluster.
 
 ```bash
-cata --flake ./examples/labs#homelab cluster up --cluster core
+cata cluster up core
 ```
 
 ### `cata cluster down`
 
-Tear down a single cluster.
+Stop a single cluster (alias: `cluster destroy`).
 
 ```bash
-cata --flake ./examples/labs#homelab cluster down --cluster core
+cata cluster down core
 ```
-
-### `cata cluster init`
-
-Initialize a single cluster without applying manifests.
-
-### `cata cluster status`
-
-Show the status of a single cluster.
-
-### `cata cluster list`
-
-List all clusters in the lab.
 
 ## Apply
 
-### `cata apply`
+### `cata apply <cluster>`
 
 Apply manifests to a cluster with fine-grained control.
 
 ```bash
-cata --flake ./examples/labs#homelab apply --cluster core
-cata --flake ./examples/labs#homelab apply --cluster core --phase networking
-cata --flake ./examples/labs#homelab apply --cluster core --component cert-manager
-cata --flake ./examples/labs#homelab apply --cluster core --dry-run
+cata apply core
+cata apply core --phase networking
+cata apply core --dry-run
+cata apply core --force   # bypass GitOps strategy check
 ```
-
-Options:
-
-| Flag | Description |
-|------|-------------|
-| `--cluster` | Target cluster name |
-| `--phase` | Apply only a specific phase |
-| `--component` | Apply only a specific component's bundles |
-| `--dry-run` | Show what would be applied without making changes |
 
 ## PKI
 
-### `cata pki root-ca`
+### `cata pki init`
 
-Generate or display the root certificate authority.
+Initialize the PKI CA for a cluster (generates root CA if needed).
 
 ```bash
-cata pki root-ca --generate
-cata pki root-ca --show
+cata pki init core
 ```
 
-### `cata pki sign`
+### `cata pki issue <user>`
 
-Sign a certificate with the root CA.
+Issue a client certificate for a user.
 
 ```bash
-cata pki sign --cn "my-service" --san "my-service.example.com"
+cata pki issue admin
 ```
 
-### `cata pki yubikey`
+### `cata pki provision <user>`
 
-Manage YubiKey-backed PKI operations.
+Write a certificate to a YubiKey PIV slot.
 
 ```bash
-cata pki yubikey --setup
+cata pki provision admin
+```
+
+### `cata pki list`
+
+List CA and certificate status.
+
+```bash
+cata pki list core
+```
+
+### `cata pki kubeconfig <user>`
+
+Generate a kubeconfig entry using the client certificate.
+
+```bash
+cata pki kubeconfig admin
 ```
 
 ## Secrets
 
 ### `cata secrets generate`
 
-Generate secrets for a lab (e.g., database passwords, OIDC client secrets).
+Generate SOPS-encrypted secret files for all stores.
 
 ```bash
-cata --flake ./examples/labs#homelab secrets generate
+cata secrets generate
 ```
 
-### `cata secrets encrypt`
+### `cata secrets edit <store>`
 
-Encrypt secrets for storage.
+Decrypt, edit, and re-encrypt a secrets store.
 
 ```bash
-cata secrets encrypt --file secrets.yaml
+cata secrets edit cloud-creds
 ```
 
-### `cata secrets decrypt`
+### `cata secrets decrypt <store>`
 
-Decrypt secrets for inspection or editing.
+Decrypt a store to stdout.
 
 ```bash
-cata secrets decrypt --file secrets.yaml.enc
+cata secrets decrypt cloud-creds
+```
+
+### `cata secrets encrypt <file>`
+
+Encrypt a plaintext file.
+
+```bash
+cata secrets encrypt secrets.yaml
+cata secrets encrypt secrets.yaml --output secrets.enc.yaml
+```
+
+### `cata secrets rotate <store>`
+
+Rotate encryption keys on a SOPS file.
+
+```bash
+cata secrets rotate cloud-creds
+```
+
+### `cata secrets list`
+
+Show all stores, managed secrets, and projections.
+
+```bash
+cata secrets list
+```
+
+## Images
+
+### `cata images list`
+
+List all container images used by a lab.
+
+```bash
+cata images list
+```
+
+### `cata images mirror`
+
+Mirror lab images to a target registry using crane.
+
+```bash
+cata images mirror --registry ghcr.io/my-org
+cata images mirror --registry ghcr.io/my-org --dry-run
+```
+
+### `cata images prefetch`
+
+Prefetch lab images into a local registry (e.g., Zot).
+
+```bash
+cata images prefetch --registry localhost:5050
 ```
 
 ## Kubeconfig
 
 ### `cata kubeconfig sync`
 
-Sync kubeconfig entries for all clusters in the lab.
+Sync kubeconfig entries for lab clusters.
 
 ```bash
-cata --flake ./examples/labs#homelab kubeconfig sync
+cata kubeconfig sync
 ```
 
-## Backup
-
-### `cata backup create`
-
-Create a Velero backup of a cluster.
-
-```bash
-cata --flake ./examples/labs#homelab backup create --cluster core
-```
-
-### `cata backup list`
-
-List available backups.
-
-```bash
-cata --flake ./examples/labs#homelab backup list
-```
-
-### `cata backup restore`
-
-Restore a cluster from a backup.
-
-```bash
-cata --flake ./examples/labs#homelab backup restore --cluster core --backup <name>
-```
-
-### `cata backup migrate`
-
-Migrate a cluster to a new provider using backup and restore.
-
-```bash
-cata --flake ./examples/labs#homelab backup migrate --from core --to core-new
-```
-
-## Code generation
+## Code Generation
 
 ### `cata generate`
 
-Generate Kubernetes API types from OpenAPI specs and CRDs. This is used during development of Catallaxy itself.
+Generate Kubernetes API types from OpenAPI specs and CRDs (development use).
 
 ```bash
-cata generate
+nix run .#generate-k8s-types
 ```
-
-Equivalent to `nix run .#generate-k8s-types`.

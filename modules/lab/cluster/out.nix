@@ -7,7 +7,7 @@
 
 let
   inherit (lib) mkOption types;
-  render = import ../../../lib/render.nix { inherit lib pkgs; };
+  render = import ../../../lib/render/manifest.nix { inherit lib pkgs; };
 
 in
 
@@ -71,22 +71,45 @@ in
           )
         );
 
+        # Pod Security Admission labels for namespaces
+        psaCfg = config.cluster.security.podSecurity;
+        psaLabels =
+          ns:
+          let
+            level = psaCfg.namespaceOverrides.${ns} or psaCfg.default;
+          in
+          if psaCfg.enable then
+            {
+              "pod-security.kubernetes.io/enforce" = level;
+              "pod-security.kubernetes.io/warn" = level;
+            }
+          else
+            { };
+
         namespaceYamls = map (
           ns:
-          builtins.toJSON {
-            apiVersion = "v1";
-            kind = "Namespace";
-            metadata.name = ns;
-          }
+          let
+            labels = psaLabels ns;
+          in
+          builtins.toJSON (
+            {
+              apiVersion = "v1";
+              kind = "Namespace";
+              metadata.name = ns;
+            }
+            // lib.optionalAttrs (labels != { }) {
+              metadata = {
+                name = ns;
+                labels = labels;
+              };
+            }
+          )
         ) allNamespaces;
 
         # Check if any secret projections target a given phase.
         # Projections are CLI-injected (not rendered), but the phase must exist
         # in the output so the CLI knows to run injection at the right point.
-        projectionPhases = lib.unique (
-          map (proj: proj.phase)
-            (lib.attrValues config.secrets.projections)
-        );
+        projectionPhases = lib.unique (map (proj: proj.phase) (lib.attrValues config.secrets.projections));
 
         mergePhase =
           phaseName: phaseCfg:

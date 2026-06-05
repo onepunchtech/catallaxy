@@ -269,7 +269,7 @@ fn lab_state_dir(lab_name: &str) -> PathBuf {
 fn ensure_ingress_cert(lab_name: &str, zone: &str) -> Result<PathBuf> {
     use std::process::Command;
 
-    let ingress_dir = service_state_dir(lab_name, "ingress");
+    let ingress_dir = service_state_dir(lab_name, "proxy");
     let cert_pem = ingress_dir.join("lab.pem");
     let ca_cert = ingress_dir.join("ca.crt");
     let ca_key = ingress_dir.join("ca.key");
@@ -842,7 +842,7 @@ async fn init(ctx: &CataContext, name: &str) -> Result<()> {
         .status();
 
     // Generate ingress TLS cert if ingress is configured
-    if lab.pointer("/services/ingress").is_some() {
+    if lab.pointer("/services/proxy").is_some() {
         let zone = lab
             .pointer("/dnsInfo/zone")
             .and_then(|v| v.as_str())
@@ -983,7 +983,10 @@ async fn up(
         .unwrap_or_default();
 
     if steps.is_empty() {
-        println!("{} No deployment steps for lab '{name}'", style(">>>").yellow());
+        println!(
+            "{} No deployment steps for lab '{name}'",
+            style(">>>").yellow()
+        );
         return Ok(());
     }
 
@@ -1047,7 +1050,7 @@ async fn up(
                 )?;
 
                 // Import lab CA if ingress is configured
-                if lab.pointer("/services/ingress").is_some() {
+                if lab.pointer("/services/proxy").is_some() {
                     import_lab_ca(name, &lab, cluster_name);
                 }
             }
@@ -1063,11 +1066,7 @@ async fn up(
                 for store_name in &stores {
                     let enc_path = crate::commands::secrets::store_file_path(ctx, name, store_name);
                     if enc_path.exists() {
-                        println!(
-                            "{} Store '{}' exists",
-                            style(">>>").green(),
-                            store_name
-                        );
+                        println!("{} Store '{}' exists", style(">>>").green(), store_name);
                         store_paths.push((store_name.to_string(), enc_path));
                     } else {
                         missing.push(*store_name);
@@ -1120,13 +1119,24 @@ async fn up(
             "deploy-manifests" => {
                 let target = step["target"].as_str().unwrap_or("unknown");
                 // Use bootstrap/ (kapp format) for direct-apply; manifests/ is strategy-specific
-                let subdir = if strategy == "kapp" { "manifests" } else { "bootstrap" };
+                let subdir = if strategy == "kapp" {
+                    "manifests"
+                } else {
+                    "bootstrap"
+                };
                 let cluster_manifests = format!("{lab_package}/{subdir}/{target}");
 
                 if std::path::Path::new(&cluster_manifests).exists() {
                     // lab up always forces — it's a bootstrap path
-                    apply_cluster_components(ctx, target, dry_run, true, Some(cluster_manifests), secrets_cache.clone())
-                        .await?;
+                    apply_cluster_components(
+                        ctx,
+                        target,
+                        dry_run,
+                        true,
+                        Some(cluster_manifests),
+                        secrets_cache.clone(),
+                    )
+                    .await?;
                 } else {
                     println!(
                         "{} No manifests for '{}', skipping",
@@ -1143,7 +1153,10 @@ async fn up(
                 if let Some(resources) = step["resources"].as_array() {
                     for resource in resources {
                         let res_name = resource["name"].as_str().unwrap_or("?");
-                        println!("{} Waiting for '{res_name}' to be ready...", style(">>>").cyan());
+                        println!(
+                            "{} Waiting for '{res_name}' to be ready...",
+                            style(">>>").cyan()
+                        );
 
                         // Poll until the resource is READY
                         let start = std::time::Instant::now();
@@ -1180,21 +1193,31 @@ async fn up(
 
             "sync-kubeconfig" => {
                 if let Some(clusters) = step["clusters"].as_array() {
-                    let target = step.get("target")
+                    let target = step
+                        .get("target")
                         .and_then(|v| v.as_str())
-                        .or_else(|| steps.iter()
-                            .find(|s| s["type"].as_str() == Some("create-cluster"))
-                            .and_then(|s| s["name"].as_str()))
+                        .or_else(|| {
+                            steps
+                                .iter()
+                                .find(|s| s["type"].as_str() == Some("create-cluster"))
+                                .and_then(|s| s["name"].as_str())
+                        })
                         .unwrap_or("mgmt");
                     let context = resolve_cluster_context(&lab, target);
 
                     for cluster_val in clusters {
                         let cluster_name = cluster_val.as_str().unwrap_or("?");
-                        println!("{} Syncing kubeconfig for '{cluster_name}'...", style(">>>").cyan());
+                        println!(
+                            "{} Syncing kubeconfig for '{cluster_name}'...",
+                            style(">>>").cyan()
+                        );
 
                         match sync_crossplane_kubeconfig(&context, cluster_name) {
                             Ok(()) => {
-                                println!("{} Kubeconfig synced for '{cluster_name}'", style(">>>").green());
+                                println!(
+                                    "{} Kubeconfig synced for '{cluster_name}'",
+                                    style(">>>").green()
+                                );
                             }
                             Err(e) => {
                                 println!(
@@ -1222,11 +1245,22 @@ async fn up(
                             cluster
                         );
                         // Still deploy manifests to ensure it's up to date
-                        let subdir = if strategy == "kapp" { "manifests" } else { "bootstrap" };
+                        let subdir = if strategy == "kapp" {
+                            "manifests"
+                        } else {
+                            "bootstrap"
+                        };
                         let cluster_manifests = format!("{lab_package}/{subdir}/{cluster}");
                         if std::path::Path::new(&cluster_manifests).exists() {
-                            apply_cluster_components(ctx, cluster, dry_run, true, Some(cluster_manifests), secrets_cache.clone())
-                                .await?;
+                            apply_cluster_components(
+                                ctx,
+                                cluster,
+                                dry_run,
+                                true,
+                                Some(cluster_manifests),
+                                secrets_cache.clone(),
+                            )
+                            .await?;
                         }
                         continue;
                     }
@@ -1241,41 +1275,76 @@ async fn up(
                 );
 
                 // Step 1: Deploy manifests to cloud target (same manifests as bootstrap)
-                let subdir = if strategy == "kapp" { "manifests" } else { "bootstrap" };
+                let subdir = if strategy == "kapp" {
+                    "manifests"
+                } else {
+                    "bootstrap"
+                };
                 let cluster_manifests = format!("{lab_package}/{subdir}/{cluster}");
                 if std::path::Path::new(&cluster_manifests).exists() {
-                    println!("{} Deploying manifests to cloud '{}'...", style(">>>").cyan(), cluster);
-                    apply_cluster_components(ctx, cluster, dry_run, true, Some(cluster_manifests), secrets_cache.clone())
-                        .await?;
+                    println!(
+                        "{} Deploying manifests to cloud '{}'...",
+                        style(">>>").cyan(),
+                        cluster
+                    );
+                    apply_cluster_components(
+                        ctx,
+                        cluster,
+                        dry_run,
+                        true,
+                        Some(cluster_manifests),
+                        secrets_cache.clone(),
+                    )
+                    .await?;
                 }
 
                 if dry_run {
-                    println!("{} Would migrate {} state and destroy bootstrap", style(">>>").yellow(), provisioner);
+                    println!(
+                        "{} Would migrate {} state and destroy bootstrap",
+                        style(">>>").yellow(),
+                        provisioner
+                    );
                     continue;
                 }
 
                 match provisioner {
                     "crossplane" => {
                         // Step 2: Wait for Crossplane healthy on target
-                        println!("{} Waiting for Crossplane to be healthy on '{}'...", style(">>>").cyan(), cluster);
+                        println!(
+                            "{} Waiting for Crossplane to be healthy on '{}'...",
+                            style(">>>").cyan(),
+                            cluster
+                        );
                         tools::kube::wait_crossplane_healthy(target_ctx)?;
 
                         // Step 3: Wait for managed resources to be adopted on target
-                        println!("{} Waiting for managed resources on '{}'...", style(">>>").cyan(), cluster);
+                        println!(
+                            "{} Waiting for managed resources on '{}'...",
+                            style(">>>").cyan(),
+                            cluster
+                        );
                         tools::kube::wait_managed_ready(target_ctx, 600)?;
 
                         // Step 4: Orphan managed resources on bootstrap
-                        println!("{} Orphaning managed resources on bootstrap...", style(">>>").cyan());
+                        println!(
+                            "{} Orphaning managed resources on bootstrap...",
+                            style(">>>").cyan()
+                        );
                         tools::kube::orphan_managed_resources(bootstrap_ctx)?;
                     }
                     "capi" => {
-                        println!("{} CAPI pivot: using clusterctl move...", style(">>>").cyan());
+                        println!(
+                            "{} CAPI pivot: using clusterctl move...",
+                            style(">>>").cyan()
+                        );
                         // clusterctl move from bootstrap to target
                         let status = std::process::Command::new("clusterctl")
                             .args([
                                 "move",
-                                "--to-kubeconfig-context", target_ctx,
-                                "--kubeconfig-context", bootstrap_ctx,
+                                "--to-kubeconfig-context",
+                                target_ctx,
+                                "--kubeconfig-context",
+                                bootstrap_ctx,
                             ])
                             .status();
                         if let Ok(s) = status {
@@ -1285,21 +1354,36 @@ async fn up(
                         }
                     }
                     _ => {
-                        println!("{} Unknown provisioner '{}' for pivot", style("Warning:").yellow(), provisioner);
+                        println!(
+                            "{} Unknown provisioner '{}' for pivot",
+                            style("Warning:").yellow(),
+                            provisioner
+                        );
                     }
                 }
 
                 // Step 5: Destroy bootstrap cluster
-                println!("{} Destroying bootstrap cluster '{}'...", style(">>>").cyan(), cluster);
+                println!(
+                    "{} Destroying bootstrap cluster '{}'...",
+                    style(">>>").cyan(),
+                    cluster
+                );
                 let bootstrap_config = crate::nix::get_cluster_config_from_lab(&lab, cluster)?;
                 super::cluster::deprovision_cluster(ctx, cluster, &bootstrap_config)?;
 
-                println!("{} Pivot complete — '{}' is now running in the cloud", style(">>>").green(), cluster);
+                println!(
+                    "{} Pivot complete — '{}' is now running in the cloud",
+                    style(">>>").green(),
+                    cluster
+                );
             }
 
             "destroy-cluster" => {
                 let cluster_name = step["name"].as_str().unwrap_or("unknown");
-                println!("{} Destroying ephemeral cluster '{cluster_name}'...", style(">>>").cyan());
+                println!(
+                    "{} Destroying ephemeral cluster '{cluster_name}'...",
+                    style(">>>").cyan()
+                );
                 let config = crate::nix::get_cluster_config_from_lab(&lab, cluster_name)?;
                 super::cluster::deprovision_cluster(ctx, cluster_name, &config)?;
             }
@@ -1310,7 +1394,11 @@ async fn up(
                     let status = std::process::Command::new(bin).status();
                     if let Ok(s) = status {
                         if !s.success() {
-                            println!("{} Script failed (exit {})", style("Warning:").yellow(), s.code().unwrap_or(-1));
+                            println!(
+                                "{} Script failed (exit {})",
+                                style("Warning:").yellow(),
+                                s.code().unwrap_or(-1)
+                            );
                         }
                     }
                 }
@@ -1331,7 +1419,7 @@ async fn up(
 
 /// Import lab CA certificate into a cluster for cert-manager
 fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str) {
-    let ingress_dir = service_state_dir(lab_name, "ingress");
+    let ingress_dir = service_state_dir(lab_name, "proxy");
     let ca_crt = ingress_dir.join("ca.crt");
     let ca_key = ingress_dir.join("ca.key");
 
@@ -1348,13 +1436,31 @@ fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str) {
         .status();
 
     let _ = std::process::Command::new("kubectl")
-        .args(["--context", &context, "delete", "secret", "lab-ca-ca-secret", "-n", "cert-manager"])
+        .args([
+            "--context",
+            &context,
+            "delete",
+            "secret",
+            "lab-ca-ca-secret",
+            "-n",
+            "cert-manager",
+        ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
 
     let status = std::process::Command::new("kubectl")
-        .args(["--context", &context, "create", "secret", "tls", "lab-ca-ca-secret", "-n", "cert-manager", "--cert"])
+        .args([
+            "--context",
+            &context,
+            "create",
+            "secret",
+            "tls",
+            "lab-ca-ca-secret",
+            "-n",
+            "cert-manager",
+            "--cert",
+        ])
         .arg(&ca_crt)
         .args(["--key"])
         .arg(&ca_key)
@@ -1364,94 +1470,16 @@ fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str) {
 
     match status {
         Ok(s) if s.success() => {
-            println!("{} Lab CA imported into '{cluster_name}'", style(">>>").green());
+            println!(
+                "{} Lab CA imported into '{cluster_name}'",
+                style(">>>").green()
+            );
         }
         _ => {
-            println!("{} Failed to import CA into '{cluster_name}'", style(">>>").yellow());
-        }
-    }
-}
-
-/// Find the CAPI management cluster in a lab config
-fn find_capi_mgmt_cluster(
-    lab: &serde_json::Value,
-) -> Option<(String, serde_json::Value)> {
-    let clusters = lab.pointer("/clusters")?.as_object()?;
-    for (name, config) in clusters {
-        if config
-            .pointer("/components/cluster-api/isManagementCluster")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
-        {
-            return Some((name.clone(), config.clone()));
-        }
-    }
-    None
-}
-
-/// Get enabled CAPI cluster names from a management cluster's config
-fn get_capi_cluster_names(mgmt_config: &serde_json::Value) -> Vec<String> {
-    mgmt_config
-        .pointer("/components/cluster-api/clusters")
-        .and_then(|v| v.as_object())
-        .map(|clusters| {
-            clusters
-                .iter()
-                .filter(|(_, v)| {
-                    v.get("enable")
-                        .and_then(|e| e.as_bool())
-                        .unwrap_or(true)
-                })
-                .map(|(name, _)| name.clone())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Sync a CAPI-managed cluster's kubeconfig into ~/.kube/config.
-/// Waits for the kubeconfig secret to appear, then extracts and merges it.
-fn sync_capi_kubeconfig(
-    mgmt_context: &str,
-    cluster_name: &str,
-    namespace: &str,
-    timeout: &str,
-) -> Result<()> {
-    use std::time::{Duration, Instant};
-
-    let timeout_secs: u64 = timeout
-        .trim_end_matches('m')
-        .parse::<u64>()
-        .unwrap_or(10)
-        * 60;
-    let timeout_duration = Duration::from_secs(timeout_secs);
-    let start = Instant::now();
-
-    // Wait for kubeconfig secret to exist
-    loop {
-        match tools::kube::get_capi_kubeconfig(mgmt_context, cluster_name, namespace) {
-            Ok(kubeconfig_content) if !kubeconfig_content.trim().is_empty() => {
-                // Save to file
-                let kube_dir = dirs::home_dir().unwrap_or_default().join(".kube");
-                std::fs::create_dir_all(&kube_dir)?;
-                let kube_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
-                std::fs::write(&kube_path, &kubeconfig_content)?;
-
-                // Merge into default kubeconfig
-                let context_name = format!("{cluster_name}-admin");
-                tools::kube::merge_kubeconfig(&kube_path, &context_name)?;
-
-                return Ok(());
-            }
-            _ => {
-                if start.elapsed() > timeout_duration {
-                    bail!(
-                        "Timed out waiting for kubeconfig for '{cluster_name}' ({}s elapsed)",
-                        timeout_duration.as_secs()
-                    );
-                }
-                println!("  waiting... ({}s elapsed)", start.elapsed().as_secs());
-                std::thread::sleep(Duration::from_secs(10));
-            }
+            println!(
+                "{} Failed to import CA into '{cluster_name}'",
+                style(">>>").yellow()
+            );
         }
     }
 }
@@ -1820,14 +1848,20 @@ fn sync_crossplane_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<
     // Get cluster ID from Crossplane managed resource
     let id_output = std::process::Command::new("kubectl")
         .args([
-            "--context", mgmt_context,
-            "get", "clusters.kubernetes.digitalocean.crossplane.io", cluster_name,
-            "-o", "jsonpath={.status.atProvider.id}",
+            "--context",
+            mgmt_context,
+            "get",
+            "clusters.kubernetes.digitalocean.crossplane.io",
+            cluster_name,
+            "-o",
+            "jsonpath={.status.atProvider.id}",
         ])
         .output()
         .context("Failed to get cluster ID")?;
 
-    let cluster_id = String::from_utf8_lossy(&id_output.stdout).trim().to_string();
+    let cluster_id = String::from_utf8_lossy(&id_output.stdout)
+        .trim()
+        .to_string();
     if cluster_id.is_empty() {
         bail!("No cluster ID found for '{cluster_name}'");
     }
@@ -1835,14 +1869,22 @@ fn sync_crossplane_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<
     // Get DO token from the credentials secret
     let token_output = std::process::Command::new("kubectl")
         .args([
-            "--context", mgmt_context,
-            "get", "secret", "do-credentials", "-n", "crossplane-system",
-            "-o", "jsonpath={.data.credentials}",
+            "--context",
+            mgmt_context,
+            "get",
+            "secret",
+            "do-credentials",
+            "-n",
+            "crossplane-system",
+            "-o",
+            "jsonpath={.data.credentials}",
         ])
         .output()
         .context("Failed to get DO credentials")?;
 
-    let creds_b64 = String::from_utf8_lossy(&token_output.stdout).trim().to_string();
+    let creds_b64 = String::from_utf8_lossy(&token_output.stdout)
+        .trim()
+        .to_string();
     let creds_json = String::from_utf8(
         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &creds_b64)
             .context("Failed to decode credentials")?,
@@ -1857,7 +1899,8 @@ fn sync_crossplane_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<
     let kubeconfig_output = std::process::Command::new("curl")
         .args([
             "-s",
-            "-H", &format!("Authorization: Bearer {token}"),
+            "-H",
+            &format!("Authorization: Bearer {token}"),
             &format!("https://api.digitalocean.com/v2/kubernetes/clusters/{cluster_id}/kubeconfig"),
         ])
         .output()
@@ -1986,8 +2029,7 @@ async fn plan(ctx: &CataContext, name: &str, teardown: bool) -> Result<()> {
                 "sync-kubeconfig" => {
                     let source = step["source"].as_str().unwrap_or("?");
                     if let Some(clusters) = step["clusters"].as_array() {
-                        let names: Vec<&str> =
-                            clusters.iter().filter_map(|c| c.as_str()).collect();
+                        let names: Vec<&str> = clusters.iter().filter_map(|c| c.as_str()).collect();
                         println!(
                             "     {} via={}, clusters: {}",
                             style("→").dim(),
@@ -2013,10 +2055,7 @@ async fn plan(ctx: &CataContext, name: &str, teardown: bool) -> Result<()> {
         }
 
         println!();
-        println!(
-            "  {} steps total",
-            style(steps.len().to_string()).bold()
-        );
+        println!("  {} steps total", style(steps.len().to_string()).bold());
     } else {
         println!("  (no {} plan computed)", plan_label.to_lowercase());
     }
@@ -2099,13 +2138,18 @@ async fn destroy(ctx: &CataContext, name: &str) -> Result<()> {
         .unwrap_or_default();
 
     if steps.is_empty() {
-        println!("{} No teardown steps for lab '{name}'", style(">>>").yellow());
+        println!(
+            "{} No teardown steps for lab '{name}'",
+            style(">>>").yellow()
+        );
         return Ok(());
     }
 
     // Build lab package to realize teardown hook binaries (nix eval gives
     // store paths but doesn't build them)
-    let has_hooks = steps.iter().any(|s| s["type"].as_str() == Some("teardown-hooks"));
+    let has_hooks = steps
+        .iter()
+        .any(|s| s["type"].as_str() == Some("teardown-hooks"));
     if has_hooks {
         println!("{} Building teardown hooks...", style(">>>").cyan());
         crate::nix::build_lab_package(ctx, name)?;
@@ -2148,12 +2192,7 @@ async fn destroy(ctx: &CataContext, name: &str) -> Result<()> {
                             continue;
                         }
 
-                        println!(
-                            "{} [{}] {}...",
-                            style(">>>").cyan(),
-                            target,
-                            hook_desc,
-                        );
+                        println!("{} [{}] {}...", style(">>>").cyan(), target, hook_desc,);
 
                         match std::process::Command::new(bin).status() {
                             Ok(s) if s.success() => {
@@ -2277,7 +2316,10 @@ async fn destroy(ctx: &CataContext, name: &str) -> Result<()> {
             }
 
             other => {
-                println!("{} Unknown teardown step type: {other}", style("Warning:").yellow());
+                println!(
+                    "{} Unknown teardown step type: {other}",
+                    style("Warning:").yellow()
+                );
             }
         }
     }
@@ -2709,7 +2751,7 @@ async fn trust(
     // Ensure cert exists
     ensure_ingress_cert(name, zone)?;
 
-    let ca_cert = service_state_dir(name, "ingress").join("ca.crt");
+    let ca_cert = service_state_dir(name, "proxy").join("ca.crt");
     if !ca_cert.exists() {
         bail!("CA certificate not found. Run `cata lab init` first.");
     }

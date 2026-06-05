@@ -35,9 +35,7 @@ let
           ;
       };
       globPatterns = def.crdGlob or [ "*.yaml" ];
-      findArgs = lib.concatStringsSep " -o " (
-        map (g: "-name '${g}'") globPatterns
-      );
+      findArgs = lib.concatStringsSep " -o " (map (g: "-name '${g}'") globPatterns);
     in
     pkgs.runCommand "${name}-crds.yaml" { } ''
       find "${src}/${def.crdPath}" \( ${findArgs} \) -type f | sort | while read -r f; do

@@ -116,17 +116,22 @@ let
         validation = {
           hostname = cfg.domain;
         }
-        // (if hasTrustBundle then {
-          caCertificateRefs = [
+        // (
+          if hasTrustBundle then
             {
-              group = "";
-              kind = "ConfigMap";
-              name = caBundleConfigMap;
+              caCertificateRefs = [
+                {
+                  group = "";
+                  kind = "ConfigMap";
+                  name = caBundleConfigMap;
+                }
+              ];
             }
-          ];
-        } else {
-          wellKnownCACertificates = "System";
-        });
+          else
+            {
+              wellKnownCACertificates = "System";
+            }
+        );
       };
     };
   };
@@ -196,8 +201,9 @@ let
           cfg.domain
         ]
         # Internal SAN only works with local CAs — ACME rejects non-public suffixes
-        ++ optional (!(config.components.cert-manager.acme.enable or false))
-          "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local";
+        ++ optional (
+          !(config.components.cert-manager.acme.enable or false)
+        ) "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local";
       };
     };
   };

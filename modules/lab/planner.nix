@@ -1,7 +1,6 @@
 # Deployment planner — computes an ordered deployment plan from lab topology.
 #
-# The plan is a list of steps that the CLI executes sequentially.
-# Each step has a `type` field and type-specific data.
+# The plan is a list of typed steps that the CLI executes sequentially.
 # This keeps orchestration logic in Nix (declarative, inspectable)
 # and the CLI as a dumb step executor.
 {
@@ -17,65 +16,135 @@ let
     types
     mapAttrsToList
     filter
-    flatten
-    sort
+    concatMap
+    map
     ;
 
   cfg = config.lab;
   clusters = cfg.out.allClusters;
 
-  # Categorize clusters by provisioner
-  clustersByProvisioner = provisioner:
-    filter (c: c.provisioner == provisioner) (
-      mapAttrsToList (
-        name: clusterCfg: {
-          inherit name;
-          provisioner = clusterCfg.cluster.provisioner;
-          config = clusterCfg;
-        }
-      ) clusters
-    );
+  # ── Step type ────────────────────────────────────────────────────────────
+  # A single union type — all fields optional, each step type uses what it needs.
+  stepType = types.submodule {
+    options = {
+      type = mkOption { type = types.str; };
+      description = mkOption {
+        type = types.str;
+        default = "";
+      };
+      name = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      target = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      provisioner = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      ephemeral = mkOption {
+        type = types.bool;
+        default = false;
+      };
+      stores = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+      };
+      resources = mkOption {
+        type = types.listOf (types.attrsOf types.str);
+        default = [ ];
+      };
+      clusters = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+      };
+      cluster = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      bootstrapContext = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      targetContext = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+      skipIfReachable = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+    };
+  };
+
+  # ── Cluster categorization ──────────────────────────────────────────────
+
+  allClusters = mapAttrsToList (name: clusterCfg: {
+    inherit name;
+    provisioner = clusterCfg.cluster.provisioner;
+    config = clusterCfg;
+  }) clusters;
+
+  clustersByProvisioner = provisioner: filter (c: c.provisioner == provisioner) allClusters;
 
   localClusters = clustersByProvisioner "k3d" ++ clustersByProvisioner "talos";
-  externalClusters = clustersByProvisioner "external";
   crossplaneClusters = clustersByProvisioner "crossplane";
+  crossplaneClusterNames = map (c: c.name) crossplaneClusters;
 
-  needsBootstrap = crossplaneClusters != [ ];
+  # ── Provisioner graph ───────────────────────────────────────────────────
+  # For each local cluster that runs a provisioner, find which cloud clusters it provisions.
 
-  # Find the management cluster (has crossplane or CAPI enabled for provisioning)
-  mgmtCluster =
-    let
-      candidates = filter (
-        c: (c.config.components.crossplane.enable or false)
-            || (c.config.components.cluster-api.enable or false)
-      ) localClusters;
-    in
-    if candidates != [ ] then builtins.head candidates else null;
+  provisionerGraph =
+    map
+      (
+        c:
+        let
+          xpClusterNames = lib.attrNames (
+            c.config.components.crossplane.digitalocean.kubernetesClusters or { }
+          );
+          capiClusterNames = lib.attrNames (c.config.components.cluster-api.clusters or { });
+          allProvisioned = xpClusterNames ++ capiClusterNames;
+          # Only include clusters that actually exist in the lab as cloud-provisioned
+          targets = filter (name: builtins.elem name crossplaneClusterNames || name == c.name) allProvisioned;
+          # Self-provisioning: this cluster provisions a cloud version of itself
+          isSelfProvisioning = builtins.elem c.name allProvisioned;
+          hasXp = c.config.components.crossplane.enable or false;
+          hasCapi = c.config.components.cluster-api.enable or false;
+        in
+        {
+          source = c;
+          inherit targets isSelfProvisioning;
+          provisioner =
+            if hasXp then
+              "crossplane"
+            else if hasCapi then
+              "capi"
+            else
+              "unknown";
+        }
+      )
+      (
+        filter (
+          c:
+          (c.config.components.crossplane.enable or false)
+          || (c.config.components.cluster-api.enable or false)
+        ) localClusters
+      );
 
-  # Detect self-provisioning clusters: a local cluster that runs a provisioner
-  # which creates a cloud cluster with the same name. This implies bootstrap + pivot.
-  selfProvisioningClusters = filter (
+  # Clusters that are provisioned by any provisioner (union of all targets)
+  allProvisionedNames = lib.unique (concatMap (e: e.targets) provisionerGraph);
+
+  # Clusters provisioned by someone else (not self-provisioning, deployed after pivot)
+  nonSelfProvisionedClusters = filter (
     c:
-    let
-      xpClusterNames = lib.attrNames (
-        c.config.components.crossplane.digitalocean.kubernetesClusters or { }
-      );
-      capiClusterNames = lib.attrNames (
-        c.config.components.cluster-api.clusters or { }
-      );
-      provisionedNames = xpClusterNames ++ capiClusterNames;
-    in
-    builtins.elem c.name provisionedNames
-  ) localClusters;
-
-  # Non-self-provisioning crossplane clusters (deployed after pivot)
-  nonSelfCrossplaneClusters = filter (
-    c: !(lib.any (sp: sp.name == c.name) selfProvisioningClusters)
+    builtins.elem c.name allProvisionedNames
+    && !(lib.any (e: e.isSelfProvisioning && e.source.name == c.name) provisionerGraph)
   ) crossplaneClusters;
 
-  # ── Plan computation ──────────────────────────────────────────────────
+  # ── Deployment plan steps ───────────────────────────────────────────────
 
-  # Step: create infrastructure services (DNS, registry, ingress)
   serviceSteps =
     if cfg.out.cliConfig.services != { } then
       [
@@ -87,18 +156,13 @@ let
     else
       [ ];
 
-  # Steps: create local clusters
-  createLocalSteps = map (
-    c: {
-      type = "create-cluster";
-      description = "Create ${c.provisioner} cluster '${c.name}'";
-      name = c.name;
-      provisioner = c.provisioner;
-      ephemeral = false;
-    }
-  ) localClusters;
+  createLocalSteps = map (c: {
+    type = "create-cluster";
+    description = "Create ${c.provisioner} cluster '${c.name}'";
+    name = c.name;
+    provisioner = c.provisioner;
+  }) localClusters;
 
-  # Step: ensure secrets exist before deploying (when lab has managed secrets)
   secretsSteps =
     let
       hasSecrets = (cfg.secrets.managed or { }) != { };
@@ -115,136 +179,90 @@ let
     else
       [ ];
 
-  # Steps: deploy manifests to local clusters
-  deployLocalSteps = map (
-    c: {
-      type = "deploy-manifests";
-      description = "Deploy manifests to '${c.name}'";
-      target = c.name;
-    }
-  ) localClusters;
+  deployLocalSteps = map (c: {
+    type = "deploy-manifests";
+    description = "Deploy manifests to '${c.name}'";
+    target = c.name;
+  }) localClusters;
 
-  # All cloud-provisioned cluster names: explicit crossplane clusters + self-provisioning clusters
-  allCloudClusterNames =
-    (map (c: c.name) crossplaneClusters)
-    ++ (map (c: c.name) selfProvisioningClusters);
-
-  # Steps for crossplane/CAPI-provisioned clusters
-  crossplaneSteps =
-    if allCloudClusterNames == [ ] then
+  # Per-provisioner steps: wait → sync-kubeconfig → pivot → deploy targets
+  provisionSteps = concatMap (
+    entry:
+    if entry.targets == [ ] then
       [ ]
     else
-      let
-        waitResources = map (name: { inherit name; }) allCloudClusterNames;
-        mgmtTarget = if mgmtCluster != null then mgmtCluster.name else (builtins.head localClusters).name;
-      in
       [
         {
           type = "wait-for-resources";
-          description = "Wait for Crossplane to provision cloud clusters";
-          target = mgmtTarget;
-          resources = waitResources;
+          description = "Wait for ${entry.provisioner} to provision clusters from '${entry.source.name}'";
+          target = entry.source.name;
+          resources = map (name: { inherit name; }) entry.targets;
         }
         {
           type = "sync-kubeconfig";
-          description = "Sync kubeconfigs for cloud clusters";
-          target = mgmtTarget;
-          clusters = allCloudClusterNames;
-        }
-      ];
-
-  # Pivot steps for self-provisioning clusters
-  pivotSteps = map (
-    c:
-    let
-      hasXp = c.config.components.crossplane.enable or false;
-      hasCapi = c.config.components.cluster-api.enable or false;
-      provisioner = if hasXp then "crossplane" else if hasCapi then "capi" else "unknown";
-      bootstrapContext = c.config.cluster.ref.kubeContext;
-    in
-    {
-      type = "pivot";
-      description = "Migrate '${c.name}' from bootstrap to cloud";
-      cluster = c.name;
-      bootstrapContext = bootstrapContext;
-      targetContext = c.name;
-      inherit provisioner;
-      skipIfReachable = c.name;
-    }
-  ) selfProvisioningClusters;
-
-  # Deploy manifests to non-self-provisioning cloud clusters (after pivot)
-  deployCloudSteps = map (
-    c: {
-      type = "deploy-manifests";
-      description = "Deploy manifests to '${c.name}'";
-      target = c.name;
-    }
-  ) nonSelfCrossplaneClusters;
-
-  # Assemble the full plan
-  fullPlan =
-    serviceSteps
-    ++ createLocalSteps
-    ++ secretsSteps
-    ++ deployLocalSteps
-    ++ crossplaneSteps
-    ++ pivotSteps
-    ++ deployCloudSteps;
-
-  # ── Teardown plan (reverse of deployment) ──────────────────────────────
-
-  # Clusters with teardown hooks (mgmt with crossplane, CAPI, etc.)
-  clustersWithHooks = filter (
-    c: (c.config.lifecycle.teardown or [ ]) != [ ]
-  ) localClusters;
-
-  # Non-mgmt local clusters (destroyed before mgmt)
-  nonMgmtLocalClusters = filter (
-    c: mgmtCluster == null || c.name != mgmtCluster.name
-  ) localClusters;
-
-  # Step: run teardown hooks for clusters that have them (mgmt first via ordering)
-  teardownHookSteps = map (
-    c: {
-      type = "teardown-hooks";
-      description = "Run teardown hooks for '${c.name}'";
-      target = c.name;
-    }
-  ) clustersWithHooks;
-
-  # Step: destroy crossplane-provisioned clusters (no-op, already cleaned up by hooks)
-  destroyCrossplaneSteps = map (
-    c: {
-      type = "destroy-cluster";
-      description = "Remove '${c.name}' (${c.provisioner}-provisioned)";
-      name = c.name;
-    }
-  ) crossplaneClusters;
-
-  # Step: destroy non-mgmt local clusters
-  destroyNonMgmtSteps = map (
-    c: {
-      type = "destroy-cluster";
-      description = "Destroy ${c.provisioner} cluster '${c.name}'";
-      name = c.name;
-    }
-  ) nonMgmtLocalClusters;
-
-  # Step: destroy mgmt cluster last (after crossplane cleanup)
-  destroyMgmtSteps =
-    if mgmtCluster != null then
-      [
-        {
-          type = "destroy-cluster";
-          description = "Destroy ${mgmtCluster.provisioner} cluster '${mgmtCluster.name}'";
-          name = mgmtCluster.name;
+          description = "Sync kubeconfigs for clusters provisioned by '${entry.source.name}'";
+          target = entry.source.name;
+          clusters = entry.targets;
         }
       ]
-    else
-      [ ];
+      # Pivot for self-provisioning clusters
+      ++ lib.optionals entry.isSelfProvisioning [
+        {
+          type = "pivot";
+          description = "Migrate '${entry.source.name}' from bootstrap to cloud";
+          cluster = entry.source.name;
+          bootstrapContext = entry.source.config.cluster.ref.kubeContext;
+          targetContext = entry.source.name;
+          provisioner = entry.provisioner;
+          skipIfReachable = entry.source.name;
+        }
+      ]
+      # Deploy manifests to non-self targets
+      ++ map (name: {
+        type = "deploy-manifests";
+        description = "Deploy manifests to '${name}'";
+        target = name;
+      }) (filter (name: name != entry.source.name) entry.targets)
+  ) provisionerGraph;
 
-  # Step: remove infrastructure services
+  fullPlan = serviceSteps ++ createLocalSteps ++ secretsSteps ++ deployLocalSteps ++ provisionSteps;
+
+  # ── Teardown plan ───────────────────────────────────────────────────────
+
+  # Clusters with teardown hooks
+  clustersWithHooks = filter (c: (c.config.lifecycle.teardown or [ ]) != [ ]) localClusters;
+
+  # Provisioning clusters destroyed last (they run teardown hooks first)
+  provisioningClusterNames = map (e: e.source.name) provisionerGraph;
+  nonProvisioningLocalClusters = filter (
+    c: !(builtins.elem c.name provisioningClusterNames)
+  ) localClusters;
+  provisioningLocalClusters = filter (c: builtins.elem c.name provisioningClusterNames) localClusters;
+
+  teardownHookSteps = map (c: {
+    type = "teardown-hooks";
+    description = "Run teardown hooks for '${c.name}'";
+    target = c.name;
+  }) clustersWithHooks;
+
+  destroyCrossplaneSteps = map (c: {
+    type = "destroy-cluster";
+    description = "Remove '${c.name}' (${c.provisioner}-provisioned)";
+    name = c.name;
+  }) crossplaneClusters;
+
+  destroyNonProvisioningSteps = map (c: {
+    type = "destroy-cluster";
+    description = "Destroy ${c.provisioner} cluster '${c.name}'";
+    name = c.name;
+  }) nonProvisioningLocalClusters;
+
+  destroyProvisioningSteps = map (c: {
+    type = "destroy-cluster";
+    description = "Destroy ${c.provisioner} cluster '${c.name}'";
+    name = c.name;
+  }) provisioningLocalClusters;
+
   removeServiceSteps =
     if cfg.out.cliConfig.services != { } then
       [
@@ -256,50 +274,40 @@ let
     else
       [ ];
 
-  # Step: remove Docker network
-  removeNetworkSteps = [
-    {
-      type = "remove-network";
-      description = "Remove lab Docker network";
-    }
-  ];
-
-  # Step: remove CA trust
-  removeTrustSteps = [
-    {
-      type = "remove-trust";
-      description = "Remove lab CA from browser trust store";
-    }
-  ];
-
   teardownPlan =
     teardownHookSteps
     ++ destroyCrossplaneSteps
-    ++ destroyNonMgmtSteps
-    ++ destroyMgmtSteps
+    ++ destroyNonProvisioningSteps
+    ++ destroyProvisioningSteps
     ++ removeServiceSteps
-    ++ removeNetworkSteps
-    ++ removeTrustSteps;
+    ++ [
+      {
+        type = "remove-network";
+        description = "Remove lab Docker network";
+      }
+      {
+        type = "remove-trust";
+        description = "Remove lab CA from browser trust store";
+      }
+    ];
 
 in
 {
   options.lab.out = {
     deploymentPlan = mkOption {
-      type = types.listOf types.attrs;
+      type = types.listOf stepType;
       readOnly = true;
       description = ''
-        Computed deployment plan — an ordered list of steps for the CLI to execute.
-        Each step has a `type` field and type-specific data.
+        Computed deployment plan — an ordered list of typed steps for the CLI to execute.
         Inspect with `cata lab plan`.
       '';
     };
 
     teardownPlan = mkOption {
-      type = types.listOf types.attrs;
+      type = types.listOf stepType;
       readOnly = true;
       description = ''
-        Computed teardown plan — an ordered list of steps for safe lab destruction.
-        Ensures cloud resources are cleaned up before local clusters are destroyed.
+        Computed teardown plan — an ordered list of typed steps for safe lab destruction.
         Inspect with `cata lab plan --teardown`.
       '';
     };
@@ -307,6 +315,6 @@ in
 
   config.lab.out = {
     deploymentPlan = fullPlan;
-    teardownPlan = teardownPlan;
+    inherit teardownPlan;
   };
 }

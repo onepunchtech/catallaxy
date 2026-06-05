@@ -328,24 +328,16 @@ pub fn provision_cluster_with_registry(
                 })
                 .unwrap_or_default();
 
-            // Build auto-deploy manifests (nix eval gives store paths but doesn't build them)
+            // Resolve auto-deploy manifests from lab package (if available)
             if !auto_deploy.is_empty() {
-                let has_unrealized = auto_deploy.iter().any(|(_, p)| {
-                    p.starts_with("/nix/store/") && !std::path::Path::new(p).exists()
-                });
-                if has_unrealized {
-                    println!("{} Building auto-deploy manifests...", style(">>>").cyan());
-                    let system = crate::nix::current_system();
-                    if let Ok(built_path) =
-                        crate::nix::build(ctx, &format!("autoDeployManifests.{system}.{name}"))
-                    {
-                        // Update paths to point to the built link farm
+                if let Ok(lab_name) = ctx.resolve_lab_name(None) {
+                    if let Ok(lab_pkg) = crate::nix::build_lab_package(ctx, &lab_name) {
                         auto_deploy = auto_deploy
                             .into_iter()
                             .map(|(n, p)| {
-                                let farm_path = format!("{}/{}.yaml", built_path, n);
-                                if std::path::Path::new(&farm_path).exists() {
-                                    (n, farm_path)
+                                let pkg_path = format!("{lab_pkg}/autodeploy/{name}/{n}.yaml");
+                                if std::path::Path::new(&pkg_path).exists() {
+                                    (n, pkg_path)
                                 } else {
                                     (n, p)
                                 }
@@ -491,11 +483,7 @@ async fn up(
 }
 
 /// Stop a single cluster (preserves state). Called by `lab down`.
-pub fn stop_cluster(
-    ctx: &CataContext,
-    name: &str,
-    config: &serde_json::Value,
-) -> Result<()> {
+pub fn stop_cluster(ctx: &CataContext, name: &str, config: &serde_json::Value) -> Result<()> {
     let provisioner = cluster_provisioner(config);
     let cluster_name = provisioner_cluster_name(config);
 

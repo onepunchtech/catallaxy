@@ -413,7 +413,8 @@ let
           };
           spec = {
             version = "v${infraProviderVersion ip}";
-          } // optionalAttrs (ip == "digitalocean") {
+          }
+          // optionalAttrs (ip == "digitalocean") {
             configSecret = {
               name = "capi-do-credentials";
               namespace = cfg.namespace;
@@ -430,8 +431,7 @@ let
           };
         }
       ) cfg.infrastructureProviders
-    )
-;
+    );
 
   # Cluster resource generation
   mkClusterResources =
@@ -561,27 +561,29 @@ let
                 name = "${clusterName}-control-plane";
               };
             };
-            kubeadmConfigSpec = { }
-            // optionalAttrs (clusterCfg.apiServerExtraArgs != { } || clusterCfg.certSANs != [ ]) {
-              clusterConfiguration.apiServer = { }
-              // optionalAttrs (clusterCfg.apiServerExtraArgs != { }) {
-                extraArgs = toExtraArgs clusterCfg.apiServerExtraArgs;
+            kubeadmConfigSpec =
+              { }
+              // optionalAttrs (clusterCfg.apiServerExtraArgs != { } || clusterCfg.certSANs != [ ]) {
+                clusterConfiguration.apiServer =
+                  { }
+                  // optionalAttrs (clusterCfg.apiServerExtraArgs != { }) {
+                    extraArgs = toExtraArgs clusterCfg.apiServerExtraArgs;
+                  }
+                  // optionalAttrs (clusterCfg.certSANs != [ ]) {
+                    certSANs = clusterCfg.certSANs;
+                  };
               }
-              // optionalAttrs (clusterCfg.certSANs != [ ]) {
-                certSANs = clusterCfg.certSANs;
+              // {
+                initConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
+                  "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
+                };
+                joinConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
+                  "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
+                };
+              }
+              // optionalAttrs (registryMirrorCommands != [ ]) {
+                preKubeadmCommands = registryMirrorCommands;
               };
-            }
-            // {
-              initConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
-                "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
-              };
-              joinConfiguration.nodeRegistration.kubeletExtraArgs = toExtraArgs {
-                "eviction-hard" = "nodefs.available<0%,nodefs.inodesFree<0%,imagefs.available<0%";
-              };
-            }
-            // optionalAttrs (registryMirrorCommands != [ ]) {
-              preKubeadmCommands = registryMirrorCommands;
-            };
           };
         };
       };
@@ -1057,10 +1059,8 @@ in
               "machinedeployments.cluster.x-k8s.io"
             ];
             bootstrapCrds =
-              (optional (elem "kubeadm" cfg.bootstrapProviders)
-                "kubeadmconfigtemplates.bootstrap.cluster.x-k8s.io")
-              ++ (optional (elem "kubeadm" cfg.controlPlaneProviders)
-                "kubeadmcontrolplanes.controlplane.cluster.x-k8s.io");
+              (optional (elem "kubeadm" cfg.bootstrapProviders) "kubeadmconfigtemplates.bootstrap.cluster.x-k8s.io")
+              ++ (optional (elem "kubeadm" cfg.controlPlaneProviders) "kubeadmcontrolplanes.controlplane.cluster.x-k8s.io");
             usedInfraProviders = lib.unique (
               map (c: c.infrastructureProvider) (lib.attrValues enabledClusters)
             );
@@ -1074,9 +1074,7 @@ in
                 "domachinetemplates.infrastructure.cluster.x-k8s.io"
               ];
             };
-            infraCrds = lib.concatMap (
-              p: infraCrdMap.${p} or [ ]
-            ) usedInfraProviders;
+            infraCrds = lib.concatMap (p: infraCrdMap.${p} or [ ]) usedInfraProviders;
           in
           coreCrds ++ bootstrapCrds ++ infraCrds;
       };
@@ -1109,10 +1107,13 @@ in
       phases.capi-providers.bundles.capi-providers.resources = providerCRs;
 
       # Pre-create DO namespace for credential secret injection
-      phases.namespaces.bundles.capi-namespaces.createNamespaces =
-        lib.concatMap (p: {
+      phases.namespaces.bundles.capi-namespaces.createNamespaces = lib.concatMap (
+        p:
+        {
           digitalocean = [ "capdo-system" ];
-        }.${p} or [ ]) cfg.infrastructureProviders;
+        }
+        .${p} or [ ]
+      ) cfg.infrastructureProviders;
 
       # Project DO token into the secret the CAPI operator expects
       secrets.projections = lib.mkMerge [
@@ -1150,24 +1151,18 @@ in
               namespace = cfg.namespace;
               clusterNames = lib.attrNames enabledClusters;
               deleteCommands = lib.concatStringsSep "\n" (
-                map (
-                  name:
-                  ''
-                    echo "Deleting CAPI cluster '${name}'..."
-                    kubectl --context "${kubeContext}" delete cluster "${name}" \
-                      -n "${namespace}" --ignore-not-found --wait=false
-                  ''
-                ) clusterNames
+                map (name: ''
+                  echo "Deleting CAPI cluster '${name}'..."
+                  kubectl --context "${kubeContext}" delete cluster "${name}" \
+                    -n "${namespace}" --ignore-not-found --wait=false
+                '') clusterNames
               );
               waitCommands = lib.concatStringsSep "\n" (
-                map (
-                  name:
-                  ''
-                    echo "Waiting for cluster '${name}' to be fully deleted..."
-                    kubectl --context "${kubeContext}" wait --for=delete \
-                      "cluster/${name}" -n "${namespace}" --timeout=600s 2>/dev/null || true
-                  ''
-                ) clusterNames
+                map (name: ''
+                  echo "Waiting for cluster '${name}' to be fully deleted..."
+                  kubectl --context "${kubeContext}" wait --for=delete \
+                    "cluster/${name}" -n "${namespace}" --timeout=600s 2>/dev/null || true
+                '') clusterNames
               );
             in
             pkgs.writeShellApplication {

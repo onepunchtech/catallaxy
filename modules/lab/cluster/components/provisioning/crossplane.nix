@@ -193,18 +193,20 @@ let
             autoUpgrade = cluster.autoUpgrade;
             surgeUpgrade = cluster.surgeUpgrade;
             nodePool = [
-              ({
-                name = cluster.nodePool.name;
-                size = cluster.nodePool.size;
-                nodeCount = cluster.nodePool.nodeCount;
-                autoScale = cluster.nodePool.autoScale;
-              }
-              // optionalAttrs (cluster.nodePool.minNodes != null) {
-                minNodes = cluster.nodePool.minNodes;
-              }
-              // optionalAttrs (cluster.nodePool.maxNodes != null) {
-                maxNodes = cluster.nodePool.maxNodes;
-              })
+              (
+                {
+                  name = cluster.nodePool.name;
+                  size = cluster.nodePool.size;
+                  nodeCount = cluster.nodePool.nodeCount;
+                  autoScale = cluster.nodePool.autoScale;
+                }
+                // optionalAttrs (cluster.nodePool.minNodes != null) {
+                  minNodes = cluster.nodePool.minNodes;
+                }
+                // optionalAttrs (cluster.nodePool.maxNodes != null) {
+                  maxNodes = cluster.nodePool.maxNodes;
+                }
+              )
             ];
           };
           providerConfigRef.name = "default";
@@ -598,10 +600,11 @@ in
 
     (mkIf cfg.enable {
       # Install Crossplane + provider CRDs declaratively in the crds phase
-      phases.crds.bundles.crossplane-crds.yamls =
-        [ cataCharts.crossplane.crds ]
-        ++ optional cfg.digitalocean.enable cataCharts.crossplaneProviderCrds.provider-upjet-digitalocean
-        ++ optional cfg.cloudflare.enable cataCharts.crossplaneProviderCrds.provider-upjet-cloudflare;
+      phases.crds.bundles.crossplane-crds.yamls = [
+        cataCharts.crossplane.crds
+      ]
+      ++ optional cfg.digitalocean.enable cataCharts.crossplaneProviderCrds.provider-upjet-digitalocean
+      ++ optional cfg.cloudflare.enable cataCharts.crossplaneProviderCrds.provider-upjet-cloudflare;
 
       # Crossplane helm chart in operators phase
       phases.${cfg.phase}.bundles.crossplane = {
@@ -654,8 +657,7 @@ in
       phases.infrastructure.bundles.crossplane-providers.resources = providerCRs;
 
       # ProviderConfig CRs — CRDs are pre-installed in the crds phase
-      phases.apps.bundles.crossplane-provider-configs.resources =
-        providerConfigCRs;
+      phases.apps.bundles.crossplane-provider-configs.resources = providerConfigCRs;
 
       # Managed resources in a later phase (after provider configs are ready)
       phases.workloads.bundles.crossplane-resources.resources =

@@ -118,6 +118,53 @@ in
       };
     };
 
+    # ── Security ──────────────────────────────────────────────────────────
+    security = {
+      podSecurity = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Apply Pod Security Admission labels to lab-managed namespaces";
+        };
+        default = mkOption {
+          type = types.enum [
+            "restricted"
+            "baseline"
+            "privileged"
+          ];
+          default = "restricted";
+          description = "Default PSA level for lab namespaces. Components can override per-namespace.";
+        };
+        namespaceOverrides = mkOption {
+          type = types.attrsOf (
+            types.enum [
+              "restricted"
+              "baseline"
+              "privileged"
+            ]
+          );
+          default = { };
+          description = "Per-namespace PSA level overrides (e.g., kube-system = privileged)";
+        };
+      };
+
+      networkPolicies = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Generate default-deny NetworkPolicies for lab namespaces. Components add allow rules.";
+        };
+      };
+
+      auditLogging = {
+        enable = mkOption {
+          type = types.bool;
+          default = false;
+          description = "Enable Kubernetes API server audit logging. Provisioner-specific.";
+        };
+      };
+    };
+
     certSANs = mkOption {
       type = types.listOf types.str;
       default = [
