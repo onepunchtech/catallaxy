@@ -113,14 +113,14 @@ pub fn current_system() -> String {
 pub fn get_lab_config(ctx: &CataContext, lab_name: &str) -> Result<serde_json::Value> {
     let system = current_system();
     // Quote lab name to handle dotted names like "homelab.local"
-    eval_flake(ctx, &format!("labs.{system}.\"{lab_name}\""))
+    eval_flake(ctx, &format!("legacyPackages.{system}.labs.\"{lab_name}\""))
 }
 
 /// List available lab names from the flake
 pub fn list_labs(ctx: &CataContext) -> Result<Vec<String>> {
     let uri = ctx.flake_uri();
     let system = current_system();
-    let installable = format!("{uri}#labs.{system}");
+    let installable = format!("{uri}#legacyPackages.{system}.labs");
 
     let stdout = run_nix(&[
         "eval",
@@ -135,5 +135,8 @@ pub fn list_labs(ctx: &CataContext) -> Result<Vec<String>> {
 /// Build a lab's output package and return the store path
 pub fn build_lab_package(ctx: &CataContext, lab_name: &str) -> Result<String> {
     let system = current_system();
-    build(ctx, &format!("labPackages.{system}.\"{lab_name}\""))
+    build(
+        ctx,
+        &format!("legacyPackages.{system}.labPackages.\"{lab_name}\""),
+    )
 }

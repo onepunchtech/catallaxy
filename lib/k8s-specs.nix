@@ -54,7 +54,7 @@ let
   # Combined CRDs: chart-coupled + standalone
   # Used by the type generator to produce typed Nix options
   crds =
-    (lib.filterAttrs (_: v: v != null) (lib.mapAttrs (_: entry: entry.crds) cataCharts))
+    (lib.filterAttrs (_: v: v != null) (lib.mapAttrs (_: entry: entry.crds or null) cataCharts))
     // standaloneCrds;
 
 in

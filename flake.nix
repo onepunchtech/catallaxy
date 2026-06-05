@@ -34,8 +34,6 @@
       pureLib = import ./lib/pure.nix { inherit lib; };
     in
     {
-      version = "0.6.0";
-
       nixosModules.default =
         { ... }:
         {
@@ -101,12 +99,14 @@
 
       in
       {
-        # ── Lab evaluation ─────────────────────────────────────────────────
-        mkLab = labs.mkLab;
-        labs = lib.mapAttrs (_: lab: lab.config.lab.out.cliConfig) exampleLabDefs;
-        labPackages = lib.mapAttrs (_: lab: lab.config.lab.out.package) exampleLabDefs;
-        charts = cataCharts;
-        inherit (labs) k8sTypegenConfig;
+        # ── Lab evaluation (under legacyPackages to avoid flake check warnings) ──
+        legacyPackages = {
+          mkLab = labs.mkLab;
+          labs = lib.mapAttrs (_: lab: lab.config.lab.out.cliConfig) exampleLabDefs;
+          labPackages = lib.mapAttrs (_: lab: lab.config.lab.out.package) exampleLabDefs;
+          charts = cataCharts;
+          inherit (labs) k8sTypegenConfig;
+        };
 
         # ── Packages ───────────────────────────────────────────────────────
         packages = {
