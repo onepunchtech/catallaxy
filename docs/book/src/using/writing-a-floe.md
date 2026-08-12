@@ -1,0 +1,244 @@
+# Write a Floe
+
+Building one, from the smallest thing that renders to something you can
+ship. Each stage evaluates, so you can stop at any point.
+
+If you have not read [Floes](../understanding/floes.md) yet, start there. It
+covers what a floe is and when `floes.custom.apps` is the better answer.
+
+The finished article is in the consumer template:
+
+```bash
+nix flake init -t github:onepunchtech/catallaxy#consumer
+```
+
+## 1. The smallest thing that renders
+
+```nix
+# floes/hello-world/default.nix
+{ mkFloe, lib }:
+
+mkFloe {
+  name = "hello-world";
+  version = "1.0.0";
+
+  module = { cfg, ... }: {
+    bundles.hello-world = {
+      createNamespaces = [ cfg.namespace ];
+      resources.hello-deployment = {
+        apiVersion = "apps/v1";
+        kind = "Deployment";
+        metadata = { name = "hello"; namespace = cfg.namespace; };
+        spec = { /* … */ };
+      };
+    };
+  };
+}
+```
+
+`cfg` is `config.floes.hello-world`, already resolved. `cfg.namespace`
+defaults to the floe's name.
+
+Register it, then turn it on. There is no auto-discovery: a floe directory
+that is in neither place does nothing at all, with no error.
+
+```nix
+# floes/default.nix
+{ mkFloe, lib }:
+{
+  hello-world = import ./hello-world { inherit mkFloe lib; };
+}
+```
+
+```nix
+# in a cluster
+imports = [ myFloes.hello-world ];
+floes.hello-world.enable = true;
+```
+
+## 2. An option surface
+
+Options go in their own file, pulled in through `imports`:
+
+```nix
+{ lib, ... }:
+let inherit (lib) mkOption types; in
+{
+  options.floes.hello-world = {
+    image = mkOption {
+      type = types.str;
+      default = "hashicorp/http-echo:1.0.0";
+      description = "Container image. Pin a tag, never `latest`.";
+    };
+    replicas = mkOption { type = types.ints.positive; default = 1; };
+    domain = mkOption { type = types.str; };
+  };
+}
+```
+
+The two-file split is not style. **`imports` sits outside the enable gate**,
+so option _declarations_ stay visible when the floe is off. That is what
+lets another module read them in its own option default, and lets the
+generated reference document a floe nobody turned on. Everything in `module`
+is gated on `enable`.
+
+## 3. Say what you need, and when you are ready
+
+```nix
+requires = [ "gateway" ];          # floe names: fails eval, with a message
+
+bundles.hello-world = {
+  requires = [ "gateway/controller/ready" ];   # tokens: waits for READY
+  readyProbe = {
+    kind = "condition";
+    resource = "deployment/hello";
+    namespace = cfg.namespace;
+    condition = "Available";
+    timeout = "2m";
+  };
+  resources = { /* … */ };
+};
+```
+
+Two different `requires`, deliberately. At the top level it names floes and
+produces an eval-time error. On a bundle it names _tokens_, which are states
+another bundle publishes, and means ready rather than applied.
+
+Give a bundle a `readyProbe` whenever it mints state something downstream
+waits on. Leave it `null` for purely declarative bundles.
+
+## 4. Publish an interface
+
+```nix
+exports = { lib, ... }: {
+  url = lib.mkOption {
+    type = lib.types.str;
+    default = "http://hello-world.hello-world.svc.cluster.local";
+    description = "In-cluster URL of the Service.";
+  };
+};
+
+module = { cfg, ... }: {
+  floes.hello-world.exports.url =
+    "http://hello-world.${cfg.namespace}.svc.cluster.local";
+};
+```
+
+Every export field needs a `default`, enforced by
+`checks.floe-exports-defaults`, because a consumer may read one while
+computing its own option default, and that evaluates whether or not your
+floe is enabled.
+
+## 5. Work that is not a manifest
+
+Some capabilities need something to happen on the operator's machine or
+against a cluster that no manifest expresses: join a mesh, drain a queue,
+deregister a peer. Declare it as a step, in the same DSL a lab uses:
+
+```nix
+steps.mesh-join = {
+  kind = "run-script";
+  direction = "deploy";                  # or "teardown", or "both"
+  description = "Join this lab's mesh";
+  scope = "lab";                         # runs once, not once per cluster
+  provides = [ t.lab.reachable ];
+  after = [ (t.wants (t.cluster config.cluster.name).deployed) ];
+  policy.interactive = true;             # a human completes the browser login
+  params.bin = "${joinScript}/bin/join";
+};
+```
+
+Each entry is folded into `lab.steps` as `<cluster>-<name>`, which has two
+consequences:
+
+- **Anchor on tokens.** The fold renames your steps, and a bare name is not
+  an anchor anyway. Publish a `provides` from one and wait on it from the
+  other, through `lib.planTokens` so a typo is an eval error. That is also
+  what lets a step in one cluster order against one in another.
+- **Say what you actually depend on.** An under-constrained step gets
+  hoisted by the topological sort. A mesh-join anchored only on host setup
+  once landed before its clusters existed.
+
+Publishing `t.lab.reachable` above is what makes every step that dials a lab
+endpoint from the host wait for the mesh, without your naming any of them.
+
+For cleanup, set `direction = "teardown"`, publish `t.lab.cleanup` so every
+destroy waits for you, and set `policy.onFailure = "continue"`, since a
+failed cleanup should not strand the rest of the teardown.
+
+## The rules that bite
+
+1. **Read peers only through `peers.<x>.<field>`**: their `exports`, and
+   nothing else, enforced by `checks.floe-boundary`. What a floe does not
+   export, you may not depend on; publishing is its author's call. In
+   `options.nix` there is no `peers`, so write
+   `config.floes.<x>.exports.<f>`.
+2. **Never ask a peer whether it is enabled.** Ask for the capability,
+   `peers.cert-manager.issuance != null`, which only the producer can
+   compute.
+3. **Never hardcode a peer's readiness token.** Take it from the capability:
+   `refs.needs peers.gateway.routing "publicReady"`. No capability, no edge.
+4. **Read `cfg.overrides.*` into every resource you emit.** The option
+   exists whether you read it or not, so a body that ignores it silently
+   does nothing when someone sets it.
+5. **Consume nothing at `let` scope from outside the floe.** A top-level
+   `let` evaluates even when the floe is disabled, so an outside lookup
+   there means switching your floe _off_ can break something unrelated.
+
+## Helpers
+
+| Helper                                                          | Reach it as                              | For                     |
+| --------------------------------------------------------------- | ---------------------------------------- | ----------------------- |
+| `mkHttpRoute`, `mkTlsRoute`, `mkCertificate`, `mkGatewayParent` | `k8sHelpers.*`                           | routes and certificates |
+| `wait.mkWaitInitContainer`, `wait.mkWaitJob`                    | `k8sHelpers.wait.*`                      | in-workload waits       |
+| `mkIdempotentJob`, `hashContent`                                | `catallaxy.lib.*`                        | one-shot bootstrap Jobs |
+| `mkNetworkPolicy`, `network`                                    | `catallaxy.lib.*`                        | policies, CIDR maths    |
+| chart derivations                                               | `cataCharts.<name>.{chart,crds,version}` | pinned upstream charts  |
+
+`mkIdempotentJob` exists because a Job's `spec.template` is immutable: a
+one-shot bootstrap Job that changes becomes a permanent sync error. It
+suffixes the name with a hash of its content, so the same content is the
+same name and applying is a no-op.
+
+Note that **any resource carrying a `helm.sh/hook` annotation is dropped**
+during render, because `helm template` gives hook resources no lifecycle
+semantics. If a chart's hook does something you need, re-emit it as a
+first-class resource or a `mkIdempotentJob`.
+
+## Test it
+
+`evalFloe` evaluates one floe against a fixture cluster with stubbed
+upstreams, in milliseconds and without a cluster:
+
+```nix
+{ lib, pkgs }:
+let
+  inherit (import ../../floe { inherit lib; }) evalFloe;
+  result = evalFloe {
+    floe = import ./floes/hello-world;
+    cluster.floes.hello-world = { enable = true; domain = "hello.example.test"; };
+  };
+in
+lib.runTests {
+  testExportsUrl = {
+    expr = result.exports.url;
+    expected = "http://hello-world.hello-world.svc.cluster.local";
+  };
+}
+```
+
+Wrap it in a `runCommand` as a flake check and it gates your pull requests.
+
+## Ship it
+
+A floe is a flake output:
+
+```nix
+outputs = { ... }: {
+  floes.hello = import ./hello { inherit mkFloe lib; };
+};
+```
+
+Consumers add your flake as an input and import the floe into a cluster.
+There is deliberately no version-constraint mechanism: floes are flake
+inputs, so `flake.lock` pins them and `nix flake update` upgrades them.

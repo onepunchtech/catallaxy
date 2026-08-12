@@ -1,15 +1,8 @@
-# Consumer flake — extend catallaxy with custom components
-#
-# This template shows how to create a lab that uses catallaxy as a library
-# and adds custom components without forking.
-#
-# Usage:
-#   nix flake init -t github:onepunch/catallaxy#consumer
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    catallaxy.url = "github:onepunch/catallaxy";
+    catallaxy.url = "github:onepunchtech/catallaxy";
   };
 
   outputs =
@@ -22,17 +15,35 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
-        mkLab = catallaxy.${system}.mkLab;
+        lib = nixpkgs.lib;
+
+        myFloes = import ./floes {
+          inherit lib;
+          inherit (catallaxy.lib.floe) mkFloe;
+        };
+
+        lab = catallaxy.legacyPackages.${system}.mkLab {
+          modules = [ (import ./lab.nix { inherit myFloes; }) ];
+        };
       in
       {
-        labs."my-platform" =
-          (mkLab {
-            modules = [
-              ./lab.nix
-              ./components/hello-world.nix
-            ];
-          }).config.lab.out.cliConfig;
+        legacyPackages = {
+          labs."my-platform" = lab.config.lab.out.cliConfig;
+          labPackages."my-platform" = lab.config.lab.out.package;
+        };
+
+        devShells.default = catallaxy.legacyPackages.${system}.mkLabShell lab;
+
+        checks.lab-eval =
+          let
+            forced = builtins.toJSON lab.config.lab.out.manifests;
+          in
+          nixpkgs.legacyPackages.${system}.runCommand "lab-eval" { } ''
+            cat > /dev/null <<'JSON'
+            ${forced}
+            JSON
+            echo "my-platform evaluated" > $out
+          '';
       }
     );
 }

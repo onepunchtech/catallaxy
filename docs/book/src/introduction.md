@@ -1,33 +1,62 @@
 # Introduction
 
-Catallaxy is a declarative Kubernetes platform built on the NixOS module system. It lets you define multi-cluster environments entirely in Nix, producing rendered manifests and runtime tooling as build outputs — no imperative orchestration required.
+Catallaxy is a declarative Kubernetes platform built on the NixOS module
+system. You define multi-cluster environments in Nix. The manifests and the
+tooling that deploys them come out as build outputs, so there is no
+imperative orchestration to write.
 
-## The name
+## Why the name?
 
-The term "catallaxy" comes from F.A. Hayek's description of a spontaneous order: a complex, coordinated system that emerges not from central planning, but from independent actors following their own rules. In economics, this is the market. In catallaxy, it is your infrastructure.
+Catallaxy is F.A. Hayek's word for a spontaneous order: a coordinated system
+that emerges from independent parts following their own rules rather than
+from a central plan. This concept comes from observing the real world. It is
+reality that the market is driven by a spontaneous order rather than central
+planning. This project came from the same observation that trying to
+centrally plan everything is futile and there needs to be a way to
+coordinate between teams of people or across automated systems. Nothing in
+it holds the deployment plan, because the plan is derived from what each
+part declares.
 
-Each component — cert-manager, ArgoCD, Prometheus, Kanidm, and many others — is a self-contained declaration. It defines its own options, its own defaults, and writes its own manifests into the appropriate deployment phase. No component knows the full picture. Yet through Nix's lazy evaluation and the module system's merge semantics, these independent declarations compose into a coherent, cross-referenced, multi-cluster platform.
+## Why can't Helm charts compose, and why does Catallaxy?
 
-There is no imperative glue. No ordering logic scattered across scripts. Components declare what they need, reference what they depend on, and the system resolves it all at build time.
+A Helm chart is a templating engine. The problem isn't just with the subpar
+templating engine, which requires a lot of cognitive overhead to reason
+about. Whatever templating you write has an implicit understanding of the
+structure of your cluster, but then that structure is lost once everything
+is rendered to YAML. In Catallaxy we preserve the structure. Structure can
+be defined by the author and can be whatever the author needs in order to
+create a stable API for others to depend on your work.
 
-## What it does
+This abstraction in Catallaxy is called a [floe](./understanding/floes.md).
+A floe is designed to encode everything necessary for templating while
+preserving the structure. I can provide meaningful details in the form of a
+Nix expression to consumers of my floe so that they can guard against what
+they need to. For example, as an author, I can encode the meaning of startup
+order of my resources.
 
-You write Nix modules that describe your lab — its clusters, their components, networking, identity, observability, and anything else you need. Catallaxy evaluates those modules and produces:
+Catallaxy packages a component as a typed option surface and a declared
+interface, and renders manifests from that. The structure survives
+packaging, and it gives you a handle to do so much more than just write
+YAML. This project exploits the many things we can do when we preserve that
+information.
 
-- **Rendered Kubernetes manifests** — Helm charts templated, typed resources serialized, raw YAML collected, all organized by deployment phase.
-- **A deployment package** — manifests bundled with metadata, ready for application via kapp, ArgoCD, or Fleet.
-- **Runtime tooling** — a CLI (`cata`) that handles cluster lifecycle, secret management, PKI, DNS, and operational commands defined in your lab configuration.
+## How do you get more safety before deploying to a cluster?
 
-The system has two layers:
+Kubernetes can be very expensive to operate, and it can be expensive to get
+wrong. To minimize getting it wrong we set up test clusters, but often the
+clusters are too different to really be a true test. The goal of this
+project is to both provide the ability to produce identical clusters and
+minimize the number of things that need to get deployed to test for
+correctness.
 
-- **Nix modules** define the configuration DSL, perform type checking, resolve cross-references between clusters, and render all manifests at build time.
-- **A Rust CLI** (`cata`) orchestrates runtime operations: evaluating Nix expressions, applying manifests to clusters, managing secrets, and running ops commands.
+The thesis is that most things can be validated statically, but this depends
+on maintaining the structure and author's intent so that it is simple enough
+to make assertions on, perform global linting rules, ensure logical
+composition, etc.
 
 ## Status
 
-Catallaxy is functional and in active use, but the API is not yet stable. Expect breaking changes between minor versions. Feedback and contributions are welcome.
-
-## Where to go from here
-
-- [Getting Started](./getting-started/prerequisites.md) — install prerequisites and stand up your first lab.
-- The architecture and component reference sections cover the internals in detail.
+Functional and in active use for a multi-cluster platform. The API is still
+changing substantially while the right abstractions settle, so expect
+breaking changes between minor versions. Feedback and contributions are
+welcome.

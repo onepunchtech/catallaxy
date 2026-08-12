@@ -1,27 +1,17 @@
-//! Nix code generation with pretty printing
-//!
-//! This module converts NixType IR to formatted Nix source code
-//! using the `pretty` crate for proper indentation and line wrapping.
-
 use std::collections::BTreeMap;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
 use super::types::{K8sResourceType, K8sTypeSet, NixOption, NixType, Submodule};
 
-/// Nix reserved keywords that must be quoted when used as attribute names
 const NIX_KEYWORDS: &[&str] = &[
     "assert", "else", "if", "in", "inherit", "let", "or", "rec", "then", "with",
 ];
 
-/// Configuration for the Nix emitter
 #[derive(Debug, Clone)]
 pub struct EmitterConfig {
-    /// Maximum line width before wrapping
     pub max_width: usize,
-    /// Indentation width (in spaces)
     pub indent_width: usize,
-    /// Whether to include descriptions as comments
     pub include_descriptions: bool,
 }
 
@@ -35,7 +25,6 @@ impl Default for EmitterConfig {
     }
 }
 
-/// Escape a string for use inside a Nix double-quoted string ("...")
 fn escape_nix_double_quoted(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -44,12 +33,10 @@ fn escape_nix_double_quoted(s: &str) -> String {
         .replace('\t', "\\t")
 }
 
-/// Escape a string for use inside a Nix indented string (''...'')
 fn escape_nix_indented(s: &str) -> String {
     s.replace("''", "''''").replace("${", "''${")
 }
 
-/// Quote an attribute name if it's a Nix keyword or contains special characters
 fn quote_attr_name(name: &str) -> String {
     let needs_quoting = NIX_KEYWORDS.contains(&name)
         || name.contains('-')
@@ -66,7 +53,6 @@ fn quote_attr_name(name: &str) -> String {
     }
 }
 
-/// Nix code emitter using pretty printing
 pub struct NixEmitter<'a> {
     arena: &'a Arena<'a>,
     config: EmitterConfig,
@@ -77,11 +63,11 @@ impl<'a> NixEmitter<'a> {
         Self { arena, config }
     }
 
-    /// Emit a complete K8s types file
     pub fn emit_k8s_types(&self, type_set: &K8sTypeSet) -> String {
         let doc = self.emit_k8s_types_doc(type_set);
         let mut output = String::new();
-        doc.render_fmt(self.config.max_width, &mut output).unwrap();
+        doc.render_fmt(self.config.max_width, &mut output)
+            .expect("writing to String cannot fail");
         output
     }
 
@@ -174,7 +160,6 @@ in"#,
     }
 
     fn emit_k8s_body(&self, type_set: &K8sTypeSet) -> DocBuilder<'a, Arena<'a>> {
-        // Group resources by group and version
         let mut grouped: BTreeMap<String, BTreeMap<String, Vec<&K8sResourceType>>> =
             BTreeMap::new();
 
@@ -193,7 +178,6 @@ in"#,
                 .push(resource);
         }
 
-        // Emit the grouped structure
         let mut parts = Vec::new();
 
         parts.push(self.arena.text("{"));
@@ -242,7 +226,6 @@ in"#,
 
         let mut parts = Vec::new();
 
-        // Add description as comment if present
         if self.config.include_descriptions {
             if let Some(desc) = &resource.description {
                 let short_desc = desc.lines().next().unwrap_or(desc);
@@ -278,7 +261,6 @@ in"#,
         self.arena.concat(parts)
     }
 
-    /// Emit a NixType as Nix code
     pub fn emit_type(&self, ty: &NixType) -> DocBuilder<'a, Arena<'a>> {
         match ty {
             NixType::Str => self.arena.text("types.str"),
@@ -346,8 +328,6 @@ in"#,
 
             NixType::Submodule(submodule) => self.emit_submodule(submodule),
 
-            // Refs should have been resolved by the schema converter.
-            // If one slips through, fall back to untyped attrs.
             NixType::Ref(_) => self.arena.text("types.attrs"),
         }
     }
@@ -401,14 +381,12 @@ in"#,
             if let Some(desc) = &option.description {
                 parts.push(self.arena.hardline());
                 if desc.contains('\n') {
-                    // Multi-line: use Nix indented string ''...''
                     let escaped = escape_nix_indented(desc);
                     parts.push(self.arena.text(format!(
                         "      description = ''\n        {}\n      '';",
                         escaped.replace('\n', "\n        ")
                     )));
                 } else {
-                    // Single-line: use Nix double-quoted string
                     let escaped = escape_nix_double_quoted(desc);
                     parts.push(
                         self.arena
@@ -424,11 +402,11 @@ in"#,
         self.arena.concat(parts)
     }
 
-    /// Emit a CRD types file
     pub fn emit_crd_types(&self, name: &str, resources: &[K8sResourceType]) -> String {
         let doc = self.emit_crd_types_doc(name, resources);
         let mut output = String::new();
-        doc.render_fmt(self.config.max_width, &mut output).unwrap();
+        doc.render_fmt(self.config.max_width, &mut output)
+            .expect("writing to String cannot fail");
         output
     }
 
@@ -467,7 +445,6 @@ in
         self.arena.concat(parts)
     }
 
-    /// Emit the index.nix aggregator file
     pub fn emit_index(&self, k8s_versions: &[String], crd_names: &[String]) -> String {
         let mut output = String::new();
 
@@ -554,21 +531,18 @@ in {
     }
 }
 
-/// Convenience function to emit K8s types to a string
 pub fn emit_k8s_types(type_set: &K8sTypeSet, config: EmitterConfig) -> String {
     let arena = Arena::new();
     let emitter = NixEmitter::new(&arena, config);
     emitter.emit_k8s_types(type_set)
 }
 
-/// Convenience function to emit CRD types to a string
 pub fn emit_crd_types(name: &str, resources: &[K8sResourceType], config: EmitterConfig) -> String {
     let arena = Arena::new();
     let emitter = NixEmitter::new(&arena, config);
     emitter.emit_crd_types(name, resources)
 }
 
-/// Convenience function to emit the index file
 pub fn emit_index(k8s_versions: &[String], crd_names: &[String], _config: EmitterConfig) -> String {
     let arena = Arena::new();
     let emitter = NixEmitter::new(&arena, EmitterConfig::default());

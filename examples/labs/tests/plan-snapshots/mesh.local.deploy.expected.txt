@@ -1,0 +1,15 @@
+[001] cert-generate name=cert-generate params.zone=mesh.test
+[002] docker-network-create name=docker-network-create params.gateway=172.21.0.1 params.name=mesh.local params.subnet=172.21.0.0/16
+[003] colima-network-route name=colima-network-route params.profile=catallaxy params.subnet=172.21.0.0/16
+[004] ensure-secrets name=ensure-secrets params.stores=["trust"]
+[005] trust-bundle name=trust-bundle
+[006] setup-services name=setup-services
+[007] dns-setup name=dns-setup params.host=127.0.0.1 params.port=5354 params.zone=mesh.test
+[008] registry-setup name=registry-setup params.port=5050 params.upstreams=["codeberg.org","registry.k8s.io","ghcr.io","quay.io","docker.io"] params.zone=mesh.test
+[009] warm-cache name=warm-cache
+[010] create-cluster name=create-cluster-apps params.name=apps params.provisioner=k3d
+[011] create-cluster name=create-cluster-mgmt params.name=mgmt params.provisioner=k3d
+[012] deploy-manifests name=deploy-manifests-apps params.kubeContext=k3d-mesh-local-apps params.target=apps
+[013] deploy-manifests name=deploy-manifests-mgmt params.kubeContext=k3d-mesh-local-mgmt params.target=mgmt
+[014] run-script name=mgmt-netbird-mesh-join policy.interactive=true params.bin=/nix/store/HASH-login/bin/login
+[015] cross-cluster-secret-copy name=xcs-netbird-router-key params.name=netbird-cluster-router-key params.sourceCluster=mgmt params.sourceNamespace=netbird params.sourceSecret=setup-key-cluster-router-apps params.targetCluster=apps params.targetNamespace=netbird params.targetSecret=setup-key-cluster-router-apps

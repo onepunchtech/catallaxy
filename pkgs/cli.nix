@@ -1,7 +1,3 @@
-# pkgs/cli.nix
-#
-# Build the cata CLI binary using crane.
-
 {
   lib,
   pkgs,
@@ -12,7 +8,11 @@
 let
   cliSrc = lib.cleanSourceWith {
     src = ../cli;
-    filter = path: type: (craneLib.filterCargoSources path type) || (type == "directory");
+    filter =
+      path: type:
+      (craneLib.filterCargoSources path type)
+      || (type == "directory")
+      || (lib.hasSuffix ".json" path && lib.hasInfix "/tests/fixtures/" path);
   };
 
   commonArgs = {

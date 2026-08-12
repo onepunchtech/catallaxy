@@ -9,6 +9,8 @@ in
 {
   inherit yamlUtil dirBuilder prefixUtil;
 
+  chainsaw = import ./chainsaw.nix { inherit lib pkgs; };
+
   kapp = import ./kapp.nix {
     inherit
       lib

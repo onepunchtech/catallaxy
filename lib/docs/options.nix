@@ -7,14 +7,14 @@
 }:
 
 let
-  # Evaluate the full module tree to extract option declarations.
-  # We use a minimal config — only option metadata is needed, not computed values.
+
   evaluated = lib.evalModules {
     modules = [
       ../../modules
       {
         _module.args = {
           inherit cataCharts k8sSpecs;
+          contracts = import ../contracts { inherit lib; };
         };
       }
       {

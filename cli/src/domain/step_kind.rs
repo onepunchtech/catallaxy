@@ -1,0 +1,253 @@
+use super::plan::Idempotency;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepKind {
+    SetupServices,
+    DockerNetworkCreate,
+    CertGenerate,
+    TrustBundle,
+    HostTrustInstall,
+    DnsSetup,
+    DnsTeardown,
+    ColimaNetworkRoute,
+    RegistrySetup,
+    WarmCache,
+    CreateCluster,
+    EnsureSecrets,
+    DeployManifests,
+    CrossClusterSecretCopy,
+    WaitForResources,
+    SyncKubeconfig,
+    Pivot,
+    PublishImages,
+    PublishManifests,
+    ApplyRootApplication,
+    BootstrapForgejoRepos,
+    BootstrapArgocdKubectlSsa,
+    BootstrapArgocdHelm,
+    VerifyArgocdReachable,
+    RunScript,
+    DestroyCluster,
+    DeleteManagedResource,
+    WaitForClusterGone,
+    ReleaseClusterCloudResources,
+    RemoveNetwork,
+    RemoveServices,
+}
+
+impl StepKind {
+    pub const ALL: [StepKind; 31] = [
+        StepKind::SetupServices,
+        StepKind::DockerNetworkCreate,
+        StepKind::CertGenerate,
+        StepKind::TrustBundle,
+        StepKind::HostTrustInstall,
+        StepKind::DnsSetup,
+        StepKind::DnsTeardown,
+        StepKind::ColimaNetworkRoute,
+        StepKind::RegistrySetup,
+        StepKind::WarmCache,
+        StepKind::CreateCluster,
+        StepKind::EnsureSecrets,
+        StepKind::DeployManifests,
+        StepKind::CrossClusterSecretCopy,
+        StepKind::WaitForResources,
+        StepKind::SyncKubeconfig,
+        StepKind::Pivot,
+        StepKind::PublishImages,
+        StepKind::PublishManifests,
+        StepKind::ApplyRootApplication,
+        StepKind::BootstrapForgejoRepos,
+        StepKind::BootstrapArgocdKubectlSsa,
+        StepKind::BootstrapArgocdHelm,
+        StepKind::VerifyArgocdReachable,
+        StepKind::RunScript,
+        StepKind::DestroyCluster,
+        StepKind::DeleteManagedResource,
+        StepKind::WaitForClusterGone,
+        StepKind::ReleaseClusterCloudResources,
+        StepKind::RemoveNetwork,
+        StepKind::RemoveServices,
+    ];
+
+    pub fn from_tag(tag: &str) -> Option<StepKind> {
+        StepKind::ALL.into_iter().find(|k| k.tag() == tag)
+    }
+
+    pub fn tag(self) -> &'static str {
+        match self {
+            StepKind::SetupServices => "setup-services",
+            StepKind::DockerNetworkCreate => "docker-network-create",
+            StepKind::CertGenerate => "cert-generate",
+            StepKind::TrustBundle => "trust-bundle",
+            StepKind::HostTrustInstall => "host-trust-install",
+            StepKind::DnsSetup => "dns-setup",
+            StepKind::DnsTeardown => "dns-teardown",
+            StepKind::ColimaNetworkRoute => "colima-network-route",
+            StepKind::RegistrySetup => "registry-setup",
+            StepKind::WarmCache => "warm-cache",
+            StepKind::CreateCluster => "create-cluster",
+            StepKind::EnsureSecrets => "ensure-secrets",
+            StepKind::DeployManifests => "deploy-manifests",
+            StepKind::CrossClusterSecretCopy => "cross-cluster-secret-copy",
+            StepKind::WaitForResources => "wait-for-resources",
+            StepKind::SyncKubeconfig => "sync-kubeconfig",
+            StepKind::Pivot => "pivot",
+            StepKind::PublishImages => "publish-images",
+            StepKind::PublishManifests => "publish-manifests",
+            StepKind::ApplyRootApplication => "apply-root-application",
+            StepKind::BootstrapForgejoRepos => "bootstrap-forgejo-repos",
+            StepKind::BootstrapArgocdKubectlSsa => "bootstrap-argocd-kubectl-ssa",
+            StepKind::BootstrapArgocdHelm => "bootstrap-argocd-helm",
+            StepKind::VerifyArgocdReachable => "verify-argocd-reachable",
+            StepKind::RunScript => "run-script",
+            StepKind::DestroyCluster => "destroy-cluster",
+            StepKind::DeleteManagedResource => "delete-managed-resource",
+            StepKind::WaitForClusterGone => "wait-for-cluster-gone",
+            StepKind::ReleaseClusterCloudResources => "release-cluster-cloud-resources",
+            StepKind::RemoveNetwork => "remove-network",
+            StepKind::RemoveServices => "remove-services",
+        }
+    }
+
+    pub fn retry(self) -> Idempotency {
+        match self {
+            StepKind::CreateCluster | StepKind::Pivot => Idempotency::OneShot,
+            StepKind::DestroyCluster
+            | StepKind::DeleteManagedResource
+            | StepKind::RemoveNetwork
+            | StepKind::RemoveServices => Idempotency::Destructive,
+            StepKind::SetupServices
+            | StepKind::DockerNetworkCreate
+            | StepKind::CertGenerate
+            | StepKind::TrustBundle
+            | StepKind::HostTrustInstall
+            | StepKind::DnsSetup
+            | StepKind::DnsTeardown
+            | StepKind::ColimaNetworkRoute
+            | StepKind::RegistrySetup
+            | StepKind::WarmCache
+            | StepKind::EnsureSecrets
+            | StepKind::DeployManifests
+            | StepKind::CrossClusterSecretCopy
+            | StepKind::WaitForResources
+            | StepKind::SyncKubeconfig
+            | StepKind::PublishImages
+            | StepKind::PublishManifests
+            | StepKind::ApplyRootApplication
+            | StepKind::BootstrapForgejoRepos
+            | StepKind::BootstrapArgocdKubectlSsa
+            | StepKind::BootstrapArgocdHelm
+            | StepKind::VerifyArgocdReachable
+            | StepKind::RunScript
+            | StepKind::WaitForClusterGone
+            | StepKind::ReleaseClusterCloudResources => Idempotency::Idempotent,
+        }
+    }
+
+    pub fn runs_in(self, direction: &str) -> bool {
+        let (deploy, teardown) = match self {
+            StepKind::RunScript | StepKind::DestroyCluster => (true, true),
+            StepKind::DeleteManagedResource
+            | StepKind::WaitForClusterGone
+            | StepKind::ReleaseClusterCloudResources
+            | StepKind::RemoveNetwork
+            | StepKind::RemoveServices
+            | StepKind::DnsTeardown => (false, true),
+            StepKind::SetupServices
+            | StepKind::DockerNetworkCreate
+            | StepKind::CertGenerate
+            | StepKind::TrustBundle
+            | StepKind::HostTrustInstall
+            | StepKind::DnsSetup
+            | StepKind::ColimaNetworkRoute
+            | StepKind::RegistrySetup
+            | StepKind::WarmCache
+            | StepKind::CreateCluster
+            | StepKind::EnsureSecrets
+            | StepKind::DeployManifests
+            | StepKind::CrossClusterSecretCopy
+            | StepKind::WaitForResources
+            | StepKind::SyncKubeconfig
+            | StepKind::Pivot
+            | StepKind::PublishImages
+            | StepKind::PublishManifests
+            | StepKind::ApplyRootApplication
+            | StepKind::BootstrapForgejoRepos
+            | StepKind::BootstrapArgocdKubectlSsa
+            | StepKind::BootstrapArgocdHelm
+            | StepKind::VerifyArgocdReachable => (true, false),
+        };
+        match direction {
+            "teardown" => teardown,
+            _ => deploy,
+        }
+    }
+
+    pub fn dry_run_safe(self) -> bool {
+        match self {
+            StepKind::WaitForResources
+            | StepKind::VerifyArgocdReachable
+            | StepKind::WaitForClusterGone => true,
+            StepKind::SetupServices
+            | StepKind::DockerNetworkCreate
+            | StepKind::CertGenerate
+            | StepKind::TrustBundle
+            | StepKind::HostTrustInstall
+            | StepKind::DnsSetup
+            | StepKind::DnsTeardown
+            | StepKind::ColimaNetworkRoute
+            | StepKind::RegistrySetup
+            | StepKind::WarmCache
+            | StepKind::CreateCluster
+            | StepKind::EnsureSecrets
+            | StepKind::DeployManifests
+            | StepKind::CrossClusterSecretCopy
+            | StepKind::SyncKubeconfig
+            | StepKind::Pivot
+            | StepKind::PublishImages
+            | StepKind::PublishManifests
+            | StepKind::ApplyRootApplication
+            | StepKind::BootstrapForgejoRepos
+            | StepKind::BootstrapArgocdKubectlSsa
+            | StepKind::BootstrapArgocdHelm
+            | StepKind::RunScript
+            | StepKind::DestroyCluster
+            | StepKind::DeleteManagedResource
+            | StepKind::ReleaseClusterCloudResources
+            | StepKind::RemoveNetwork
+            | StepKind::RemoveServices => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_kind_round_trips_through_its_tag() {
+        for kind in StepKind::ALL {
+            assert_eq!(StepKind::from_tag(kind.tag()), Some(kind), "{:?}", kind);
+        }
+    }
+
+    #[test]
+    fn tags_are_unique() {
+        let mut tags: Vec<&str> = StepKind::ALL.iter().map(|k| k.tag()).collect();
+        tags.sort_unstable();
+        let before = tags.len();
+        tags.dedup();
+        assert_eq!(before, tags.len(), "two kinds share a tag");
+    }
+
+    #[test]
+    fn every_kind_runs_in_at_least_one_direction() {
+        for kind in StepKind::ALL {
+            assert!(
+                kind.runs_in("deployment") || kind.runs_in("teardown"),
+                "{kind:?} can never be dispatched"
+            );
+        }
+    }
+}

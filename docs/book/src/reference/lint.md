@@ -1,146 +1,144 @@
-# Lint System
+# Lint Rules
 
-Catallaxy's lint system validates rendered manifests against universal properties. It's the primary mechanism for catching configuration errors before deployment.
-
-## Built-in Checks
-
-| Check | What it validates |
-|-------|-------------------|
-| `schema` | Every resource has apiVersion, kind, metadata.name |
-| `identity` | No duplicate (apiVersion, kind, namespace, name) tuples |
-| `prefix` | Resources and namespaces use the lab prefix |
-| `selector` | Service selectors match workload pod labels |
-| `reference` | ConfigMap/Secret references point to existing resources |
-| `projection-ref` | secretKeyRef names match declared projections with correct phase/namespace |
-| `image-pin` | Container images use digest pins and approved registries |
-| `crd-schema` | Custom Resources validate against CRD OpenAPI schemas |
-| `missing-crd` | Warns when a CR has no matching CRD in the manifest set |
-
-## Running Lint
+`cata lab lint` checks the _rendered manifests_: the layer where types and
+assertions cannot see anything, because a Service selector that matches no
+pods is perfectly valid YAML. It needs no cluster.
+[`lab verify`](./verify.md) is the counterpart that does, and checks a lab
+that is already running.
 
 ```bash
-cata lab lint                # Lint the default lab
-cata lab lint --path <pkg>   # Lint a pre-built lab package
+cata --flake .#<lab> lab lint
+cata lab lint --path ./result                    # an already-built package
+cata --flake .#<lab> lab lint --skip prefix,image-pin
 ```
 
-In CI, `nix flake check` runs lint on all example labs automatically.
+Exit code is non-zero if any diagnostic is an error. Warnings do not fail.
 
-## Skipping Checks
+## What it checks
 
-Per-resource:
+A run works through these layers, stopping at the first that fails:
+
+| Layer         | Question                                |
+| ------------- | --------------------------------------- |
+| Environment   | are the tools this lab needs on `$PATH` |
+| Configuration | does the lab configuration make sense   |
+| Manifests     | are the rendered resources consistent   |
+
+Diagnostics name the cluster, the rule that fired, the resource, and the
+file it was rendered into, so an error is traceable back to the floe that
+emitted it.
+
+## Per-cluster rules
+
+Run against each cluster's rendered resources, in this order.
+
+| Rule          | Checks                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `schema`      | every resource has `apiVersion`, `kind`, `metadata.name`                                        |
+| `identity`    | no two resources share `(apiVersion, kind, namespace, name)`                                    |
+| `prefix`      | non-CRD names and lab-owned namespaces carry `lab.prefix`                                       |
+| `selector`    | every Service selector matches ≥1 workload pod template in the same namespace                   |
+| `reference`   | ConfigMap and Secret references resolve, or are legitimately operator-managed at runtime        |
+| `image-pin`   | enforces `lab.images.requireDigest` and `lab.images.allowedRegistries`                          |
+| `crd-schema`  | validates custom resources against their CRD's OpenAPI v3 schema, types, enums, required fields |
+| `missing-crd` | warns when a custom resource has no CRD in the cluster's manifest set                           |
+| `ready-probe` | a bundle's `readyProbe` names something that bundle renders, or can mint after apply            |
+| `assertions`  | surfaces Nix-declared `assertions` and `warnings` verbatim. A failed assertion is an error      |
+
+`selector` earns its place: a one-character label typo produces a Service
+with no endpoints. Valid YAML, clean apply, and it fails only when something
+tries to reach it. `ready-probe` earns its place the same way: a probe
+waiting on a resource nothing renders blocks until its timeout and then
+fails the deploy, minutes later and far from the cause.
+
+`assertions` carries no logic of its own: the constraint text lives in the
+Nix module that knows the constraint. That is why the messages read like
+advice rather than error codes.
+
+## Lab-scope rules
+
+Run after every cluster, with access to all clusters' resources plus the
+deployment plan.
+
+| Rule                   | Checks                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `cross-cluster-secret` | every `cross-cluster-secret-copy` step names real clusters, and the source Secret exists in the source cluster's manifests |
+| `plan`                 | no step names an undeclared cluster. No cluster created twice. No secret copied before both endpoints exist                |
+
+These catch what no per-cluster rule can: a copy step whose source cluster
+renders no such Secret is invisible from either cluster alone.
+
+## Custom checks
+
+A lab declares its own, and they run alongside the built-ins:
+
+```nix
+lab.lint.checks.no-latest-tag = {
+  description = "Container images must not use the floating `latest` tag";
+  severity = "error";          # error | warning     (default warning)
+  scope = "per-cluster";       # per-file | per-cluster  (default per-file)
+  format = "json";             # exit-code | json    (default exit-code)
+  command = ''
+    find "$MANIFEST_DIR" -name '*.yaml' -print0 \
+      | xargs -0 yq -o=json -I0 '.. | select(has("image")) | .image' 2>/dev/null \
+      | grep -E ':latest"?$' \
+      | jq -R '{severity: "error", resource: ., message: "image uses the `latest` tag"}' \
+      | jq -s '.'
+  '';
+};
+```
+
+| `scope`       | Invoked            | Environment                 |
+| ------------- | ------------------ | --------------------------- |
+| `per-file`    | once per YAML file | `$FILE`, `$CLUSTER`         |
+| `per-cluster` | once per cluster   | `$CLUSTER`, `$MANIFEST_DIR` |
+
+`per-file` is simpler to write; `per-cluster` walks the tree itself and is
+much cheaper on a large lab.
+
+| `format`    | Contract                                                                                                        |
+| ----------- | --------------------------------------------------------------------------------------------------------------- |
+| `exit-code` | non-zero fails, stdout is the message                                                                           |
+| `json`      | stdout is `[{severity, resource, message}]`, empty array passes, **exit code ignored**, severity per diagnostic |
+
+Each check becomes a `writeShellApplication` with `yq`, `jq` and coreutils
+on PATH, symlinked into the lab package at `$out/lint/<name>`. A check that
+fails to _execute_ is reported as an error naming the check, rather than
+being swallowed and reading as a pass.
+
+## Skipping
+
+Whole rules, for one run:
+
+```bash
+cata lab lint <lab> --skip prefix,image-pin,custom
+```
+
+`custom` skips every lab-declared check.
+
+One resource, permanently, when a rule is genuinely wrong about it:
+
 ```yaml
 metadata:
   annotations:
     catallaxy.io/lint-skip: reference,image-pin
 ```
 
-Per-run:
-```bash
-cata lab lint --skip image-pin --skip crd-schema
-```
+Prefer the annotation over `--skip`: it is scoped, it is committed, and it
+is visible next to the thing it excuses.
 
-## Custom Lint Checks
+## In CI
 
-Define custom property checks in Nix that run shell commands on rendered manifests:
+Every example lab gets a check:
 
 ```nix
-lab.lint.checks = {
-  no-default-namespace = {
-    description = "Resources must not use the default namespace";
-    severity = "error";
-    command = ''
-      results=$(yq -N 'select(.metadata.namespace == "default") | .metadata.name' "$FILE" 2>/dev/null)
-      if [ -n "$results" ]; then
-        echo "Found resources in default namespace: $results"
-        exit 1
-      fi
-    '';
-  };
-
-  no-latest-tags = {
-    description = "Container images must not use :latest";
-    severity = "warning";
-    command = ''
-      results=$(yq -N '
-        select(.kind == "Deployment" or .kind == "StatefulSet") |
-        .spec.template.spec.containers[] |
-        select(.image | test(":latest$")) |
-        .image
-      ' "$FILE" 2>/dev/null)
-      if [ -n "$results" ]; then
-        echo "$results"
-        exit 1
-      fi
-    '';
-  };
-
-  require-resource-limits = {
-    description = "Containers must have resource limits";
-    severity = "warning";
-    command = ''
-      results=$(yq -N '
-        select(.kind == "Deployment" or .kind == "StatefulSet") |
-        .spec.template.spec.containers[] |
-        select(.resources.limits == null) |
-        .name
-      ' "$FILE" 2>/dev/null)
-      if [ -n "$results" ]; then
-        echo "Missing resource limits: $results"
-        exit 1
-      fi
-    '';
-  };
-};
+checks.<lab>-lint = pkgs.runCommand "<lab>-lint" {
+  nativeBuildInputs = [ cata ];
+} ''
+  cata lab lint --path ${lab.config.lab.out.package}
+  touch $out
+'';
 ```
 
-### Shell Command Interface
-
-Each check receives:
-- `$FILE` — path to a YAML manifest file
-- `$CLUSTER` — name of the cluster being checked
-
-Available tools: `yq`, `jq`, standard Unix tools.
-
-Return values:
-- **Exit 0** → check passes
-- **Non-zero** → check fails; stdout becomes the diagnostic message
-
-### Severity
-
-- `"error"` — fails the lint (non-zero exit from `cata lab lint`)
-- `"warning"` — reported but doesn't fail
-
-## Nix Assertions (Config-Level Properties)
-
-For properties that can be checked at Nix evaluation time (before rendering), use assertions:
-
-```nix
-config.assertions = [
-  {
-    assertion = config.components.my-app.enable -> config.components.cnpg.enable;
-    message = "my-app requires PostgreSQL (enable components.cnpg)";
-  }
-  {
-    assertion = config.cluster.security.networkPolicies.enable || !config.components.my-app.enable;
-    message = "my-app requires network policies to be enabled";
-  }
-];
-```
-
-Assertions fire at `nix eval` time — before any manifests are rendered. They catch configuration-level contradictions immediately.
-
-## Testing Strategy
-
-Catallaxy's testing is property-based:
-
-1. **Nix assertions** — config-level properties checked at eval time
-2. **Lint checks** — manifest-level properties checked on rendered YAML
-3. **E2E** — deploy examples and verify they work
-
-```bash
-nix flake check     # Runs lint on all example labs (CI-friendly)
-cata lab up          # E2E: deploy and verify
-cata lab down        # Clean up
-```
-
-No traditional unit tests — correctness comes from universal properties that hold across all configurations.
+`--path` is what makes this sandbox-safe: the package is already a store
+path, so the check never shells out to `nix eval`.

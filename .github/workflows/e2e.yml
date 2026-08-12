@@ -1,0 +1,185 @@
+name: E2E
+# Stands a lab up on a runner, checks it works, and tears it down.
+#
+# Separate from CI on purpose. The triggers differ, and tag.yml fires on CI's
+# completion: a nightly e2e failure should not hold up a release tag. Branch
+# protection is where this gates merges.
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  push:
+    branches: [master]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Which labs to run
+        type: choice
+        options: [fast, heavy, all]
+        default: all
+# Which examples run where. A pull request runs the two that stand up in
+# minutes; everything eligible runs nightly, on demand, and on a pull request
+# labelled e2e-full. `nix eval .#e2eLabs` says which labs are eligible at all,
+# and why the rest are not.
+env:
+  PULL_REQUEST_LABS: minimal.local gitops.local
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      labs: ${{ steps.matrix.outputs.labs }}
+      empty: ${{ steps.matrix.outputs.empty }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v14
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      # Which labs can run here is derived from the labs themselves, not
+      # listed. A lab that grows a cloud cluster, a sops store or a step
+      # needing a human leaves the matrix on its own, and says why.
+      - id: matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'e2e-full') }}
+        run: |
+          case "$EVENT" in
+            schedule|workflow_dispatch) everything=true ;;
+            *) [ "$FULL_LABEL" = "true" ] && everything=true || everything=false ;;
+          esac
+
+          nix eval --json .#legacyPackages.x86_64-linux.e2eLabs > all.json
+          jq -r 'to_entries[] | select(.value.eligible | not)
+                 | "not eligible, \(.key): \(.value.reasons | join("; "))"' all.json
+
+          if [ "$everything" = "true" ]; then
+            jq -c '[ to_entries[] | select(.value.eligible) | .key ]' all.json > matrix.json
+          else
+            jq -c --arg wanted "$PULL_REQUEST_LABS" \
+              '[ to_entries[] | select(.value.eligible) | .key
+                 | select(. as $l | ($wanted | split(" ")) | index($l)) ]' all.json > matrix.json
+          fi
+
+          echo "labs=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
+          echo "empty=$(jq 'length == 0' matrix.json)" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Running"
+            echo
+            jq -r '.[] | "- " + .' matrix.json
+            echo
+            jq -r 'to_entries[] | select(.value.eligible | not)
+                   | "- ~~\(.key)~~ \(.value.reasons | join("; "))"' all.json
+          } >> "$GITHUB_STEP_SUMMARY"
+  lab:
+    needs: discover
+    if: needs.discover.outputs.empty == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        lab: ${{ fromJSON(needs.discover.outputs.labs) }}
+    name: ${{ matrix.lab }}
+    steps:
+      - uses: actions/checkout@v4
+      # The runner has around 14 GB free on /, which has to hold the Nix
+      # store and every container image the lab pulls. The heavy tier does
+      # not fit without this; the fast tier does, and the reclaim itself
+      # costs a minute.
+      - name: Reclaim disk
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          large-packages: false
+          docker-images: false
+      - uses: DeterminateSystems/nix-installer-action@v14
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      - name: Build cata and the lab package
+        run: |
+          nix build .#cata --out-link cata
+          nix build .#legacyPackages.x86_64-linux.labPackages.\"${{ matrix.lab }}\" --out-link lab
+          echo "$PWD/cata/bin" >> "$GITHUB_PATH"
+          # hashFiles does not follow the symlink into the store.
+          echo "IMAGES_KEY=$(sha256sum lab/images.txt | cut -c1-32)" >> "$GITHUB_ENV"
+          echo "IMAGE_COUNT=$(wc -l < lab/images.txt)" >> "$GITHUB_ENV"
+      # `warm-cache` copies every entry in the lab's images.txt into the
+      # lab's zot registry. Against a restored volume those are
+      # digest-present no-ops, which is the difference between a cold run
+      # and a warm one, and is also what keeps the heavy tier off Docker
+      # Hub's anonymous pull limit on shared runner IPs.
+      - name: Restore image cache
+        id: registry-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.local/share/catallaxy/labs/${{ matrix.lab }}/registry
+          key: zot-${{ matrix.lab }}-${{ env.IMAGES_KEY }}
+          restore-keys: zot-${{ matrix.lab }}-
+      # The same script anyone runs by hand: `nix run .#e2e -- <lab>`. It
+      # generates any secret store the plan needs, brings the lab up, verifies
+      # it, brings it up again to prove that changes nothing, tears it down and
+      # asserts nothing survived. Keeping CI on it is what stops the two
+      # drifting.
+      - name: Up, verify, destroy
+        run: |
+          start=$SECONDS
+          nix run .#e2e -- "${{ matrix.lab }}"
+          echo "CYCLE_SECONDS=$((SECONDS - start))" >> "$GITHUB_ENV"
+      - name: Diagnostics
+        if: failure()
+        run: |
+          mkdir -p diagnostics
+          cata --flake ".#${{ matrix.lab }}" lab status > diagnostics/status.txt 2>&1 || true
+          cata --flake ".#${{ matrix.lab }}" lab verify --json > diagnostics/verify.json 2>&1 || true
+          cata --flake ".#${{ matrix.lab }}" diagnose --all > diagnostics/diagnose.txt 2>&1 || true
+          docker ps -a > diagnostics/containers.txt 2>&1 || true
+          for c in $(docker ps -a --format '{{.Names}}'); do
+            docker logs --tail 500 "$c" > "diagnostics/log-$c.txt" 2>&1 || true
+          done
+          df -h > diagnostics/disk.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: diagnostics-${{ matrix.lab }}
+          path: diagnostics/
+          retention-days: 7
+      # Only the tier that produced it saves, so a pull request cannot
+      # evict the Nix store cache out of the repo's 10 GB with a heavy
+      # lab's image set.
+      - name: Save image cache
+        if: success() && steps.registry-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.local/share/catallaxy/labs/${{ matrix.lab }}/registry
+          key: zot-${{ matrix.lab }}-${{ env.IMAGES_KEY }}
+      # Cost that is not visible is cost that grows.
+      - name: Report cost
+        if: always()
+        run: |
+          size=$(du -sh ~/.local/share/catallaxy/labs/${{ matrix.lab }}/registry 2>/dev/null | cut -f1)
+          {
+            echo "### ${{ matrix.lab }}"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| up, verify, destroy | ${CYCLE_SECONDS:-?}s |"
+            echo "| images | ${IMAGE_COUNT:-?} |"
+            echo "| image cache | ${size:-none} (hit: ${{ steps.registry-cache.outputs.cache-hit || 'false' }}) |"
+          } >> "$GITHUB_STEP_SUMMARY"

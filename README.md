@@ -1,76 +1,104 @@
 # catallaxy
 
-Declarative Kubernetes platform built on the NixOS module system.
+**Declarative Kubernetes platform management.** A lab is a typed, ordered
+graph of modules: the clusters, the capabilities running on them, and the
+plan that builds all of it, expressed in the Nix module system and executed
+by a Rust CLI.
 
-Catallaxy takes its name from F.A. Hayek's term for the spontaneous order that
-emerges when independent actors follow their own rules. Applied to
-infrastructure: independent component declarations compose into coordinated
-multi-cluster environments through Nix's lazy evaluation. There is no imperative
-orchestration — just declarations that reference each other, and a build system
-that resolves them.
+The name is Hayek's, for the order that emerges when independent actors
+follow their own rules rather than a central plan. It is the same claim
+functional programmers make about **local reasoning**: if every part can be
+understood on its own, composing them is safe and the global structure need
+not be authored by hand.
 
-Define your clusters, components, and topology in Nix. Catallaxy evaluates the
-configuration, renders Kubernetes manifests (Helm charts, typed resources, raw
-YAML), and provides a CLI to provision and manage the result.
+So no part here knows the deployment plan. Each declares its own options,
+the manifests it emits, and the conditions it needs, and the install order
+is _derived_ from those declarations rather than typed as a sequence of
+numbers.
 
 **[Documentation](https://onepunchtech.github.io/catallaxy)**
 
-## Why
+---
 
-Kubernetes platform engineering has an accidental complexity problem: YAML sprawl across environments, deployment ordering that lives in tribal knowledge, brittle bash glue that breaks silently, and a management plane that's always click-ops even when everything it manages gets GitOps.
+The unit is a **floe**: a self-contained module with an option surface, the
+manifests it emits, and a typed interface other floes can read.
 
-Catallaxy treats your platform like a compilation problem. Declare components in typed Nix modules. Cross-cluster references resolve through lazy evaluation at build time. Phase ordering is a dependency graph, not a runbook. The same declarations compile to kapp, ArgoCD, or Fleet output without changing component code.
+```nix
+floes.cert-manager.enable = true;
 
-If you've felt this pain and recognize that Nix's guarantees — purity, reproducibility, composability — are what infrastructure configuration needs, [read more](https://onepunchtech.github.io/catallaxy/why.html).
+floes.forgejo = {
+  enable = true;
+  domain = "git.${lab.dns.zone}";
+  tls.issuerRef = config.floes.cert-manager.exports.defaultIssuerRef;
+};
+```
+
+That last line is the argument: one component reading another's computed
+output, checked at evaluation. No string templating, no values file
+duplicated in two places, no sync-wave number chosen by looking at the
+neighbouring numbers.
 
 ## Quick start
 
 ```bash
-# Enter dev shell (provides kubectl, helm, kapp, k3d, etc.)
 nix develop
 
-# Stand up the example homelab (2 clusters: core + obs)
-cata --flake ./examples/labs#homelab lab up
+cata --flake ./examples/labs#minimal.local lab plan     # read it first
+cata --flake ./examples/labs#minimal.local lab up
+cata --flake ./examples/labs#minimal.local lab topology --format table
 
-# Configure local DNS and trust the lab CA
-cata --flake ./examples/labs#homelab lab dns --setup
-cata --flake ./examples/labs#homelab lab trust --setup
+curl http://podinfo.minimal.test
 
-# Access services by domain
-# https://argocd.homelab.test
-# https://grafana.homelab.test
-# https://kanidm.homelab.test
-
-# Tear down
-cata --flake ./examples/labs#homelab lab down
+cata --flake ./examples/labs#minimal.local lab destroy
 ```
 
-## Features
+`minimal.local` is one k3d cluster with a gateway and one app (podinfo),
+served over plain HTTP so it comes up on any machine. `homelab.local` adds
+identity, observability and GitOps over TLS. `mesh.local` is reachable only
+from a WireGuard mesh, and is where the lab CA and host trust are
+demonstrated.
 
-- **Batteries included** — CNI, gateway, PKI, observability, databases,
-  identity, GitOps, and more
-- **Cross-cluster references** via Nix lazy evaluation — one cluster's Tempo
-  endpoint wired into another's OTEL collector
-- **Phase-based deployment ordering** — CRDs before operators before
-  infrastructure before apps
-- **Multiple output strategies** — kapp (direct apply), ArgoCD, Fleet
-- **Lab-aware ops tooling** — commands that understand your cluster topology
-- **Consumer flake support** — define your lab in your own flake, import
-  catallaxy as an input
+Walkthrough:
+[Run the Example Lab](https://onepunchtech.github.io/catallaxy/start-here/first-lab.html).
 
-## Build and development
+## What it does
+
+- **A plan you read before it runs.** `cata lab plan` prints the ordered
+  step list `cata lab up` will execute, provisioning, host DNS and TLS,
+  cross-cluster secret copies, your own hooks.
+- **Install order that is derived.** Bundles declare what they need and what
+  they offer. Waves fall out. Nothing carries a number.
+- **Failures that happen early.** Types, assertions, graph contracts, lint
+  over rendered manifests, snapshot tests over the plan.
+- **27 built-in floes**. CNI, gateway, PKI, identity, observability,
+  databases, registries, GitOps, backup, and yours built the same way, in
+  your own repository.
+- **Bootstrap and pivot.** Cloud clusters provisioned by Crossplane from a
+  throwaway local one, which is then destroyed.
+- **kapp, ArgoCD or Fleet**, with the handoff between imperative bootstrap
+  and GitOps steady state modelled rather than scripted.
+
+## Your own lab
 
 ```bash
-nix develop                       # dev shell with all tools
-cargo build                       # build CLI (in cli/)
-nix build .#cata                  # full wrapped CLI with runtime tools
-nix fmt                           # format Nix, Rust, YAML
-nix flake check                   # build + format + lint checks
+nix flake init -t github:onepunchtech/catallaxy#consumer
 ```
 
-## Contributing
+You never fork catallaxy, your flake takes it as an input. See
+[Build Your Own Lab](https://onepunchtech.github.io/catallaxy/start-here/your-own-lab.html).
 
-[contributor guide](https://onepunchtech.github.io/catallaxy/contributing/guide.html).
+## Development
+
+```bash
+nix develop                       # cata, cata-dev, and every runtime tool
+cargo build                       # the CLI
+nix flake check                   # everything: tests, lint, snapshots, docs
+nix fmt                           # nixfmt, rustfmt, yamlfmt
+nix build .#docs                  # the book
+```
+
+[Contributing](https://onepunchtech.github.io/catallaxy/contributing/setup.html)
+· [Conventions](CLAUDE.md)
 
 ## License
 

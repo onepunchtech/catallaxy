@@ -1,0 +1,826 @@
+{
+  config,
+  lib,
+  pkgs,
+  cataCharts,
+  k8sSpecs,
+  k8sHelpers,
+  contracts,
+  ...
+}@__floeModuleArgs:
+
+let
+  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+in
+(mkFloe {
+  name = "kanidm";
+
+  imports = [
+    ./options.nix
+    ./heal.nix
+  ];
+
+  requires = [
+    "cert-manager"
+    "gateway"
+  ];
+  exports =
+    { lib, ... }:
+    {
+      identity = lib.mkOption {
+        type = refs.mkCapability {
+          instanceReady = refs.tokenOption ''
+            "The kanidm instance is serving." Consumers that only need
+            the OIDC endpoint to answer gate on this.
+          '';
+          provisioningReady = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = ''
+              "Declared OAuth2 clients exist and their Secrets are
+              minted." Null when nothing declares clients: a running
+              kanidm is not the same as a provisioned one, and a
+              consumer mounting a client Secret needs the difference.
+            '';
+          };
+        };
+        default = null;
+        description = ''
+          Identity provision, or null when this floe is off. Consumers
+          assert on this rather than on `floes.kanidm.enable`.
+        '';
+      };
+      host = lib.mkOption {
+        type = lib.types.str;
+        default = "kanidm.kanidm.svc.cluster.local";
+      };
+      namespace = lib.mkOption {
+        type = lib.types.str;
+        default = "kanidm";
+      };
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 8443;
+      };
+      url = lib.mkOption {
+        type = lib.types.str;
+        default = "https://kanidm.kanidm.svc.cluster.local:8443";
+      };
+      externalUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+      };
+
+      externalHost = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+      };
+      externalPort = lib.mkOption {
+        type = lib.types.port;
+        default = 443;
+      };
+      domain = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+      };
+      instanceName = lib.mkOption {
+        type = lib.types.str;
+        default = "kanidm";
+      };
+      oidcIssuer = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+      };
+      oidcDiscovery = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+      };
+      authorizationEndpoint = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          Browser authorization endpoint, on the public origin.
+
+          A user-agent flow must send the human to an address their
+          browser can reach, so unlike the token and JWKS endpoints this
+          one is deliberately public.
+        '';
+      };
+      tokenEndpoint = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          Token endpoint on the public origin, for a flow whose
+          redirect already went through a browser.
+        '';
+      };
+      internalTokenEndpoint = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = ''
+          OAuth2 token endpoint on kanidm's in-cluster address.
+
+          The discovery document is built from `origin`, which is the
+          public URL a browser uses. A Pod that follows it reaches the
+          gateway's public listener, which on an internal-tier lab is not
+          served at all. Machine-to-machine callers take this instead of
+          parsing discovery.
+        '';
+      };
+
+      oauth2Clients = lib.mkOption {
+        default = { };
+        type = contracts.oidc.clientsType;
+        description = ''
+          Per-client OIDC records this identity provider publishes.
+
+          Consumers take one of these as their own `oidc.client`
+          option rather than reading this attrset by name, which is
+          what makes the provider swappable.
+        '';
+      };
+
+      oidcDiscoveryReadyProbe = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+      };
+
+      adminPasswordsReadyProbe = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+      };
+      caSecretRef = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+      };
+
+      serviceAccounts = lib.mkOption {
+        default = { };
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              name = lib.mkOption {
+                type = lib.types.str;
+                default = "";
+              };
+              namespace = lib.mkOption {
+                type = lib.types.str;
+                default = "";
+              };
+
+              apiTokenSecrets = lib.mkOption {
+                default = { };
+                type = lib.types.attrsOf (
+                  lib.types.submodule {
+                    options = {
+                      secretName = lib.mkOption {
+                        type = lib.types.str;
+                        default = "";
+                      };
+                      namespace = lib.mkOption {
+                        type = lib.types.str;
+                        default = "";
+                      };
+                      purpose = lib.mkOption {
+                        type = lib.types.str;
+                        default = "readonly";
+                      };
+                    };
+                  }
+                );
+              };
+              credentialsSecret = lib.mkOption {
+                type = lib.types.nullOr lib.types.str;
+                default = null;
+              };
+            };
+          }
+        );
+      };
+
+      groups = lib.mkOption {
+        default = { };
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              name = lib.mkOption {
+                type = lib.types.str;
+                default = "";
+                description = "Bare group name, as declared.";
+              };
+              spn = lib.mkOption {
+                type = lib.types.str;
+                default = "";
+                description = ''
+                  Security principal name, `<name>@<domain>`: the value
+                  kanidm emits in a `groups` claim.
+                '';
+              };
+            };
+          }
+        );
+      };
+    };
+  module =
+    {
+      config,
+      lib,
+      cataCharts,
+      cfg,
+      peers,
+      ...
+    }:
+    let
+      inherit (lib)
+        mkIf
+        mapAttrs
+        mapAttrsToList
+        optionalAttrs
+        optional
+        ;
+      kaniopEnabled = peers.kaniop.operator != null;
+
+      chartRef = cfg.chart;
+
+      gatewayParentRef = {
+        name =
+          if cfg.gateway.tier == "internal" then
+            config.floes.gateway.exports.internalGatewayName
+          else
+            cfg.gateway.gatewayRef;
+      }
+      // optionalAttrs (cfg.gateway.gatewayNamespace != null) {
+        namespace = cfg.gateway.gatewayNamespace;
+      }
+      // optionalAttrs (cfg.gateway.mode == "passthrough") {
+        sectionName = "tls-passthrough";
+      }
+
+      // optionalAttrs (cfg.gateway.mode != "passthrough") {
+        sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+      };
+
+      internalTierEnabled =
+        cfg.gateway.enable && cfg.gateway.tier == "public" && peers.gateway.internalEnabled;
+
+      internalGatewayParentRef = {
+        name = config.floes.gateway.exports.internalGatewayName;
+      }
+      // optionalAttrs (cfg.gateway.gatewayNamespace != null) {
+        namespace = cfg.gateway.gatewayNamespace;
+      }
+      // optionalAttrs (cfg.gateway.mode == "passthrough") {
+        sectionName = "tls-passthrough";
+      }
+      // optionalAttrs (cfg.gateway.mode != "passthrough") {
+        sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+      };
+
+      domainConfigured = cfg.domain != "" && cfg.domain != "idm.example.com";
+
+      internalRouteResource = optionalAttrs (internalTierEnabled && domainConfigured) {
+        kanidm-internal-route =
+          if cfg.gateway.mode == "passthrough" then
+            {
+              apiVersion = "gateway.networking.k8s.io/v1alpha2";
+              kind = "TLSRoute";
+              metadata = {
+                name = "kanidm-internal";
+                namespace = cfg.namespace;
+                labels."app.kubernetes.io/managed-by" = "catallaxy";
+              };
+              spec = {
+                parentRefs = [ internalGatewayParentRef ];
+                hostnames = [ cfg.domain ];
+                rules = [
+                  {
+                    backendRefs = [
+                      {
+                        name = cfg.instanceName;
+                        port = 8443;
+                      }
+                    ];
+                  }
+                ];
+              };
+            }
+          else
+            {
+              apiVersion = "gateway.networking.k8s.io/v1";
+              kind = "HTTPRoute";
+              metadata = {
+                name = "kanidm-internal";
+                namespace = cfg.namespace;
+                labels."app.kubernetes.io/managed-by" = "catallaxy";
+              };
+              spec = {
+                parentRefs = [ internalGatewayParentRef ];
+                hostnames = [ cfg.domain ];
+                rules = [
+                  {
+                    matches = [
+                      {
+                        path = {
+                          type = "PathPrefix";
+                          value = "/";
+                        };
+                      }
+                    ];
+                    backendRefs = [
+                      {
+                        name = cfg.instanceName;
+                        port = 8443;
+                      }
+                    ];
+                  }
+                ];
+              };
+            };
+      };
+
+      routeResource = optionalAttrs (cfg.gateway.enable && domainConfigured) {
+        kanidm-route =
+          if cfg.gateway.mode == "passthrough" then
+            {
+              apiVersion = "gateway.networking.k8s.io/v1alpha2";
+              kind = "TLSRoute";
+              metadata = {
+                name = "kanidm";
+                namespace = cfg.namespace;
+                labels."app.kubernetes.io/managed-by" = "catallaxy";
+              };
+              spec = {
+                parentRefs = [ gatewayParentRef ];
+                hostnames = [ cfg.domain ];
+                rules = [
+                  {
+                    backendRefs = [
+                      {
+                        name = cfg.instanceName;
+                        port = 8443;
+                      }
+                    ];
+                  }
+                ];
+              };
+            }
+          else
+            {
+              apiVersion = "gateway.networking.k8s.io/v1";
+              kind = "HTTPRoute";
+              metadata = {
+                name = "kanidm";
+                namespace = cfg.namespace;
+                labels."app.kubernetes.io/managed-by" = "catallaxy";
+              };
+              spec = {
+                parentRefs = [ gatewayParentRef ];
+                hostnames = [ cfg.domain ];
+                rules = [
+                  {
+                    matches = [
+                      {
+                        path = {
+                          type = "PathPrefix";
+                          value = "/";
+                        };
+                      }
+                    ];
+                    backendRefs = [
+                      {
+                        name = cfg.instanceName;
+                        port = 8443;
+                      }
+                    ];
+                  }
+                ];
+              };
+            };
+      };
+
+      backendTlsPolicy = optionalAttrs (cfg.gateway.enable && cfg.gateway.mode == "terminate") {
+        kanidm-backend-tls = {
+          apiVersion = "gateway.networking.k8s.io/v1alpha3";
+          kind = "BackendTLSPolicy";
+          metadata = {
+            name = "kanidm-backend-tls";
+            namespace = cfg.namespace;
+            labels."app.kubernetes.io/managed-by" = "catallaxy";
+          };
+          spec = {
+            targetRefs = [
+              {
+                group = "";
+                kind = "Service";
+                name = cfg.instanceName;
+              }
+            ];
+            validation = {
+              hostname = cfg.domain;
+            }
+            // (
+              if hasTrustBundle then
+                {
+                  caCertificateRefs = [
+                    {
+                      group = "";
+                      kind = "ConfigMap";
+                      name = caBundle.name;
+                    }
+                  ];
+                }
+              else
+                {
+                  wellKnownCACertificates = "System";
+                }
+            );
+          };
+        };
+      };
+
+      caBundle = peers.cert-manager.caBundle;
+      hasTrustBundle = caBundle != null;
+
+      kanidmCR = optionalAttrs kaniopEnabled {
+        kanidm-cr = {
+          apiVersion = "kaniop.rs/v1beta1";
+          kind = "Kanidm";
+          metadata = {
+            name = cfg.instanceName;
+            namespace = cfg.namespace;
+            labels = {
+              "app.kubernetes.io/managed-by" = "catallaxy";
+            };
+          };
+          spec = {
+            domain = cfg.domain;
+
+            image = "kanidm/server:${cfg.version}";
+            replicaGroups = [
+              {
+                name = "default";
+                replicas = cfg.replicas;
+              }
+            ];
+          }
+          // optionalAttrs (effectiveOauth2NamespaceSelector != null) {
+            oauth2ClientNamespaceSelector = effectiveOauth2NamespaceSelector;
+          }
+          // optionalAttrs (cfg.tls.issuerRef != null) {
+            tlsSecretName = cfg.tls.secretName;
+          }
+          // optionalAttrs (cfg.storage.storageClass != null) {
+
+            storage = {
+              volumeClaimTemplate = {
+                spec = {
+                  accessModes = [ "ReadWriteOnce" ];
+                  resources.requests.storage = cfg.storage.size;
+                  storageClassName = cfg.storage.storageClass;
+                };
+              };
+            };
+          };
+        };
+      };
+
+      tlsCertResource = optionalAttrs (cfg.tls.issuerRef != null && domainConfigured) {
+        kanidm-tls = {
+          apiVersion = "cert-manager.io/v1";
+          kind = "Certificate";
+          metadata = {
+            name = cfg.tls.secretName;
+            namespace = cfg.namespace;
+            labels = {
+              "app.kubernetes.io/managed-by" = "catallaxy";
+            };
+          };
+          spec = {
+            secretName = cfg.tls.secretName;
+            issuerRef = {
+              name = cfg.tls.issuerRef.name;
+              kind = cfg.tls.issuerRef.kind;
+            };
+            dnsNames = [
+              cfg.domain
+            ]
+
+            ++ optional (!useAcme) "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local";
+          };
+        };
+      };
+
+      provisioning = import ./provisioning.nix { inherit lib cfg; };
+      inherit (provisioning)
+        groupResources
+        personResources
+        oauth2Resources
+        serviceAccountResources
+        oauth2Namespaces
+        hasCrossNamespaceClient
+        effectiveOauth2NamespaceSelector
+        hasProvisioning
+        ;
+
+      internalHost = "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local";
+
+      useAcme = (peers.cert-manager.issuance or null) != null && peers.cert-manager.issuance.publicIssuer;
+      effectiveHost = if useAcme then cfg.domain else internalHost;
+      effectiveUrl = if useAcme then cfg.origin else "https://${internalHost}:8443";
+    in
+    {
+
+      assertions = [
+        {
+          assertion =
+            !hasCrossNamespaceClient
+            || cfg.oauth2ClientNamespaceSelector == null
+            || cfg.oauth2ClientNamespaceSelector == { };
+          message = ''
+            kanidm: `oauth2ClientNamespaceSelector` is a label selector, but
+            OAuth2 clients are declared in ${lib.concatStringsSep ", " oauth2Namespaces}.
+            Namespaces created by `createNamespaces` carry no labels, so a
+            label selector cannot match them and those clients would never
+            be reconciled.
+
+            Either use `{ }` (all namespaces), or drop the option entirely
+            and let it derive from the clients you declared.
+          '';
+        }
+      ];
+
+      floes.kanidm.exports = {
+        identity = {
+          instanceReady = "kanidm/instance/ready";
+
+          provisioningReady = if kaniopEnabled && hasProvisioning then "kanidm/provisioning/ready" else null;
+        };
+        host = effectiveHost;
+        inherit (cfg) namespace domain instanceName;
+        port = if useAcme then 443 else 8443;
+        url = effectiveUrl;
+        externalUrl = cfg.origin;
+        externalHost = cfg.domain;
+        externalPort = 443;
+        oidcIssuer = "${cfg.origin}/oauth2/openid/";
+        oidcDiscovery = "${cfg.origin}/.well-known/openid-configuration";
+        authorizationEndpoint = "${cfg.origin}/ui/oauth2";
+        tokenEndpoint = "${cfg.origin}/oauth2/token";
+        internalTokenEndpoint = "${effectiveUrl}/oauth2/token";
+        oauth2Clients = mapAttrs (
+          name: _:
+          let
+            client = cfg.oauth2Clients.${name};
+            clientNs = if client.namespace != null then client.namespace else cfg.namespace;
+            secretName = "${name}-kanidm-oauth2-credentials";
+
+            supFor =
+              g:
+              let
+                m = lib.findFirst (s: s.group == g) null client.supScopeMap;
+              in
+              if m == null then [ ] else m.scopes;
+            perGroupScopes = map (sm: lib.unique (sm.scopes ++ supFor sm.group)) client.scopeMap;
+            grantedScopes =
+              if perGroupScopes == [ ] then
+                [ ]
+              else
+                lib.foldl' lib.intersectLists (builtins.head perGroupScopes) (builtins.tail perGroupScopes);
+          in
+          {
+            issuer = "${cfg.origin}/oauth2/openid/${name}";
+            internalIssuer = "${effectiveUrl}/oauth2/openid/${name}";
+            internalJwksUri = "${effectiveUrl}/oauth2/openid/${name}/public_key.jwk";
+            clientId = name;
+
+            clientSecretRef =
+              if client.public then
+                null
+              else
+                {
+                  name = secretName;
+                  namespace = clientNs;
+                  key = "CLIENT_SECRET";
+                };
+
+            readyProbe =
+              if client.public then
+                { }
+              else
+                {
+                  kind = "jsonpath";
+                  resource = "secret/${secretName}";
+                  namespace = clientNs;
+                  jsonpath = "{.data.CLIENT_SECRET}";
+                  timeout = "10m";
+                };
+            inherit grantedScopes;
+
+            claimValues = lib.listToAttrs (
+              map (c: {
+                name = c.name;
+                value = lib.unique (lib.concatMap (v: v.values) c.valuesMap);
+              }) client.claimMap
+            );
+            scopeMapGroups = lib.unique (
+              map (m: lib.head (lib.splitString "@" m.group)) (client.scopeMap ++ client.supScopeMap)
+            );
+          }
+        ) cfg.oauth2Clients;
+
+        oidcDiscoveryReadyProbe = {
+          kind = "http";
+          url = "${cfg.origin}/.well-known/openid-configuration";
+          expectedStatus = 200;
+          timeout = "10m";
+          interval = "15s";
+        };
+
+        adminPasswordsReadyProbe = {
+          kind = "exists";
+          resource = "secret/${cfg.instanceName}-admin-passwords";
+          namespace = cfg.namespace;
+          timeout = "10m";
+        };
+        caSecretRef = {
+          name = cfg.tls.secretName;
+          namespace = cfg.namespace;
+          key = "ca.crt";
+        };
+        serviceAccounts = mapAttrs (name: sa: {
+          inherit name;
+          namespace = cfg.namespace;
+          apiTokenSecrets = lib.listToAttrs (
+            map (
+              tok:
+              lib.nameValuePair tok.label {
+                inherit (tok) purpose secretName;
+                namespace = cfg.namespace;
+              }
+            ) sa.apiTokens
+          );
+          credentialsSecret =
+            if sa.generateCredentials then "${name}-kanidm-service-account-credentials" else null;
+        }) cfg.serviceAccounts;
+
+        groups = mapAttrs (name: _: {
+          inherit name;
+          spn = "${name}@${cfg.domain}";
+        }) cfg.groups;
+      };
+
+      ops.init-user = {
+        description = "Reset a kanidm account's password, for a first login";
+        category = "kanidm";
+        args = [
+          {
+            name = "username";
+            description = "kanidm account name (e.g. lab-admin)";
+          }
+        ];
+        package = pkgs.writeShellApplication {
+          name = "init-user";
+          runtimeInputs = [ pkgs.kubectl ];
+          text = ''
+            USER="''${1:?Usage: init-user <username>}"
+            CONTEXT="''${KUBECONTEXT:-${config.cluster.ref.kubeContext or ""}}"
+            NS="${cfg.namespace}"
+            POD="${cfg.instanceName}-default-0"
+
+            echo "Resetting password for '$USER'..."
+            OUTPUT=$(kubectl --context "$CONTEXT" -n "$NS" exec "$POD" -- \
+              kanidmd recover-account "$USER" 2>&1) || {
+              echo "Failed:"
+              echo "$OUTPUT"
+              exit 1
+            }
+
+            PASSWORD=$(echo "$OUTPUT" | grep -oP 'new_password: "\K[^"]+' || echo "")
+
+            if [ -z "$PASSWORD" ]; then
+              echo "$OUTPUT"
+            else
+              echo ""
+              echo "Account '$USER' password has been reset."
+              echo ""
+              echo "  Login URL: ${cfg.origin}"
+              echo "  Username:  $USER"
+              echo "  Password:  $PASSWORD"
+              echo ""
+              echo "Log in and enroll a passkey or change the password."
+            fi
+          '';
+        };
+      };
+
+      floes.gateway.internalHostnames =
+        if cfg.gateway.enable && domainConfigured then [ cfg.domain ] else [ ];
+
+      bundles = {
+        kanidm = {
+          owner = {
+            bootstrap = "install-target";
+            steady = "argocd";
+          };
+
+          createNamespaces = [ cfg.namespace ];
+
+          resources =
+            (if kaniopEnabled then kanidmCR else { })
+            // tlsCertResource
+            // routeResource
+            // internalRouteResource
+            // backendTlsPolicy;
+
+          requires =
+            refs.needs peers.cert-manager.issuance "webhookReady"
+            ++ refs.needs peers.gateway.routing "publicReady"
+            ++ refs.needs peers.kaniop.operator "ready";
+          provides = [ "kanidm/instance/ready" ];
+          readyProbe = {
+            kind = "condition";
+
+            resource = "kanidm/${cfg.instanceName}";
+            namespace = cfg.namespace;
+            condition = "Available";
+            timeout = "10m";
+          };
+
+          helmCharts = optionalAttrs (!kaniopEnabled) {
+            kanidm = {
+              chart = chartRef;
+              releaseName = "kanidm";
+              namespace = cfg.namespace;
+              createNamespace = true;
+              values = {
+                image.tag = cfg.version;
+                replicas = cfg.replicas;
+
+                kanidm = {
+                  domain = cfg.domain;
+                  origin = cfg.origin;
+                };
+
+                persistence = {
+                  enabled = true;
+                  size = cfg.storage.size;
+                }
+                // optionalAttrs (cfg.storage.storageClass != null) {
+                  storageClass = cfg.storage.storageClass;
+                };
+              }
+              // optionalAttrs (cfg.tls.issuerRef != null) {
+                tls.secretName = cfg.tls.secretName;
+              };
+            };
+          };
+
+        };
+
+        kanidm-provisioning = {
+          owner = {
+            bootstrap = "install-target";
+            steady = "argocd";
+          };
+
+          createNamespaces = lib.unique ([ cfg.namespace ] ++ oauth2Namespaces);
+
+          resources =
+            if kaniopEnabled && hasProvisioning then
+              groupResources // personResources // oauth2Resources // serviceAccountResources
+            else
+              { };
+
+          requires = lib.optionals (kaniopEnabled && hasProvisioning) [
+            "kanidm/instance/ready"
+          ];
+          provides = lib.optional (kaniopEnabled && hasProvisioning) "kanidm/provisioning/ready";
+
+          readyProbe =
+            if kaniopEnabled && hasProvisioning && oauth2Resources != { } then
+              {
+                kind = "kubectl-wait";
+                args = [
+                  "--for=jsonpath={.status.ready}=true"
+                  "kanidmoauth2clients.kaniop.rs"
+                  "--all"
+                ]
+                ++ (
+
+                  if lib.length oauth2Namespaces == 1 then
+                    [
+                      "-n"
+                      (lib.head oauth2Namespaces)
+                    ]
+                  else
+                    [ "-A" ]
+                )
+                ++ [ "--timeout=5m" ];
+              }
+            else
+              null;
+        };
+      };
+    };
+})
+  __floeModuleArgs

@@ -10,43 +10,51 @@
   clusterName,
   prefix ? "",
   labNamespaces ? [ ],
-  phases,
-  phaseOrder,
+
+  packages,
   deployConfig,
+  waves ? [ ],
 }:
 
 let
-  inherit (lib) concatStringsSep mapAttrsToList;
+  inherit (lib) concatStringsSep;
 
-  # Apply prefix to phase/bundle names
-  pfx = name: prefixUtil.phaseName prefix name;
+  sanitize = key: builtins.replaceStrings [ "/" ] [ "__" ] key;
 
-  # Generate a fleet.yaml for a phase
+  bundleFleetName = key: prefixUtil.prefixed prefix (sanitize key);
+
+  bundleEntries = lib.concatLists (
+    lib.imap0 (
+      i: waveBundles:
+      let
+        predecessors = lib.concatLists (
+          lib.imap0 (
+            j: prev:
+            if j < i then map (b: b.name) (lib.filter (b: !(lib.hasPrefix "projection/" b.name)) prev) else [ ]
+          ) waves
+        );
+      in
+      map (b: {
+        bundleKey = b.name;
+        dependsOn = map bundleFleetName predecessors;
+      }) (lib.filter (b: !(lib.hasPrefix "projection/" b.name)) waveBundles)
+    ) waves
+  );
+
   mkFleetYaml =
-    phaseName:
+    entry:
     let
-      phase = phases.${phaseName};
-
-      # Fleet dependsOn references other bundles — prefix them too
-      dependsOn = map (dep: {
-        name = pfx dep;
-      }) phase.dependsOn;
-
-      fleetConfig = {
-        defaultNamespace = "default";
-      }
-      // lib.optionalAttrs (dependsOn != [ ]) {
-        inherit dependsOn;
-      }
-      // lib.optionalAttrs phase.keepResources {
-        keepResources = true;
-      };
+      dependsOnRefs = map (n: { name = n; }) entry.dependsOn;
     in
-    fleetConfig;
+    {
+      defaultNamespace = "default";
+    }
+    // lib.optionalAttrs (dependsOnRefs != [ ]) {
+      dependsOn = dependsOnRefs;
+    };
 
-  # Build each phase directory with fleet.yaml + manifests
-  phasesDrv =
-    pkgs.runCommand "fleet-${clusterName}-phases"
+  bundlesDrv =
+    pkgs.runCommand "fleet-${clusterName}-bundles"
       {
         nativeBuildInputs = [ pkgs.yq-go ];
       }
@@ -54,40 +62,41 @@ let
         mkdir -p $out
         ${concatStringsSep "\n" (
           map (
-            phaseName:
+            entry:
             let
-              phase = phases.${phaseName};
-              fleetConfig = mkFleetYaml phaseName;
-              dirName = pfx phaseName;
+              inherit (entry) bundleKey;
+              sanitized = sanitize bundleKey;
+              pkg = packages.${bundleKey} or null;
+              fleetConfig = mkFleetYaml entry;
             in
-            ''
-              mkdir -p "$out/${dirName}"
+            if pkg == null then
+              ""
+            else
+              ''
+                mkdir -p "$out/${sanitized}"
+                echo '${builtins.toJSON fleetConfig}' | yq -P '.' > "$out/${sanitized}/fleet.yaml"
 
-              # Write fleet.yaml
-              echo '${builtins.toJSON fleetConfig}' | yq -P '.' > "$out/${dirName}/fleet.yaml"
+                if [ -d "${pkg}" ]; then
+                  cp -r --no-preserve=mode ${pkg}/* "$out/${sanitized}/" 2>/dev/null || true
+                else
+                  cp --no-preserve=mode ${pkg} "$out/${sanitized}/manifests.yaml"
+                fi
 
-              # Copy rendered manifests
-              if [ -d "${phase.package}" ]; then
-                cp -r --no-preserve=mode ${phase.package}/* "$out/${dirName}/" 2>/dev/null || true
-              else
-                cp --no-preserve=mode ${phase.package} "$out/${dirName}/manifests.yaml"
-              fi
+                find "$out/${sanitized}" -name '*.yaml' -not -name 'fleet.yaml' -type f | while read -r f; do
+                  yq -P -i '.' "$f" 2>/dev/null || true
+                done
 
-              # Convert to human-readable YAML
-              find "$out/${dirName}" -name '*.yaml' -not -name 'fleet.yaml' -type f | while read -r f; do
-                yq -P -i '.' "$f" 2>/dev/null || true
-              done
-
-              # Apply prefix to resource names
-              ${prefixUtil.applyToDir { inherit prefix labNamespaces; } "$out/${dirName}"}
-            ''
-          ) phaseOrder
+                ${prefixUtil.applyToDir { inherit prefix labNamespaces; } "$out/${sanitized}"}
+              ''
+          ) bundleEntries
         )}
       '';
 
 in
 pkgs.runCommand "fleet-${clusterName}" { } ''
   mkdir -p "$out/${clusterName}"
-  cp -r ${phasesDrv}/* "$out/${clusterName}/"
+  if [ -d "${bundlesDrv}" ] && [ -n "$(ls -A "${bundlesDrv}" 2>/dev/null)" ]; then
+    cp -r ${bundlesDrv}/* "$out/${clusterName}/"
+  fi
   echo "fleet" > "$out/${clusterName}/.deploy-strategy"
 ''

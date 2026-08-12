@@ -1,23 +1,3 @@
-//! Generate command for Kubernetes API types
-//!
-//! This module handles the CLI interface for generating Nix module types
-//! from Kubernetes OpenAPI specs and CRDs.
-//!
-//! The command takes JSON input (from stdin or file) with paths to
-//! pre-packaged specs from Nix:
-//!
-//! ```json
-//! {
-//!   "outputDir": "./generated",
-//!   "k8sVersions": {
-//!     "1.31": "/nix/store/.../swagger.json"
-//!   },
-//!   "crds": {
-//!     "cert-manager": "/nix/store/.../crds.yaml"
-//!   }
-//! }
-//! ```
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read};
@@ -34,30 +14,32 @@ use crate::codegen::{
 };
 use crate::config::Context as CataContext;
 
-/// Generate Kubernetes API types from packaged specs
 #[derive(Args)]
 pub struct GenerateArgs {
-    /// JSON config file (or - for stdin)
-    #[arg(default_value = "-")]
+    #[arg(
+        default_value = "-",
+        value_name = "PATH",
+        help = "Generator config JSON. '-' reads stdin"
+    )]
     config: String,
 
-    /// Output directory (overrides config)
-    #[arg(short, long)]
+    #[arg(
+        short,
+        long,
+        value_name = "DIR",
+        help = "Where to write the types, overriding the config's outputDir"
+    )]
     output: Option<String>,
 }
 
-/// JSON config structure
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GenerateConfig {
-    /// Output directory for generated files
     output_dir: String,
 
-    /// Map of K8s version to OpenAPI spec file path
     #[serde(default)]
     k8s_versions: BTreeMap<String, String>,
 
-    /// Map of CRD name to CRD YAML file path
     #[serde(default)]
     crds: BTreeMap<String, String>,
 }
@@ -77,7 +59,6 @@ pub async fn run(_ctx: &CataContext, args: GenerateArgs) -> Result<()> {
     let mut config: GenerateConfig =
         serde_json::from_str(&json).context("Failed to parse JSON config")?;
 
-    // Override output dir if specified on command line
     if let Some(output) = args.output {
         config.output_dir = output;
     }
@@ -88,7 +69,6 @@ pub async fn run(_ctx: &CataContext, args: GenerateArgs) -> Result<()> {
 fn generate(config: GenerateConfig) -> Result<()> {
     let output_dir = Path::new(&config.output_dir);
 
-    // Create directory structure
     fs::create_dir_all(output_dir.join("k8s")).context("Failed to create k8s directory")?;
     fs::create_dir_all(output_dir.join("crds")).context("Failed to create crds directory")?;
 
@@ -98,7 +78,6 @@ fn generate(config: GenerateConfig) -> Result<()> {
     let mut k8s_versions = Vec::new();
     let mut crd_names = Vec::new();
 
-    // Generate K8s types for each version
     for (version, spec_path) in &config.k8s_versions {
         eprintln!(
             "{} Generating K8s types for {}",
@@ -128,7 +107,6 @@ fn generate(config: GenerateConfig) -> Result<()> {
         k8s_versions.push(version.clone());
     }
 
-    // Generate CRD types
     for (name, crd_path) in &config.crds {
         eprintln!("{} Generating CRD types for {}", style(">>>").cyan(), name);
 
@@ -151,7 +129,6 @@ fn generate(config: GenerateConfig) -> Result<()> {
         crd_names.push(name.clone());
     }
 
-    // Generate index.nix
     eprintln!("{} Generating index.nix", style(">>>").cyan());
     let index_code = emit_index(&k8s_versions, &crd_names, emitter_config);
     let index_path = output_dir.join("index.nix");

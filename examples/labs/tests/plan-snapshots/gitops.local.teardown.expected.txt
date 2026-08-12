@@ -1,0 +1,4 @@
+[001] destroy-cluster name=destroy-cluster-core params.name=core params.provisioner=k3d
+[002] dns-teardown name=dns-teardown params.zone=gitops.test
+[003] remove-services name=remove-services
+[004] remove-network name=remove-network

@@ -1,0 +1,5 @@
+[001] destroy-cluster name=destroy-cluster-core params.name=core params.provisioner=k3d
+[002] destroy-cluster name=destroy-cluster-obs params.name=obs params.provisioner=k3d
+[003] dns-teardown name=dns-teardown params.zone=homelab.test
+[004] remove-services name=remove-services
+[005] remove-network name=remove-network

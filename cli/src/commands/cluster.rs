@@ -1,5 +1,3 @@
-//! Cluster management commands
-
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -9,55 +7,52 @@ use clap::{Args, Subcommand};
 use console::style;
 
 use crate::config::Context as CataContext;
-use crate::tools;
+use crate::io;
+
+const CLUSTER_NAME_HELP: &str = "Cluster to act on. Defaults to the flake fragment";
 
 #[derive(Subcommand)]
 pub enum ClusterCommands {
-    /// List all defined clusters
+    #[command(about = "List clusters across all labs")]
     List,
 
-    /// Provision a cluster (creates if needed, does not apply manifests)
+    #[command(about = "Provision the cluster only, applying no manifests")]
     Init {
-        /// Cluster name (defaults to flake fragment if provided)
+        #[arg(help = CLUSTER_NAME_HELP)]
         name: Option<String>,
     },
 
-    /// Provision a cluster and apply manifests (init + apply)
+    #[command(about = "Provision the cluster and apply its manifests")]
     Up {
-        /// Cluster name (defaults to flake fragment if provided)
+        #[arg(help = CLUSTER_NAME_HELP)]
         name: Option<String>,
 
-        /// Apply only a specific phase
-        #[arg(long)]
-        phase: Option<String>,
+        #[arg(long, help = "Apply only this bundle")]
+        bundle: Option<String>,
 
-        /// Apply only a specific component
-        #[arg(long)]
-        component: Option<String>,
-
-        /// Dry run (don't actually apply)
-        #[arg(long)]
+        #[arg(long, help = "Print what would happen without doing it")]
         dry_run: bool,
 
-        /// Force direct apply even when the lab uses a GitOps strategy
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Apply directly even when the cluster's deploy strategy is GitOps"
+        )]
         force: bool,
     },
 
-    /// Stop and remove a cluster (no-op if not running)
-    #[command(alias = "destroy")]
+    #[command(alias = "destroy", about = "Stop and remove the cluster")]
     Down {
-        /// Cluster name (defaults to flake fragment if provided)
+        #[arg(help = CLUSTER_NAME_HELP)]
         name: Option<String>,
     },
 
-    /// Show cluster status
+    #[command(about = "Show the cluster's current state")]
     Status {
-        /// Cluster name (defaults to flake fragment if provided)
+        #[arg(help = CLUSTER_NAME_HELP)]
         name: Option<String>,
     },
 
-    /// Manage kubeconfigs for CAPI-managed workload clusters
+    #[command(about = "Manage kubeconfigs for CAPI-managed clusters")]
     Kubeconfig(KubeconfigArgs),
 }
 
@@ -69,17 +64,24 @@ pub struct KubeconfigArgs {
 
 #[derive(Subcommand)]
 pub enum KubeconfigCommands {
-    /// Sync kubeconfigs for CAPI-managed clusters
+    #[command(about = "Fetch kubeconfigs for CAPI-managed clusters")]
     Sync {
-        /// Management cluster name (defaults to flake fragment if provided)
-        #[arg(long)]
+        #[arg(
+            long,
+            value_name = "NAME",
+            help = "Management cluster to fetch from. Defaults to the flake fragment"
+        )]
         management: Option<String>,
 
-        /// Specific workload cluster to sync (waits for it to be ready)
+        #[arg(help = "Workload cluster to fetch. Defaults to all of them")]
         cluster: Option<String>,
 
-        /// Timeout for waiting (e.g., "5m", "300s"). Only used when a specific cluster is specified.
-        #[arg(long, default_value = "10m")]
+        #[arg(
+            long,
+            default_value = "10m",
+            value_name = "DURATION",
+            help = "How long to wait for a cluster to become ready"
+        )]
         timeout: String,
     },
 }
@@ -93,13 +95,12 @@ pub async fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
         }
         ClusterCommands::Up {
             name,
-            phase,
-            component,
+            bundle,
             dry_run,
             force,
         } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
-            up(ctx, &name, phase, component, dry_run, force).await
+            up(ctx, &name, bundle, dry_run, force).await
         }
         ClusterCommands::Down { name } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
@@ -113,12 +114,10 @@ pub async fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
     }
 }
 
-/// Get the provisioner type from cluster config
 fn cluster_provisioner(config: &serde_json::Value) -> &str {
     config["provisioner"].as_str().unwrap_or("k3d")
 }
 
-/// Get the cluster name used by the provisioner
 fn provisioner_cluster_name(config: &serde_json::Value) -> String {
     match cluster_provisioner(config) {
         "k3d" => config
@@ -135,9 +134,11 @@ fn provisioner_cluster_name(config: &serde_json::Value) -> String {
     }
 }
 
-/// Resolve the docker host for a cluster config, ensuring colima is running on macOS.
-fn resolve_docker_host(ctx: &CataContext, config: &serde_json::Value) -> Result<Option<String>> {
-    if !tools::colima::is_macos() {
+pub fn resolve_docker_host(
+    ctx: &CataContext,
+    config: &serde_json::Value,
+) -> Result<Option<String>> {
+    if !io::colima::is_macos() {
         return Ok(None);
     }
 
@@ -170,8 +171,8 @@ fn resolve_docker_host(ctx: &CataContext, config: &serde_json::Value) -> Result<
         .and_then(|v| v.as_u64())
         .unwrap_or(60);
 
-    if !tools::colima::profile_running(profile) {
-        tools::colima::start(ctx, profile, cpu, memory, disk)?;
+    if !io::colima::profile_running(profile) {
+        io::colima::start(ctx, profile, cpu, memory, disk)?;
     } else {
         println!(
             "{} Colima VM already running (profile: {profile})",
@@ -179,14 +180,14 @@ fn resolve_docker_host(ctx: &CataContext, config: &serde_json::Value) -> Result<
         );
     }
 
-    Ok(Some(tools::colima::docker_socket(profile)))
+    Ok(Some(io::colima::docker_socket(profile)))
 }
 
 async fn list(ctx: &CataContext) -> Result<()> {
     println!("{} Defined clusters", style("catallaxy").cyan().bold());
     println!();
 
-    let names = crate::nix::list_clusters(ctx)?;
+    let names = crate::io::nix::list_clusters(ctx)?;
 
     if names.is_empty() {
         println!("  (no clusters defined)");
@@ -194,7 +195,7 @@ async fn list(ctx: &CataContext) -> Result<()> {
     }
 
     for name in &names {
-        match crate::nix::get_cluster_config(ctx, name) {
+        match crate::io::nix::get_cluster_config(ctx, name) {
             Ok(config) => {
                 let provisioner = cluster_provisioner(&config);
                 println!("  {} ({})", style(name).green(), provisioner);
@@ -208,23 +209,19 @@ async fn list(ctx: &CataContext) -> Result<()> {
     Ok(())
 }
 
-/// Ensure lab infrastructure services are running for any lab that contains this cluster.
-/// Returns the path to registries.yaml if the lab has registry enabled.
 fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf> {
-    // Best-effort: find labs that contain this cluster and start their services
-    let lab_names: Result<Vec<String>> = crate::nix::list_labs(ctx);
+    let lab_names: Result<Vec<String>> = crate::io::nix::list_labs(ctx);
     let lab_names = match lab_names {
         Ok(names) => names,
-        Err(_) => return None, // No labs output, nothing to do
+        Err(_) => return None,
     };
 
     for lab_name in &lab_names {
-        let lab: serde_json::Value = match crate::nix::get_lab_config(ctx, lab_name) {
+        let lab: serde_json::Value = match crate::io::nix::get_lab_config(ctx, lab_name) {
             Ok(config) => config,
             Err(_) => continue,
         };
 
-        // Check if this lab contains our cluster
         let contains_cluster = lab["clusterNames"].as_array().map_or(false, |names| {
             names.iter().any(|n| n.as_str() == Some(cluster_name))
         });
@@ -233,10 +230,9 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
             continue;
         }
 
-        // Start this lab's services
         if let Some(services) = lab["services"].as_object() {
             for (svc_name, svc) in services {
-                if let Err(e) = super::lab::start_service(ctx, lab_name, svc_name, svc) {
+                if let Err(e) = super::lab::services::start_service(ctx, lab_name, svc_name, svc) {
                     let description = svc["description"].as_str().unwrap_or(svc_name);
                     println!(
                         "{} Failed to start {}: {}",
@@ -248,16 +244,64 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
             }
         }
 
-        // Write and return registries.yaml path if registry is enabled
         if let Some(port) = lab.pointer("/registryPort").and_then(|v| v.as_u64()) {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            let state_dir = PathBuf::from(home)
-                .join(".local/share/catallaxy/labs")
-                .join(lab_name)
-                .join("registry");
+            let state_dir = super::lab::state::service_state_dir(lab_name, "registry");
             if fs::create_dir_all(&state_dir).is_ok() {
                 let path = state_dir.join("registries.yaml");
-                let registry_yaml = super::lab::generate_registries_yaml(port as u16);
+                let upstreams: Vec<String> = lab
+                    .pointer("/registryUpstreams")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let registry_yaml =
+                    super::lab::services::generate_registries_yaml(port as u16, &upstreams);
+                if let Some(zone) = lab.pointer("/dnsInfo/zone").and_then(|v| v.as_str()) {
+                    let host_dir = state_dir.join("certs.d").join(format!("registry.{zone}"));
+                    if fs::create_dir_all(&host_dir).is_ok() {
+                        let _ = fs::write(
+                            host_dir.join("hosts.toml"),
+                            super::lab::services::generate_registry_hosts_toml(zone),
+                        );
+                        let ca_src =
+                            super::lab::state::service_state_dir(lab_name, "proxy").join("ca.crt");
+                        if ca_src.exists() {
+                            let _ = fs::copy(&ca_src, host_dir.join("ca.crt"));
+                        }
+                    }
+                }
+                if lab.get("dnsInfo").map(|v| !v.is_null()).unwrap_or(false) {
+                    let dns_ip = std::process::Command::new("docker")
+                        .args([
+                            "inspect",
+                            "--format",
+                            "{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}",
+                            "catallaxy-dns",
+                        ])
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .and_then(|o| {
+                            String::from_utf8(o.stdout).ok().and_then(|s| {
+                                s.lines()
+                                    .map(|l| l.trim().to_string())
+                                    .find(|l| !l.is_empty())
+                            })
+                        });
+                    if let Some(dns_ip) = dns_ip {
+                        let resolv = format!(
+                            "# Auto-generated by catallaxy.\n\
+                             nameserver {dns_ip}\n\
+                             nameserver 1.1.1.1\n\
+                             nameserver 8.8.8.8\n\
+                             options timeout:1 attempts:1\n"
+                        );
+                        let _ = fs::write(state_dir.join("lab-resolv.conf"), resolv);
+                    }
+                }
                 if fs::write(&path, registry_yaml).is_ok() {
                     return Some(path);
                 }
@@ -268,25 +312,63 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
     None
 }
 
-/// Provision a single cluster with optional registry configuration.
-/// When registries_yaml is provided, k3d clusters will use it as a mirror config.
+fn run_pre_provision_hooks(name: &str, config: &serde_json::Value) -> Result<()> {
+    let Some(hooks) = config
+        .pointer("/lifecycle/preProvision")
+        .and_then(|v| v.as_array())
+    else {
+        return Ok(());
+    };
+
+    for hook in hooks {
+        let hook_name = hook["name"].as_str().unwrap_or("preProvision");
+        let hook_desc = hook["description"].as_str().unwrap_or(hook_name);
+        let bin = hook["bin"].as_str().unwrap_or("");
+
+        if bin.is_empty() {
+            continue;
+        }
+
+        println!("{} [{name}] {hook_desc}...", style(">>>").cyan());
+
+        let status = std::process::Command::new(bin).status().map_err(|e| {
+            anyhow::anyhow!("failed to exec preProvision hook `{bin}` for cluster `{name}`: {e}")
+        })?;
+
+        if !status.success() {
+            bail!(
+                "preProvision hook `{hook_name}` for cluster `{name}` failed \
+                 (exit {}). See message above; the hook's stderr explains the \
+                 fix.",
+                status.code().unwrap_or(-1)
+            );
+        }
+    }
+
+    Ok(())
+}
+
 pub fn provision_cluster_with_registry(
     ctx: &CataContext,
     name: &str,
     config: &serde_json::Value,
     registries_yaml: Option<&std::path::Path>,
+    lab_package: Option<&str>,
 ) -> Result<()> {
     let provisioner = cluster_provisioner(config);
     let cluster_name = provisioner_cluster_name(config);
 
+    run_pre_provision_hooks(name, config)?;
+
     match provisioner {
         "k3d" => {
             let docker_host = resolve_docker_host(ctx, config)?;
-            if tools::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
+            if io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!(
                     "{} Cluster '{name}' is already running",
                     style(">>>").green()
                 );
+                io::k3d::kubeconfig_merge(&cluster_name, docker_host.as_deref())?;
                 return Ok(());
             }
 
@@ -298,7 +380,7 @@ pub fn provision_cluster_with_registry(
             let no_service_lb = config
                 .pointer("/provisionerConfig/k3d/noServiceLB")
                 .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+                .unwrap_or(false);
             let no_flannel = config
                 .pointer("/provisionerConfig/k3d/noFlannel")
                 .and_then(|v| v.as_bool())
@@ -328,22 +410,26 @@ pub fn provision_cluster_with_registry(
                 })
                 .unwrap_or_default();
 
-            // Resolve auto-deploy manifests from lab package (if available)
             if !auto_deploy.is_empty() {
-                if let Ok(lab_name) = ctx.resolve_lab_name(None) {
-                    if let Ok(lab_pkg) = crate::nix::build_lab_package(ctx, &lab_name) {
-                        auto_deploy = auto_deploy
-                            .into_iter()
-                            .map(|(n, p)| {
-                                let pkg_path = format!("{lab_pkg}/autodeploy/{name}/{n}.yaml");
-                                if std::path::Path::new(&pkg_path).exists() {
-                                    (n, pkg_path)
-                                } else {
-                                    (n, p)
-                                }
-                            })
-                            .collect();
-                    }
+                let lab_pkg = if let Some(pkg) = lab_package {
+                    Some(pkg.to_string())
+                } else if let Ok(lab_name) = ctx.resolve_lab_name(None) {
+                    crate::io::nix::build_lab_package(ctx, &lab_name).ok()
+                } else {
+                    None
+                };
+                if let Some(lab_pkg) = lab_pkg {
+                    auto_deploy = auto_deploy
+                        .into_iter()
+                        .map(|(n, p)| {
+                            let pkg_path = format!("{lab_pkg}/autodeploy/{name}/{n}.yaml");
+                            if std::path::Path::new(&pkg_path).exists() {
+                                (n, pkg_path)
+                            } else {
+                                (n, p)
+                            }
+                        })
+                        .collect();
                 }
             }
 
@@ -362,7 +448,20 @@ pub fn provision_cluster_with_registry(
                 .pointer("/provisionerConfig/k3d/network")
                 .and_then(|v| v.as_str());
 
-            tools::k3d::cluster_create(
+            let registries_yaml_str = registries_yaml.map(|p| p.to_string_lossy().to_string());
+            let registry_dir = registries_yaml.and_then(|p| p.parent().map(|d| d.to_path_buf()));
+            let certs_d_str = registry_dir
+                .as_ref()
+                .map(|d| d.join("certs.d"))
+                .filter(|p| p.exists())
+                .map(|p| p.to_string_lossy().to_string());
+            let resolv_conf_str = registry_dir
+                .as_ref()
+                .map(|d| d.join("lab-resolv.conf"))
+                .filter(|p| p.exists())
+                .map(|p| p.to_string_lossy().to_string());
+
+            io::k3d::cluster_create(
                 ctx,
                 &cluster_name,
                 workers,
@@ -371,9 +470,9 @@ pub fn provision_cluster_with_registry(
                 no_flannel,
                 image,
                 docker_host.as_deref(),
-                registries_yaml
-                    .map(|p| p.to_string_lossy().to_string())
-                    .as_deref(),
+                registries_yaml_str.as_deref(),
+                certs_d_str.as_deref(),
+                resolv_conf_str.as_deref(),
                 service_cidr,
                 pod_cidr,
                 &auto_deploy,
@@ -383,7 +482,7 @@ pub fn provision_cluster_with_registry(
         }
         "talos" => {
             let docker_host = resolve_docker_host(ctx, config)?;
-            if tools::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
+            if io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!(
                     "{} Cluster '{name}' is already running",
                     style(">>>").green()
@@ -394,7 +493,7 @@ pub fn provision_cluster_with_registry(
             let control_planes = config["kubernetes"]["controlPlanes"].as_u64().unwrap_or(1) as u32;
             let workers = config["kubernetes"]["workers"].as_u64().unwrap_or(1) as u32;
 
-            tools::talos::cluster_create(
+            io::talos::cluster_create(
                 ctx,
                 &cluster_name,
                 control_planes,
@@ -410,7 +509,7 @@ pub fn provision_cluster_with_registry(
         }
         "external" => {
             println!(
-                "{} External cluster '{name}' — no provisioning needed",
+                "{} External cluster '{name}', no provisioning needed",
                 style(">>>").cyan()
             );
         }
@@ -423,26 +522,24 @@ pub fn provision_cluster_with_registry(
 }
 
 async fn init(ctx: &CataContext, name: &str) -> Result<()> {
-    tools::check_required_tools()?;
+    io::process::check_required_tools()?;
 
     println!(
         "{} Initializing cluster '{name}'",
         style("catallaxy").cyan().bold()
     );
 
-    // Ensure lab infrastructure services (DNS, registry, etc.) are running
-    // Returns registries.yaml path if registry is enabled
     let registries_yaml_path = ensure_lab_services(ctx, name);
 
-    // Get cluster config from Nix
     println!("{} Loading cluster configuration...", style(">>>").cyan());
-    let config = crate::nix::get_cluster_config(ctx, name)?;
+    let config = crate::io::nix::get_cluster_config(ctx, name)?;
 
     provision_cluster_with_registry(
         ctx,
         name,
         &config,
         registries_yaml_path.as_ref().map(|p| p.as_path()),
+        None,
     )?;
 
     println!();
@@ -457,32 +554,28 @@ async fn init(ctx: &CataContext, name: &str) -> Result<()> {
 async fn up(
     ctx: &CataContext,
     name: &str,
-    phase: Option<String>,
-    component: Option<String>,
+    bundle: Option<String>,
     dry_run: bool,
     force: bool,
 ) -> Result<()> {
-    // Init (provision the cluster)
     init(ctx, name).await?;
 
-    // Apply manifests
     crate::commands::apply::run(
         ctx,
         crate::commands::apply::ApplyArgs {
             cluster: Some(name.to_string()),
-            phase,
-            component,
+            bundle,
             dry_run,
             force,
-            sequential: false,
             manifests_dir: None,
             secrets_cache: None,
+            lab_config: None,
+            kube_context_override: None,
         },
     )
     .await
 }
 
-/// Stop a single cluster (preserves state). Called by `lab down`.
 pub fn stop_cluster(ctx: &CataContext, name: &str, config: &serde_json::Value) -> Result<()> {
     let provisioner = cluster_provisioner(config);
     let cluster_name = provisioner_cluster_name(config);
@@ -490,24 +583,23 @@ pub fn stop_cluster(ctx: &CataContext, name: &str, config: &serde_json::Value) -
     match provisioner {
         "k3d" => {
             let docker_host = resolve_docker_host(ctx, config)?;
-            if !tools::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
+            if !io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
-            tools::k3d::cluster_stop(ctx, &cluster_name, docker_host.as_deref())?;
+            io::k3d::cluster_stop(ctx, &cluster_name, docker_host.as_deref())?;
         }
         "external" | "crossplane" => {
-            println!("  {provisioner} cluster '{name}' — nothing to stop locally");
+            println!("  {provisioner} cluster '{name}', nothing to stop locally");
         }
         _ => {
-            println!("  Cluster '{name}' ({provisioner}) — stop not supported, skipping");
+            println!("  Cluster '{name}' ({provisioner}): stop not supported, skipping");
         }
     }
 
     Ok(())
 }
 
-/// Destroy a single cluster completely. Called by `lab destroy`.
 pub fn deprovision_cluster(
     ctx: &CataContext,
     name: &str,
@@ -519,19 +611,19 @@ pub fn deprovision_cluster(
     match provisioner {
         "k3d" => {
             let docker_host = resolve_docker_host(ctx, config)?;
-            if !tools::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
+            if !io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
-            tools::k3d::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
+            io::k3d::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
         }
         "talos" => {
             let docker_host = resolve_docker_host(ctx, config)?;
-            if !tools::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
+            if !io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
-            tools::talos::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
+            io::talos::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
         }
         "crossplane" => {
             println!(
@@ -556,7 +648,7 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
         style("catallaxy").cyan().bold()
     );
 
-    let config = crate::nix::get_cluster_config(ctx, name)?;
+    let config = crate::io::nix::get_cluster_config(ctx, name)?;
     deprovision_cluster(ctx, name, &config)
 }
 
@@ -567,7 +659,7 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
     );
     println!();
 
-    let config = crate::nix::get_cluster_config(ctx, name)?;
+    let config = crate::io::nix::get_cluster_config(ctx, name)?;
     let provisioner = cluster_provisioner(&config);
 
     println!("{}", style("Configuration:").bold());
@@ -587,16 +679,16 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
     match provisioner {
         "k3d" => {
             let docker_host = resolve_docker_host(ctx, &config)?;
-            if tools::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
-                let _ = tools::k3d::cluster_show(ctx, &cluster_name, docker_host.as_deref());
+            if io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
+                let _ = io::k3d::cluster_show(ctx, &cluster_name, docker_host.as_deref());
             } else {
                 println!("  (not running)");
             }
         }
         "talos" => {
             let docker_host = resolve_docker_host(ctx, &config)?;
-            if tools::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
-                let _ = tools::talos::cluster_show(ctx, &cluster_name, docker_host.as_deref());
+            if io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
+                let _ = io::talos::cluster_show(ctx, &cluster_name, docker_host.as_deref());
             } else {
                 println!("  (not running)");
             }
@@ -619,18 +711,15 @@ async fn kubeconfig(ctx: &CataContext, args: KubeconfigArgs) -> Result<()> {
     }
 }
 
-/// Sync kubeconfigs for CAPI-managed clusters
 async fn kubeconfig_sync(
     ctx: &CataContext,
     management: Option<String>,
     cluster: Option<String>,
     timeout: &str,
 ) -> Result<()> {
-    // Resolve management cluster
     let mgmt_name = ctx.resolve_cluster_name(management.as_deref())?;
-    let config = crate::nix::get_cluster_config(ctx, &mgmt_name)?;
+    let config = crate::io::nix::get_cluster_config(ctx, &mgmt_name)?;
 
-    // Determine kube context for management cluster
     let default_name = format!("catallaxy-{mgmt_name}");
     let kube_context = if cluster_provisioner(&config) == "k3d" {
         let k3d_name = config
@@ -642,18 +731,15 @@ async fn kubeconfig_sync(
         mgmt_name.clone()
     };
 
-    // Check management cluster is reachable
-    if !tools::kube::api_reachable(&kube_context) {
+    if !io::kubectl::api_reachable(&kube_context) {
         bail!("Cannot reach management cluster (context: {kube_context}). Is it running?");
     }
 
-    // Get CAPI namespace
     let namespace = config
         .pointer("/components/cluster-api/namespace")
         .and_then(|v| v.as_str())
         .unwrap_or("capi-system");
 
-    // Get defined CAPI clusters
     let clusters = config.pointer("/components/cluster-api/clusters");
     let clusters_map = clusters
         .and_then(|v| v.as_object())
@@ -674,7 +760,6 @@ async fn kubeconfig_sync(
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let kube_dir = PathBuf::from(&home).join(".kube");
 
-    // If a specific cluster is requested, wait for it
     if let Some(ref target_cluster) = cluster {
         if !clusters_map.contains_key(target_cluster) {
             bail!(
@@ -689,10 +774,9 @@ async fn kubeconfig_sync(
             namespace,
             &kube_dir,
             timeout,
-            true, // wait for ready
+            true,
         )?;
     } else {
-        // Sync all ready clusters (no waiting)
         for (cluster_name, cluster_config) in clusters_map {
             let enabled = cluster_config
                 .get("enable")
@@ -709,7 +793,7 @@ async fn kubeconfig_sync(
                 namespace,
                 &kube_dir,
                 timeout,
-                false, // don't wait
+                false,
             )?;
         }
     }
@@ -717,7 +801,6 @@ async fn kubeconfig_sync(
     Ok(())
 }
 
-/// Sync kubeconfig for a single CAPI cluster
 fn sync_single_cluster(
     kube_context: &str,
     cluster_name: &str,
@@ -727,7 +810,6 @@ fn sync_single_cluster(
     wait: bool,
 ) -> Result<()> {
     if wait {
-        // Wait for cluster to be ready
         println!(
             "{} Waiting for cluster '{}' to be ready...",
             style(">>>").cyan(),
@@ -738,7 +820,7 @@ fn sync_single_cluster(
         let start = Instant::now();
 
         loop {
-            if tools::clusterctl::is_cluster_ready(kube_context, cluster_name, namespace) {
+            if io::clusterctl::is_cluster_ready(kube_context, cluster_name, namespace) {
                 break;
             }
 
@@ -756,11 +838,10 @@ fn sync_single_cluster(
         }
         println!();
 
-        // Also wait for kubeconfig secret to exist
         println!("{} Waiting for kubeconfig secret...", style(">>>").cyan());
 
         loop {
-            match tools::kube::get_capi_kubeconfig(kube_context, cluster_name, namespace) {
+            match io::kubectl::get_capi_kubeconfig(kube_context, cluster_name, namespace) {
                 Ok(_) => break,
                 Err(e) => {
                     let err_str = e.to_string();
@@ -784,8 +865,7 @@ fn sync_single_cluster(
         }
         println!();
     } else {
-        // Check readiness without waiting
-        if !tools::clusterctl::is_cluster_ready(kube_context, cluster_name, namespace) {
+        if !io::clusterctl::is_cluster_ready(kube_context, cluster_name, namespace) {
             println!(
                 "  {} Cluster '{}' not ready yet, skipping",
                 style("-").yellow(),
@@ -795,9 +875,8 @@ fn sync_single_cluster(
         }
     }
 
-    // Extract kubeconfig
     let kubeconfig_content =
-        match tools::kube::get_capi_kubeconfig(kube_context, cluster_name, namespace) {
+        match io::kubectl::get_capi_kubeconfig(kube_context, cluster_name, namespace) {
             Ok(content) => content,
             Err(e) => {
                 let err_str = e.to_string();
@@ -813,13 +892,11 @@ fn sync_single_cluster(
             }
         };
 
-    // Save to ~/.kube/<cluster>.kubeconfig
     let kubeconfig_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
     fs::write(&kubeconfig_path, &kubeconfig_content)?;
 
-    // Merge into default kubeconfig
     let context_name = format!("{cluster_name}-admin");
-    tools::kube::merge_kubeconfig(&kubeconfig_path, &context_name)?;
+    io::kubectl::merge_kubeconfig(&kubeconfig_path, &context_name)?;
 
     println!(
         "  {} Kubeconfig synced for '{}' (context: {})",

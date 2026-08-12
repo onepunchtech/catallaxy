@@ -1,33 +1,63 @@
 { lib }:
 
-{
-  # Parse an IPv4 address string into a list of integers
-  # "10.96.0.1" -> [10 96 0 1]
+let
   parseIPv4 = ip: map lib.strings.toInt (lib.splitString "." ip);
 
-  # Convert a list of integers back to an IPv4 string
-  # [10 96 0 1] -> "10.96.0.1"
-  formatIPv4 = octets: lib.concatStringsSep "." (map toString octets);
+  ipv4ToInt =
+    ip:
+    let
+      octets = parseIPv4 ip;
+    in
+    (lib.elemAt octets 0) * 16777216
+    + (lib.elemAt octets 1) * 65536
+    + (lib.elemAt octets 2) * 256
+    + (lib.elemAt octets 3);
 
-  # Get the network address from a CIDR
-  # "10.96.0.0/12" -> "10.96.0.0"
   cidrToNetwork = cidr: lib.head (lib.splitString "/" cidr);
-
-  # Get the prefix length from a CIDR
-  # "10.96.0.0/12" -> 12
   cidrToPrefixLen = cidr: lib.strings.toInt (lib.last (lib.splitString "/" cidr));
 
-  # Compute the first usable IP in a CIDR (network + 1)
-  # This is typically the Kubernetes API service IP for service CIDRs
-  # "10.96.0.0/12" -> "10.96.0.1"
-  # "192.168.0.0/16" -> "192.168.0.1"
+  pow2 = n: if n == 0 then 1 else 2 * pow2 (n - 1);
+  prefixToMask = prefix: (pow2 32) - (pow2 (32 - prefix));
+
+  networkBase = ipInt: prefix: builtins.bitAnd ipInt (prefixToMask prefix);
+in
+
+rec {
+  inherit
+    parseIPv4
+    cidrToNetwork
+    cidrToPrefixLen
+    ipv4ToInt
+    ;
+
+  formatIPv4 = octets: lib.concatStringsSep "." (map toString octets);
+
   cidrFirstIP =
     cidr:
     let
-      network = lib.head (lib.splitString "/" cidr);
-      octets = map lib.strings.toInt (lib.splitString "." network);
-      # Add 1 to the last octet (assumes network address ends in .0)
+      network = cidrToNetwork cidr;
+      octets = parseIPv4 network;
       firstIP = lib.init octets ++ [ ((lib.last octets) + 1) ];
     in
-    lib.concatStringsSep "." (map toString firstIP);
+    formatIPv4 firstIP;
+
+  ipInCidr =
+    ip: cidr:
+    let
+      prefix = cidrToPrefixLen cidr;
+      cidrIpInt = ipv4ToInt (cidrToNetwork cidr);
+      ipInt = ipv4ToInt ip;
+    in
+    networkBase ipInt prefix == networkBase cidrIpInt prefix;
+
+  cidrsOverlap =
+    a: b:
+    let
+      aStart = ipv4ToInt (cidrToNetwork a);
+      bStart = ipv4ToInt (cidrToNetwork b);
+      aPrefix = cidrToPrefixLen a;
+      bPrefix = cidrToPrefixLen b;
+    in
+    (networkBase aStart bPrefix == networkBase bStart bPrefix)
+    || (networkBase bStart aPrefix == networkBase aStart aPrefix);
 }

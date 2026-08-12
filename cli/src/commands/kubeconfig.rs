@@ -1,5 +1,3 @@
-//! Kubeconfig management
-
 use std::fs;
 
 use anyhow::{Context, Result};
@@ -7,11 +5,11 @@ use clap::Subcommand;
 use console::style;
 
 use crate::config::Context as CataContext;
-use crate::tools;
+use crate::io;
 
 #[derive(Subcommand)]
 pub enum KubeconfigCommands {
-    /// Show kubeconfig contexts for lab clusters
+    #[command(about = "Show the kubeconfig contexts for the lab's clusters")]
     Show,
 }
 
@@ -28,7 +26,7 @@ async fn show(ctx: &CataContext) -> Result<()> {
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("No lab specified. Use --flake <ref>#<lab>"))?;
 
-    let lab = crate::nix::get_lab_config(ctx, name)?;
+    let lab = crate::io::nix::get_lab_config(ctx, name)?;
 
     println!(
         "{} Kubeconfig contexts for lab '{name}'",
@@ -39,9 +37,9 @@ async fn show(ctx: &CataContext) -> Result<()> {
     if let Some(clusters) = lab["clusterNames"].as_array() {
         for cluster_name in clusters {
             let cluster_name = cluster_name.as_str().unwrap_or("?");
-            if let Ok(config) = crate::nix::get_cluster_config(ctx, cluster_name) {
+            if let Ok(config) = crate::io::nix::get_cluster_config(ctx, cluster_name) {
                 let context = resolve_kube_context(&config, cluster_name);
-                let reachable = tools::kube::api_reachable(&context);
+                let reachable = io::kubectl::api_reachable(&context);
                 let status = if reachable {
                     style("reachable").green()
                 } else {
@@ -76,7 +74,6 @@ fn resolve_kube_context(config: &serde_json::Value, cluster_name: &str) -> Strin
     }
 }
 
-/// Cleanup kubeconfig files and contexts for a cluster
 pub fn cleanup_kubeconfig(ctx: &CataContext, cluster_name: &str) -> Result<()> {
     let kubeconfig_path = dirs::home_dir()
         .context("Could not find home directory")?
@@ -93,15 +90,14 @@ pub fn cleanup_kubeconfig(ctx: &CataContext, cluster_name: &str) -> Result<()> {
         );
     }
 
-    // Delete context entries (try both CAPI and k3d formats)
-    tools::kube::delete_kubeconfig_context(
+    io::kubectl::delete_kubeconfig_context(
         ctx,
         &format!("{}-admin@{}", cluster_name, cluster_name),
     )?;
-    tools::kube::delete_kubeconfig_context(ctx, cluster_name)?;
+    io::kubectl::delete_kubeconfig_context(ctx, cluster_name)?;
 
-    tools::kube::delete_kubeconfig_cluster(ctx, cluster_name)?;
-    tools::kube::delete_kubeconfig_user(ctx, &format!("{}-admin", cluster_name))?;
+    io::kubectl::delete_kubeconfig_cluster(ctx, cluster_name)?;
+    io::kubectl::delete_kubeconfig_user(ctx, &format!("{}-admin", cluster_name))?;
 
     Ok(())
 }

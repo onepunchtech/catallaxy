@@ -1,8 +1,3 @@
-# Kubernetes ObjectMeta type
-# This provides the standard metadata structure for Kubernetes resources.
-#
-# Auto-generated - DO NOT EDIT (or regenerate with cata generate)
-
 { lib, ... }:
 
 let
@@ -84,6 +79,5 @@ in
     };
   };
 
-  # Allow additional metadata fields that we haven't explicitly defined
   freeformType = types.attrs;
 }

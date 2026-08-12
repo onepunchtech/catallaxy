@@ -1,75 +1,25 @@
-# Image Management
+# Images and Registries
 
-Catallaxy provides declarative control over container images for reproducibility and security.
+Pinning images so a deploy is reproducible, getting them onto a machine that
+may not have internet, and publishing images the lab builds itself.
 
-## Image Pins
-
-Pin container images at the lab level with optional digest verification:
-
-```nix
-lab.images.pins = {
-  grafana = {
-    image = "docker.io/grafana/grafana";
-    tag = "11.4.0";
-    digest = "sha256:abc123...";  # Optional — ensures bit-for-bit reproducibility
-  };
-  prometheus = {
-    image = "quay.io/prometheus/prometheus";
-    tag = "v3.0.0";
-  };
-};
-```
-
-Each pin computes a `ref` — the full image reference string:
-
-| Configuration | `ref` value |
-|---------------|-------------|
-| tag only | `docker.io/grafana/grafana:11.4.0` |
-| digest only | `docker.io/grafana/grafana@sha256:abc123` |
-| tag + digest | `docker.io/grafana/grafana:11.4.0@sha256:abc123` |
-
-Components can reference pins: `lab.images.pins.grafana.ref`
-
-## Image Policy
-
-### Require Digest
-
-When enabled, the lint check **errors** on any container image without a digest pin:
+## Policy
 
 ```nix
 lab.images.requireDigest = true;
+lab.images.allowedRegistries = [ "ghcr.io" "registry.k8s.io" "docker.io" ];
 ```
 
-This enforces that every image in your rendered manifests is pinned to a specific build. Tags are mutable (a registry can serve a different image for the same tag), but digests are immutable.
+Both ([`requireDigest`](./options/lab.md#images-requiredigest),
+[`allowedRegistries`](./options/lab.md#images-allowedregistries)) are
+enforced by the `image-pin` [lint rule](./lint.md), not at apply time, you
+find out in CI, not during a rollout.
 
-### Allowed Registries
+`requireDigest` errors on any image without a `sha256:` digest.
+`allowedRegistries`, when non-empty, warns about images from anywhere else.
+Leave both off while iterating. Turn them on before anything matters.
 
-Restrict which registries images can come from:
-
-```nix
-lab.images.allowedRegistries = [
-  "ghcr.io"
-  "registry.k8s.io"
-  "docker.io"
-];
-```
-
-The lint check **warns** about images from registries not in this list. Leave empty (default) to allow all registries.
-
-## Lint Check
-
-The `image-pin` lint check scans rendered manifests for container image references in Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
-
-It always warns about:
-- **`:latest` tags** — mutable and non-reproducible
-
-With policy enabled:
-- **Missing digests** (when `requireDigest = true`) — Error
-- **Unapproved registries** (when `allowedRegistries` is set) — Warning
-
-### Suppression
-
-Skip the check for specific resources:
+Per-resource exemption where a rule is genuinely wrong:
 
 ```yaml
 metadata:
@@ -77,15 +27,95 @@ metadata:
     catallaxy.io/lint-skip: image-pin
 ```
 
-## Pull-Through Cache
-
-For rate limiting protection, use Zot as a pull-through cache:
+## Pins
 
 ```nix
-components.zot = {
-  enable = true;
-  sync.enable = true;  # Pull-through cache from Docker Hub, Quay, GHCR, registry.k8s.io
+lab.images.pins.grafana = {
+  image = "docker.io/grafana/grafana";
+  tag = "11.4.0";
+  digest = "sha256:abc123…";
 };
 ```
 
-This caches images locally on first pull. Combined with image pins, you get both availability and reproducibility.
+[`lab.images.pins.<name>.ref`](./options/lab.md#images-pins-name-ref) is the
+assembled reference; use that rather than reconstructing the string:
+
+```nix
+floes.grafana.overrides.extraAnnotations."image" =
+  lab.images.pins.grafana.ref;
+```
+
+One place to bump a version, and the digest travels with it.
+
+## Local registry
+
+```nix
+lab.registry.enable = true;
+```
+
+Runs a [Zot](https://zotregistry.dev/) pull-through cache as a host service.
+The plan writes `registries.yaml` and `certs.d` into each cluster so pulls
+route through it transparently.
+
+Worth it for two reasons: `lab destroy` followed by `lab up` does not
+re-download several gigabytes, and a lab keeps working on a bad connection.
+
+```bash
+cata --flake .#<lab> images list                 # everything the lab references
+cata --flake .#<lab> images prefetch             # pull it all into the cache
+cata --flake .#<lab> images prefetch --dry-run
+```
+
+`images list` reads `images.txt` from the rendered package, which is
+extracted from every pod template at build time, so it covers init
+containers and CronJob templates too, not just the obvious ones.
+
+## Mirroring
+
+```bash
+cata --flake .#<lab> images mirror --registry registry.example.com/lab
+```
+
+Copies every image the lab references into a registry you control, using
+`crane`. For air-gapped installs, or for not depending on Docker Hub rate
+limits in CI.
+
+## Publishing images the lab builds
+
+`lab.images.publish.<name>` declares an image built from a flake input and
+pushed to a registry as part of the deploy plan:
+
+```nix
+lab.images.publish.my-api = {
+  source = inputs.my-api;
+  attr = "packages.x86_64-linux.container";
+  tagFrom = "Cargo.toml";
+  destination = {
+    registry = "harbor.lab.test";
+    repository = "apps/my-api";
+  };
+  credentialsRef = {
+    cluster = "mgmt";
+    namespace = "harbor";
+    secretName = "harbor-robot";
+  };
+};
+```
+
+| Field                               | Meaning                                                                                   |
+| ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `source`                            | flake input holding the image derivation                                                  |
+| `attr`                              | attribute path to it                                                                      |
+| `tag` / `tagFrom`                   | explicit tag, or read one from a versioned file (`Cargo.toml`, `package.json`, `VERSION`) |
+| `alsoLatest`                        | additionally push `:latest`                                                               |
+| `destination.{registry,repository}` | where it goes                                                                             |
+| `credentialsRef`                    | a Secret in a lab cluster holding the push credentials                                    |
+
+`tagFrom` is the useful one: the version in the app's own manifest becomes
+the image tag, so the app has a single source of truth and the lab follows
+it.
+
+The planner emits a `publish-images` step per source cluster, ordered after
+that cluster's manifests and before any consuming cluster's: the image
+exists before anything tries to pull it. Consumers read
+`lab.images.publish.<name>.ref` for the full reference.

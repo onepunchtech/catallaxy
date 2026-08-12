@@ -1,7 +1,3 @@
-# Lab evaluation helpers.
-#
-# mkLab: evaluate a lab from user-provided modules.
-# discoverExampleLabs: auto-discover example lab definitions from examples/labs/envs/.
 {
   lib,
   pkgs,
@@ -10,10 +6,13 @@
   k8sSpecs,
   modulesPath,
   examplesPath,
+
+  tools ? [ ],
+  cataWrapped ? null,
 }:
 
 let
-  # Evaluate a lab: run modules through evalModule with catallaxy defaults
+
   mkLab =
     { modules }:
     pureLib.evalModule {
@@ -22,35 +21,63 @@ let
         {
           _module.args.cataCharts = cataCharts;
           _module.args.k8sSpecs = k8sSpecs;
+          _module.args.k8sHelpers = import ./k8s-helpers.nix { inherit lib; };
+          _module.args.contracts = import ./contracts { inherit lib; };
         }
       ]
       ++ modules;
       specialArgs = { inherit lib pkgs; };
     };
 
-  # Auto-discover example lab definitions from examples/labs/envs/*.nix
-  # Each env file is composed with the base lab definition.
-  # Lab names use dotted notation: homelab.local, homelab.staging, homelab.prod
   discoverExampleLabs =
     let
-      entries = builtins.readDir (examplesPath + "/envs");
-      isEnvFile = name: type: type == "regular" && lib.hasSuffix ".nix" name;
-      envFiles = lib.filterAttrs isEnvFile entries;
-    in
-    lib.mapAttrs' (
-      filename: _:
-      let
-        envName = lib.removeSuffix ".nix" filename;
-      in
-      lib.nameValuePair "homelab.${envName}" (mkLab {
-        modules = [
-          (examplesPath + "/labs/default.nix")
-          (examplesPath + "/envs/${filename}")
-        ];
-      })
-    ) envFiles;
+      isNixFile = name: type: type == "regular" && lib.hasSuffix ".nix" name;
 
-  # Config for the K8s type generator CLI command
+      labDirs = lib.filterAttrs (
+        name: type: type == "directory" && builtins.pathExists (examplesPath + "/${name}/labs/default.nix")
+      ) (builtins.readDir examplesPath);
+
+      labsIn =
+        labName: _:
+        let
+          envDir = examplesPath + "/${labName}/envs";
+          envFiles = lib.filterAttrs isNixFile (builtins.readDir envDir);
+        in
+        lib.mapAttrs' (
+          filename: _:
+          lib.nameValuePair "${labName}.${lib.removeSuffix ".nix" filename}" (mkLab {
+            modules = [
+              (examplesPath + "/${labName}/labs/default.nix")
+              (envDir + "/${filename}")
+            ];
+          })
+        ) envFiles;
+    in
+    lib.foldl' lib.mergeAttrs { } (lib.mapAttrsToList labsIn labDirs);
+
+  mkLabShell =
+    lab:
+    let
+      out = lab.config.lab.out;
+      name = lab.config.lab.name;
+    in
+    pkgs.mkShell (
+      out.shell.variables
+      // {
+        packages = tools ++ out.shell.packages ++ lib.optional (cataWrapped != null) cataWrapped;
+        shellHook = ''
+          if trust_env="$(cata lab env ${lib.escapeShellArg name} 2>/dev/null)"; then
+            eval "$trust_env"
+            echo "catallaxy: lab '${name}' CA trusted in this shell"
+          else
+            echo "catallaxy: lab '${name}' has no CA yet; run 'cata lab up' for trusted *.${
+              lab.config.lab.dns.zone or "<zone>"
+            }"
+          fi
+        '';
+      }
+    );
+
   k8sTypegenConfig = {
     outputDir = "modules/lab/cluster/lib/kubernetes/generated";
     k8sVersions = lib.mapAttrs (_: spec: "${spec}") k8sSpecs.specs;
@@ -59,5 +86,10 @@ let
 
 in
 {
-  inherit mkLab discoverExampleLabs k8sTypegenConfig;
+  inherit
+    mkLab
+    mkLabShell
+    discoverExampleLabs
+    k8sTypegenConfig
+    ;
 }

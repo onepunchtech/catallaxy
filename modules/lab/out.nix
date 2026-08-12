@@ -14,6 +14,13 @@ let
   renderers = import ../../lib/render { inherit lib pkgs; };
   catallaxyLib = import ../../lib/eval/cluster.nix { inherit lib pkgs; };
 
+  wavesForView =
+    view: waves:
+    let
+      keep = b: view.packages ? ${b.name} || lib.hasPrefix "projection/" b.name;
+    in
+    lib.filter (w: w != [ ]) (map (w: lib.filter keep w) waves);
+
 in
 {
   options = {
@@ -21,6 +28,7 @@ in
       cliConfig = mkOption {
         type = types.attrs;
         readOnly = true;
+        internal = true;
         description = ''
           JSON-serializable lab configuration for the CLI.
           Contains the fields that `cata lab` commands need:
@@ -31,6 +39,7 @@ in
       allClusters = mkOption {
         type = types.attrsOf types.attrs;
         readOnly = true;
+        internal = true;
         description = ''
           Computed attrset of all clusters in the lab.
           Keys are cluster names, values are evaluated cluster configs.
@@ -41,21 +50,66 @@ in
       clusterNames = mkOption {
         type = types.listOf types.str;
         readOnly = true;
+        internal = true;
         description = "List of all cluster names in the lab";
+      };
+
+      shell = mkOption {
+        type = types.attrs;
+        readOnly = true;
+        internal = true;
+        description = "Dev-shell inputs for this lab (packages + variables).";
+      };
+
+      runtimeContexts = mkOption {
+        type = types.attrsOf types.str;
+        readOnly = true;
+        internal = true;
+        description = ''
+          Per-cluster kubectl context an operator should use RIGHT NOW.
+          Distinct from cluster.ref.kubeContext, which is provisioner-
+          baked (e.g. k3d-<lab>-<cluster> for k3d, or
+          <contextPrefix>-<cluster> for Crossplane targets).
+          Post-pivot for a Crossplane-provisioned cluster (self-
+          provisioning or otherwise), the runtime context is the
+          bare cluster-name alias that sync-kubeconfig installs; the
+          Nix-baked provisioner context is either stale (destroyed k3d
+          bootstrap) or never existed (DOKS never got the prefixed
+          name). This attrset flattens the resolution: consumers look
+          up by cluster name, get the right context regardless of
+          whether the cluster is pivoted, local, or external.
+
+          Populated by the planner from provisionerGraph. Callers
+          outside the planner (CLI, ops commands, lifecycle hooks)
+          should prefer this over cluster.ref.kubeContext.
+        '';
       };
 
       labNamespaces = mkOption {
         type = types.attrsOf (types.listOf types.str);
         readOnly = true;
+        internal = true;
         description = ''
           Per-cluster list of lab-created namespaces (before prefix application).
           Used by checks to verify prefix completeness.
         '';
       };
 
+      verifyTests = mkOption {
+        type = types.attrsOf types.package;
+        readOnly = true;
+        internal = true;
+        description = ''
+          Per-cluster Chainsaw Test packages, linked into the lab package at
+          `verify/<cluster>/`. `cata lab verify` runs them against that
+          cluster's runtime context.
+        '';
+      };
+
       manifests = mkOption {
         type = types.attrsOf types.package;
         readOnly = true;
+        internal = true;
         description = ''
           Per-cluster rendered manifest packages.
           Each package contains the strategy-specific directory layout
@@ -66,6 +120,7 @@ in
       bootstrapManifests = mkOption {
         type = types.attrsOf types.package;
         readOnly = true;
+        internal = true;
         description = ''
           Per-cluster kapp-format manifests for direct-apply bootstrap.
           When strategy is kapp, this equals manifests. Otherwise renders
@@ -73,9 +128,24 @@ in
         '';
       };
 
+      stage1Manifests = mkOption {
+        type = types.attrsOf types.package;
+        readOnly = true;
+        internal = true;
+        description = ''
+          Per-cluster restricted manifest packages for the bootstrap
+          stage of self-provisioning clusters. Populated only when
+          `cluster.provisioning.rootBundles` is non-empty. Contains the
+          DAG closure of those roots; typically just what Crossplane
+          needs to bring the cloud version of the cluster up (CRDs +
+          namespaces + operators + secrets + workloads).
+        '';
+      };
+
       package = mkOption {
         type = types.package;
         readOnly = true;
+        internal = true;
         description = ''
           Single package containing all lab outputs.
           Includes metadata.json (pretty-printed) and manifests/ directory
@@ -103,14 +173,23 @@ in
         };
       labName = config.lab.name;
       environment = config.lab.environment;
+      verify = config.lab.out.verifyConfig;
+      selfContained = config.lab.out.selfContained;
+      labNamespaces = config.lab.out.labNamespaces;
       network = {
         name = config.lab.name;
         dockerSubnet = config.lab.network.dockerSubnet;
       };
       registryPort = if config.lab.registry.enable then config.lab.registry.port else null;
+      registryUpstreams =
+        if config.lab.registry.enable then map (u: u.host) config.lab.registry.upstreams else [ ];
+
+      labOwnedRegistries = lib.unique (map (img: img.destinationRegistry) config.lab.out.publishImages);
       dnsInfo = if config.lab.dns.enable then config.lab.dns.out.dnsInfo else null;
       cd = {
         strategy = config.lab.cd.strategy;
+
+        bootstrap = config.lab.cd.bootstrap;
         git = config.lab.cd.git;
       };
       opsToolPath =
@@ -119,7 +198,6 @@ in
         else
           null;
 
-      # Per-cluster configs for CLI consumption (provisioner details, components, etc.)
       clusters = lib.mapAttrs (
         _: clusterCfg:
         (catallaxyLib.clusterConfigToJSON clusterCfg)
@@ -128,41 +206,57 @@ in
         }
       ) config.lab.out.allClusters;
 
-      # Lab-level secrets for CLI consumption
       secrets = {
         stores = lib.mapAttrs (name: store: {
           inherit (store) backend;
         }) config.lab.secrets.stores;
 
         managed = lib.mapAttrs (name: sec: {
-          inherit (sec) store;
+          inherit (sec) store kind;
           keys = lib.mapAttrs (kname: key: {
             inherit (key) generator length;
           }) sec.keys;
         }) config.lab.secrets.managed;
+
+        hostProjections = config.lab.secrets.out.hostProjections;
       };
 
-      # Deployment plan for the CLI executor
       deploymentPlan = config.lab.out.deploymentPlan;
       teardownPlan = config.lab.out.teardownPlan;
+
+      destroy = {
+        rescueHints = config.lab.destroy.rescueHints;
+      };
+
+      runtimeContexts = config.lab.out.runtimeContexts;
     };
 
     allClusters = config.lab.clusters;
+
+    shell = {
+      packages = lib.unique (
+        lib.concatMap (c: c.shell.packages or [ ]) (lib.attrValues config.lab.out.allClusters)
+      );
+      variables = {
+        CATALLAXY_LAB = config.lab.name;
+        CATALLAXY_FLAKE = ".#${config.lab.name}";
+      };
+    };
 
     clusterNames = lib.attrNames config.lab.out.allClusters;
 
     labNamespaces = lib.mapAttrs (
       name: clusterCfg:
-      lib.unique (
-        lib.concatMap (
-          phaseName:
-          let
-            phase = clusterCfg.phases.${phaseName};
-            bundleValues = lib.attrValues phase.bundles;
-          in
-          lib.concatMap (b: b.createNamespaces) bundleValues
-        ) (lib.attrNames clusterCfg.phases)
-      )
+      lib.unique (lib.concatMap (b: b.createNamespaces) (lib.attrValues clusterCfg.bundles))
+    ) config.lab.out.allClusters;
+
+    verifyTests = lib.mapAttrs (
+      name: clusterCfg:
+      renderers.chainsaw.mkVerifyTest {
+        labName = config.lab.name;
+        clusterName = name;
+        checks = clusterCfg.verify.out.checks;
+      }
     ) config.lab.out.allClusters;
 
     manifests =
@@ -171,40 +265,110 @@ in
         renderer = renderers.${strategy};
         cdConfig = config.lab.cd.${strategy};
         prefix = config.lab.prefix;
+
+        useFiltering = config.lab.cd.useOwnerFiltering;
+        viewFor =
+          clusterCfg:
+          if !useFiltering then
+            clusterCfg.cluster.out.bundleView
+          else if strategy == "kapp" then
+            clusterCfg.cluster.out.imperativeBundleView
+          else
+            clusterCfg.cluster.out.argocdBundleView;
       in
       lib.mapAttrs (
         name: clusterCfg:
-        renderer {
-          clusterName = name;
-          inherit prefix;
-          labNamespaces = config.lab.out.labNamespaces.${name};
-          phases = clusterCfg.cluster.out.phases;
-          phaseOrder = clusterCfg.cluster.out.phaseOrder;
-          deployConfig = cdConfig // {
-            targetPath = config.lab.cd.clusterPaths.${name} or "manifests/${name}";
-          };
-        }
+        let
+          view = viewFor clusterCfg;
+          filteredWaves = wavesForView view clusterCfg.cluster.out.manifestWaves;
+        in
+        renderer (
+          {
+            clusterName = name;
+            inherit prefix;
+            inherit (view) packages;
+            labNamespaces = config.lab.out.labNamespaces.${name};
+            deployConfig = cdConfig // {
+              targetPath = config.lab.cd.clusterPaths.${name} or "manifests/${name}";
+            };
+          }
+
+          // lib.optionalAttrs (strategy == "kapp" || strategy == "argocd" || strategy == "fleet") {
+            waves = filteredWaves;
+          }
+
+          // lib.optionalAttrs (strategy == "argocd") {
+            bootstrapMethod = config.lab.cd.bootstrap;
+          }
+        )
       ) config.lab.out.allClusters;
 
     bootstrapManifests =
       let
         strategy = config.lab.cd.strategy;
         prefix = config.lab.prefix;
+        useFiltering = config.lab.cd.useOwnerFiltering;
+
+        viewFor =
+          clusterCfg:
+          if useFiltering then
+            clusterCfg.cluster.out.imperativeBundleView
+          else
+            clusterCfg.cluster.out.bundleView;
       in
       if strategy == "kapp" then
         config.lab.out.manifests
       else
         lib.mapAttrs (
           name: clusterCfg:
+          let
+            view = viewFor clusterCfg;
+          in
           renderers.kapp {
             clusterName = name;
             inherit prefix;
+            inherit (view) packages;
             labNamespaces = config.lab.out.labNamespaces.${name};
-            phases = clusterCfg.cluster.out.phases;
-            phaseOrder = clusterCfg.cluster.out.phaseOrder;
             deployConfig = config.lab.cd.kapp;
+            waves = wavesForView view clusterCfg.cluster.out.manifestWaves;
           }
         ) config.lab.out.allClusters;
+
+    stage1Manifests =
+      let
+        prefix = config.lab.prefix;
+        stage1KeysOf =
+          clusterCfg:
+          lib.genAttrs (map (b: b.name) (
+            lib.filter (b: builtins.elem "stage1" (b.provides or [ ])) (
+              lib.concatLists clusterCfg.cluster.out.manifestWaves
+            )
+          )) (_: true);
+      in
+      lib.filterAttrs (_: v: v != null) (
+        lib.mapAttrs (
+          name: clusterCfg:
+          let
+            stage1Keys = stage1KeysOf clusterCfg;
+            full = clusterCfg.cluster.out.stage1BundleView;
+            view = {
+              bundles = lib.filterAttrs (n: _: stage1Keys ? ${n}) full.bundles;
+              packages = lib.filterAttrs (n: _: stage1Keys ? ${n}) full.packages;
+            };
+          in
+          if view.packages == { } then
+            null
+          else
+            renderers.kapp {
+              clusterName = name;
+              inherit prefix;
+              inherit (view) packages;
+              labNamespaces = config.lab.out.labNamespaces.${name};
+              deployConfig = config.lab.cd.kapp;
+              waves = wavesForView view clusterCfg.cluster.out.manifestWaves;
+            }
+        ) config.lab.out.allClusters
+      );
 
     package =
       let
@@ -217,14 +381,16 @@ in
             config = config.lab.cd.${config.lab.cd.strategy};
           };
           labNamespaces = config.lab.out.labNamespaces;
-          # Lab-level secrets metadata (stores + managed) so CLI can resolve
-          # store → SOPS file path without nix eval at runtime.
-          # Custom lint checks
+
           lint.checks = lib.mapAttrs (name: check: {
-            inherit (check) description severity;
+            inherit (check)
+              description
+              severity
+              scope
+              format
+              ;
           }) config.lab.lint.checks;
 
-          # Image policy for lint checks
           images = {
             inherit (config.lab.images) requireDigest allowedRegistries;
             pins = lib.mapAttrs (_: pin: {
@@ -249,6 +415,9 @@ in
             }) config.lab.secrets.managed;
           };
 
+          assertions = config.lab.assertions;
+          warnings = config.lab.warnings;
+
           clusters = lib.mapAttrs (
             name: clusterCfg:
             let
@@ -261,37 +430,95 @@ in
             in
             {
               inherit topology sbom;
-              # Per-cluster projection metadata — drives CLI secret injection
+
               projections = lib.mapAttrs (_: proj: {
-                inherit (proj) source namespace phase;
+                inherit (proj) source namespace;
                 keys = lib.mapAttrs (_: key: {
                   inherit (key) from transform;
                   jsonKey = key.jsonKey or null;
                 }) proj.keys;
               }) clusterCfg.secrets.projections;
+
+              runtimeMaterialised = lib.pipe clusterCfg.floes [
+                (lib.mapAttrsToList (_: floe: lib.attrValues (floe.exports or { })))
+                lib.concatLists
+                (lib.filter (v: builtins.isAttrs v && v ? name && v ? readyToken))
+                (map (v: v.name))
+                lib.unique
+              ];
+
+              copiedInSecrets = lib.pipe (lib.attrValues (config.lab.steps or { })) [
+                (lib.filter (
+                  step: (step.kind or "") == "cross-cluster-secret-copy" && (step.params.targetCluster or "") == name
+                ))
+                (map (step: step.params.targetSecret))
+                lib.unique
+              ];
+
+              assertions = clusterCfg.assertions;
+              warnings = clusterCfg.warnings;
             }
           ) config.lab.out.allClusters;
         };
         metadataJson = builtins.toJSON metadata;
+        verifyCopies = lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (
+            name: pkg: "cp -rL ${pkg}/${name} $out/verify/${name}"
+          ) config.lab.out.verifyTests
+        );
+
         manifestLinks = lib.concatStringsSep "\n" (
           lib.mapAttrsToList (
             name: pkg: "ln -s ${pkg}/${name} $out/manifests/${name}"
           ) config.lab.out.manifests
         );
-        # Collect all teardown hook packages so they get built with the lab package
+
+        stage1Links = lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (
+            name: pkg: "ln -s ${pkg}/${name} $out/stage1/${name}"
+          ) config.lab.out.stage1Manifests
+        );
+        hasStage1 = stage1Links != "";
+
+        hookBinPath =
+          step:
+          let
+            mainProgram = step.package.meta.mainProgram or null;
+          in
+          if mainProgram != null then
+            "${step.package}/bin/${mainProgram}"
+          else
+            "${step.package}/bin/${step.name}";
         teardownHookLinks = lib.concatStringsSep "\n" (
           lib.concatLists (
             lib.mapAttrsToList (
               clusterName: clusterCfg:
-              map (step: "ln -s ${step.package}/bin/${step.name} $out/hooks/${clusterName}-${step.name}") (
-                clusterCfg.lifecycle.teardown or [ ]
+              map (step: "ln -s ${hookBinPath step} $out/hooks/${clusterName}-${step.name}") (
+                clusterCfg.lifecycle.preProvision or [ ]
               )
             ) config.lab.out.allClusters
           )
         );
-        hasTeardownHooks = teardownHookLinks != "";
 
-        # Auto-deploy manifests (k3d boot-time CNI etc.) — baked into package
+        stepBinLinks = lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (name: step: "ln -s ${step.params.bin} $out/hooks/step-${name}") (
+            lib.filterAttrs (_: s: s.params ? bin) config.lab.steps
+          )
+        );
+
+        discovererLinks = lib.concatStringsSep "\n" (
+          lib.concatLists (
+            lib.mapAttrsToList (
+              clusterName: clusterCfg:
+              lib.mapAttrsToList (
+                target: provisioned:
+                "ln -s ${provisioned.externalNameDiscoveryBin} $out/hooks/${clusterName}-discoverer-${target}"
+              ) (lib.filterAttrs (_: p: p.externalNameDiscoveryBin != null) clusterCfg.cluster.provisions)
+            ) config.lab.out.allClusters
+          )
+        );
+        hasTeardownHooks = teardownHookLinks != "" || stepBinLinks != "" || discovererLinks != "";
+
         autoDeployLinks = lib.concatStringsSep "\n" (
           lib.concatLists (
             lib.mapAttrsToList (
@@ -307,7 +534,6 @@ in
           )
         );
 
-        # Custom lint check scripts
         lintCheckScripts = lib.mapAttrs (
           name: check:
           pkgs.writeShellApplication {
@@ -346,19 +572,22 @@ in
           metadataText = metadataJson;
         }
         ''
-          mkdir -p $out/manifests $out/bin
+          mkdir -p $out/manifests $out/bin $out/verify
           ${lib.optionalString (strategy != "kapp") "mkdir -p $out/bootstrap"}
+          ${lib.optionalString hasStage1 "mkdir -p $out/stage1"}
           ${lib.optionalString hasTeardownHooks "mkdir -p $out/hooks"}
           ${lib.optionalString hasLintChecks "mkdir -p $out/lint"}
           jq . "$metadataTextPath" > $out/metadata.json
           ${manifestLinks}
+          ${verifyCopies}
           ${bootstrapLinks}
+          ${stage1Links}
           ${teardownHookLinks}
+          ${stepBinLinks}
+          ${discovererLinks}
           ${lintCheckLinks}
           ${autoDeployLinks}
 
-          # Extract all container images from rendered manifests into images.txt.
-          # Targets container specs in Deployments, StatefulSets, DaemonSets, Jobs, CronJobs.
           touch $out/images-raw.txt
           ${lib.concatStringsSep "\n" (
             lib.mapAttrsToList (name: pkg: ''

@@ -1,0 +1,624 @@
+{
+  "apply-root-application": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "manifestPath": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "namespace": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "bootstrap-argocd-helm": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "chartRef": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "namespace": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "releaseName": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "valuesPath": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "waitTimeoutSeconds": {
+        "required": false,
+        "sample": 1
+      }
+    }
+  },
+  "bootstrap-argocd-kubectl-ssa": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "fieldManager": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "manifestRoot": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "namespace": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "waitTimeoutSeconds": {
+        "required": false,
+        "sample": 1
+      }
+    }
+  },
+  "bootstrap-forgejo-repos": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "jobLabelSelector": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "namespace": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "cert-generate": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "zone": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "colima-network-route": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "profile": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "subnet": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "create-cluster": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "oneShot",
+    "params": {
+      "name": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "provisioner": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "cross-cluster-secret-copy": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "name": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "secretType": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "sourceCluster": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "sourceContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "sourceNamespace": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "sourceSecret": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "targetCluster": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "targetContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "targetNamespace": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "targetSecret": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "delete-managed-resource": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "destructive",
+    "params": {
+      "externalNameDiscoveryBin": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "resourceKind": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "resourceName": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "wait": {
+        "required": false,
+        "sample": true
+      },
+      "waitTimeoutSeconds": {
+        "required": false,
+        "sample": 1
+      }
+    }
+  },
+  "deploy-manifests": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "bootstrap": {
+        "required": false,
+        "sample": true
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "destroy-cluster": {
+    "directions": [
+      "deploy",
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "destructive",
+    "params": {
+      "name": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "provisioner": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "skipIfMissing": {
+        "required": false,
+        "sample": true
+      }
+    }
+  },
+  "dns-setup": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "host": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "port": {
+        "required": true,
+        "sample": 1
+      },
+      "zone": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "dns-teardown": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "zone": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "docker-network-create": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "gateway": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "name": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "subnet": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "ensure-secrets": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "stores": {
+        "required": false,
+        "sample": []
+      }
+    }
+  },
+  "host-trust-install": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {}
+  },
+  "pivot": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "oneShot",
+    "params": {
+      "bootstrapContext": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "cluster": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "provisioner": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "targetContext": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "publish-images": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "images": {
+        "required": false,
+        "sample": []
+      },
+      "sourceCluster": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "publish-manifests": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {}
+  },
+  "registry-setup": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "port": {
+        "required": true,
+        "sample": 1
+      },
+      "upstreams": {
+        "required": false,
+        "sample": []
+      },
+      "zone": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "release-cluster-cloud-resources": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "waitTimeoutSeconds": {
+        "required": false,
+        "sample": 1
+      }
+    }
+  },
+  "remove-network": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "destructive",
+    "params": {}
+  },
+  "remove-services": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "destructive",
+    "params": {}
+  },
+  "run-script": {
+    "directions": [
+      "deploy",
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "bin": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "env": {
+        "required": false,
+        "sample": []
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "setup-services": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {}
+  },
+  "sync-kubeconfig": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "clusters": {
+        "required": false,
+        "sample": []
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "trust-bundle": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {}
+  },
+  "verify-argocd-reachable": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": true,
+    "idempotency": "idempotent",
+    "params": {
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "namespace": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "wait-for-cluster-gone": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": true,
+    "idempotency": "idempotent",
+    "params": {
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "resourceKind": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "resourceName": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "waitTimeoutSeconds": {
+        "required": false,
+        "sample": 1
+      }
+    }
+  },
+  "wait-for-resources": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": true,
+    "idempotency": "idempotent",
+    "params": {
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "resources": {
+        "required": false,
+        "sample": []
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "waitTimeoutSeconds": {
+        "required": false,
+        "sample": 1
+      }
+    }
+  },
+  "warm-cache": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {}
+  }
+}

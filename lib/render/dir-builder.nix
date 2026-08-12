@@ -12,16 +12,47 @@ let
     fixedWidthString
     ;
 
+  waitLib = import ../util/wait.nix { inherit lib; };
+
+  nativeProbeKinds = [
+    "condition"
+    "jsonpath"
+    "exists"
+    "kubectl-wait"
+    "script"
+  ];
+
+  normalizeProbe =
+    bundleKey: probe:
+    if probe == null then
+      null
+    else if builtins.elem (probe.kind or "") nativeProbeKinds then
+      probe
+    else
+      let
+        c = waitLib.renderProbe probe;
+      in
+      if c ? volumeMounts then
+        throw ''
+          dir-builder: readyProbe for bundle '${bundleKey}' uses kind
+          '${probe.kind}' with `caBundleMount`, which needs a pod-level
+          volume the one-shot probe Pod has no way to define. Use this
+          shape as a `mkWaitInitContainer` inside the bundle's own
+          workload (where the volume exists), and give the bundle a
+          kubectl-native readyProbe instead.
+        ''
+      else
+        {
+          kind = "pod";
+          inherit (c) image command;
+          args = c.args or [ ];
+          namespace = probe.namespace or null;
+          timeout = probe.timeout or null;
+        };
+
 in
 {
-  # Build a directory tree from an attrset of { "relative/path" = source; }.
-  # Source can be a derivation (file or directory) or a string.
-  #
-  # Example:
-  #   buildDir "my-output" {
-  #     "apps/crds.yaml" = someDerivation;
-  #     "phases/crds" = phasePackage;  # directory derivation copied into phases/crds/
-  #   }
+
   buildDir =
     name: entries:
     pkgs.runCommand name { } ''
@@ -52,64 +83,104 @@ in
       )}
     '';
 
-  # Build ordered phase directories: 00-crds/, 01-namespaces/, etc.
-  # Takes phaseOrder (list of names) and phases (attrset with .package per phase).
-  # Converts all YAML files to human-readable format.
-  buildOrderedDirs =
-    name: phaseOrder: phases:
+  buildWaveDirs =
+    name: packages: waves:
+    let
+      sanitize = key: builtins.replaceStrings [ "/" ] [ "__" ] key;
+      waveIndex = lib.listToAttrs (
+        lib.concatLists (
+          imap0 (
+            i: bundles:
+            map (b: {
+              name = b.name;
+              value = i;
+            }) bundles
+          ) waves
+        )
+      );
+      dirOf =
+        key:
+        let
+          i = waveIndex.${key} or null;
+        in
+        if i == null then null else "${fixedWidthString 2 "0" (toString i)}-wave/${sanitize key}";
+
+      waveMeta = {
+        waves = imap0 (i: bundles: {
+          index = i;
+          bundles = lib.filter (v: v != null) (
+            map (
+              b:
+              let
+                dir = dirOf b.name;
+              in
+              if dir == null then
+                null
+              else
+                {
+                  key = b.name;
+                  inherit dir;
+                  readyProbe = normalizeProbe b.name (b.readyProbe or null);
+                  requires = b.requires or [ ];
+                  provides = b.provides or [ ];
+
+                  hasContent = packages ? ${b.name};
+                }
+            ) bundles
+          );
+        }) waves;
+      };
+
+      copyCommands = lib.concatStringsSep "\n" (
+        lib.filter (s: s != "") (
+          mapAttrsToList (
+            key: pkg:
+            let
+              dir = dirOf key;
+            in
+            if dir == null then
+              ""
+            else
+              ''
+                mkdir -p "$out/${dir}"
+                if [ -d "${pkg}" ]; then
+                  cp -r --no-preserve=mode ${pkg}/* "$out/${dir}/" 2>/dev/null || true
+                else
+                  cp --no-preserve=mode ${pkg} "$out/${dir}/manifests.yaml"
+                fi
+              ''
+          ) packages
+        )
+      );
+    in
     pkgs.runCommand name
       {
         nativeBuildInputs = [ pkgs.yq-go ];
+        waveMetaJson = builtins.toJSON waveMeta;
+        passAsFile = [ "waveMetaJson" ];
       }
       ''
         mkdir -p $out
-        ${concatStringsSep "\n" (
-          imap0 (
-            i: phaseName:
-            let
-              phase = phases.${phaseName};
-              prefix = fixedWidthString 2 "0" (toString i);
-            in
-            ''
-              mkdir -p "$out/${prefix}-${phaseName}"
-              if [ -d "${phase.package}" ]; then
-                cp -r --no-preserve=mode ${phase.package}/* "$out/${prefix}-${phaseName}/" 2>/dev/null || true
-              else
-                cp --no-preserve=mode ${phase.package} "$out/${prefix}-${phaseName}/manifests.yaml"
-              fi
+        ${copyCommands}
 
-              # Convert JSON-as-YAML to human-readable YAML
-              find "$out/${prefix}-${phaseName}" -name '*.yaml' -type f | while read -r f; do
-                yq -P -i '.' "$f" 2>/dev/null || true
-              done
-            ''
-          ) phaseOrder
-        )}
+        find "$out" -name '*.yaml' -type f | while read -r f; do
+          yq -P -i '.' "$f" 2>/dev/null || true
+        done
 
-        # Write phase ordering metadata
-        cat > $out/.phase-order <<'EOF'
-        ${concatStringsSep "\n" phaseOrder}
-        EOF
+        cp "$waveMetaJsonPath" "$out/.wave-meta"
 
-        # Write per-phase CRD wait metadata
-        ${concatStringsSep "\n" (
-          imap0 (
-            i: phaseName:
-            let
-              phase = phases.${phaseName};
-              prefix = fixedWidthString 2 "0" (toString i);
-              crdNames = phase.waitForCRDs or false;
-              names = phase.crdNames or [ ];
-            in
-            if crdNames && names != [ ] then
-              ''
-                cat > "$out/${prefix}-${phaseName}/.crd-wait" <<'CRDEOF'
-                ${concatStringsSep "\n" names}
-                CRDEOF
-              ''
-            else
-              ""
-          ) phaseOrder
-        )}
+        find "$out" -mindepth 2 -maxdepth 2 -type d | while read -r bdir; do
+          crds="$(
+            {
+              find "$bdir" -name '*.yaml' -type f -exec \
+                yq -rN 'select(.kind == "CustomResourceDefinition") | .metadata.name' {} \; \
+                2>/dev/null | grep -vE '^(|---|null)$' | sort -u
+            } || true
+          )"
+          if [ -n "$crds" ]; then
+            printf '%s\n' "$crds" > "$bdir/.crd-wait"
+          fi
+        done
       '';
+
 }

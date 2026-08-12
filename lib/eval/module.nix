@@ -1,14 +1,7 @@
 { lib }:
 
 {
-  # Evaluate modules with assertion checking.
-  #
-  # Returns the full evalModules result ({ config, options, ... }).
-  # Throws if any assertions fail.
-  #
-  # Arguments:
-  #   modules:     list of modules to evaluate
-  #   specialArgs: extra arguments passed to all modules (e.g. lib, pkgs)
+
   evalModule =
     {
       modules,

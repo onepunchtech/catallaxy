@@ -1,4 +1,9 @@
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  lab,
+  ...
+}:
 
 let
   inherit (lib) mkOption types;
@@ -10,8 +15,12 @@ in
     else
       config.cluster.provisioner;
 
-  # Default kubeContext — provisioners override this
-  config.cluster.ref.kubeContext = lib.mkDefault config.cluster.name;
+  config.cluster.ref.kubeContext = lib.mkDefault (
+    if lab.contextPrefix == "" then
+      config.cluster.name
+    else
+      "${lab.contextPrefix}-${config.cluster.name}"
+  );
 
   options.cluster = {
     name = mkOption {
@@ -45,6 +54,72 @@ in
       ];
       readOnly = true;
       description = "Computed provider category (derived from cluster.provisioner)";
+    };
+
+    registryDomains = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = ''
+        Hostnames of OCI registries this cluster hosts. A registry floe
+        (harbor, zot) declares the domain it serves here, and the planner
+        routes `lab.images` entries destined for that registry to a
+        `publish-images` step on this cluster.
+
+        This is the capability the planner asks for, so it reads no registry
+        floe's own configuration and a new one needs no planner change.
+      '';
+    };
+
+    provisions = mkOption {
+      type = types.attrsOf (
+        types.submodule (
+          { name, ... }:
+          {
+            options = {
+              resourceKind = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = ''
+                  Fully qualified CRD kind of the in-cluster object whose
+                  deletion destroys the provisioned cluster, as in
+                  `cluster.kubernetes.digitalocean.crossplane.io`. Null when
+                  the floe tears its clusters down itself, which the
+                  cluster-api floe does with a script.
+                '';
+              };
+
+              resourceName = mkOption {
+                type = types.str;
+                default = name;
+                description = "Name of that object, when it differs from the cluster's.";
+              };
+
+              externalNameDiscoveryBin = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = ''
+                  Executable that recovers the provider's external name for
+                  the object before it is deleted, for a provider that
+                  cannot find the cloud resource without it.
+                '';
+              };
+            };
+          }
+        )
+      );
+      default = { };
+      description = ''
+        Lab clusters this cluster brings into existence, keyed as they are
+        named under `lab.clusters`. A floe that manages cluster lifecycle
+        (crossplane, cluster-api) declares what it will create here, and the
+        planner derives the rest: which clusters need their kubeconfig
+        synced, whether this cluster provisions itself and therefore has to
+        pivot, and what the teardown deletes and waits for.
+
+        This is the capability the planner asks for. It reads no floe's
+        internal configuration, so a new provisioner floe needs no planner
+        change.
+      '';
     };
 
     kubernetes = {
@@ -111,6 +186,24 @@ in
       };
     };
 
+    provisioning = {
+      rootBundles = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = [ "crossplane-resources" ];
+        description = ''
+          Bundle names that drive cluster provisioning. On a
+          self-provisioning cluster, the
+          k3d bootstrap installs the transitive DAG closure of these
+          including all CRDs, operators, and secrets the roots
+          require.
+
+          Empty (default): the cluster does not self-provision; no
+          stage1 subset is rendered.
+        '';
+      };
+    };
+
     ref = {
       kubeContext = mkOption {
         type = types.str;
@@ -118,7 +211,6 @@ in
       };
     };
 
-    # ── Security ──────────────────────────────────────────────────────────
     security = {
       podSecurity = {
         enable = mkOption {

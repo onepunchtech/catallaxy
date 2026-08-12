@@ -1,5 +1,3 @@
-//! Secret value generators.
-
 use anyhow::{Result, bail};
 use base64::Engine;
 use rand::Rng;

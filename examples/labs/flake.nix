@@ -1,5 +1,5 @@
 {
-  description = "Example: aspects + clusters + env overlays";
+  description = "Catallaxy example labs: a ladder from one cluster to a full platform";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -9,7 +9,6 @@
 
   outputs =
     {
-      self,
       nixpkgs,
       flake-utils,
       catallaxy,
@@ -18,40 +17,38 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        mkLab = modules: catallaxy.mkLab.${system} { inherit modules; };
+        lib = nixpkgs.lib;
+        mkLab = modules: catallaxy.legacyPackages.${system}.mkLab { inherit modules; };
 
         allLabs = {
+          "minimal.local" = mkLab [
+            ./minimal/labs/default.nix
+            ./minimal/envs/local.nix
+          ];
           "homelab.local" = mkLab [
-            ./labs/default.nix
-            ./envs/local.nix
+            ./homelab/labs/default.nix
+            ./homelab/envs/local.nix
           ];
-          "homelab.staging" = mkLab [
-            ./labs/default.nix
-            ./envs/staging.nix
+          "homelab.gitops-local" = mkLab [
+            ./homelab/labs/default.nix
+            ./homelab/envs/gitops-local.nix
           ];
-          "homelab.prod" = mkLab [
-            ./labs/default.nix
-            ./envs/prod.nix
-          ];
-          "homelab.gitops" = mkLab [
-            ./labs/default.nix
-            ./envs/gitops-local.nix
+          "mesh.local" = mkLab [
+            ./mesh/labs/default.nix
+            ./mesh/envs/local.nix
           ];
         };
 
-        allOuts = nixpkgs.lib.mapAttrs (_: lab: lab.config.lab.out) allLabs;
-        localOut = allOuts."homelab.local";
+        allOuts = lib.mapAttrs (_: lab: lab.config.lab.out) allLabs;
       in
       {
-        labs = nixpkgs.lib.mapAttrs (_: out: out.cliConfig) allOuts;
 
-        labPackages = nixpkgs.lib.mapAttrs (_: out: out.package) allOuts;
+        legacyPackages = {
+          labs = lib.mapAttrs (_: out: out.cliConfig) allOuts;
+          labPackages = lib.mapAttrs (_: out: out.package) allOuts;
+        };
 
-        manifests = localOut.manifests;
-
-        clusters = nixpkgs.lib.mapAttrs (
-          _: clusterCfg: catallaxy.lib.clusterConfigToJSON clusterCfg
-        ) localOut.allClusters;
+        devShells = lib.mapAttrs (_: lab: catallaxy.legacyPackages.${system}.mkLabShell lab) allLabs;
       }
     );
 }

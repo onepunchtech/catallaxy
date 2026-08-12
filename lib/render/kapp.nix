@@ -10,15 +10,15 @@
   clusterName,
   prefix ? "",
   labNamespaces ? [ ],
-  phases,
-  phaseOrder,
+
+  packages,
   deployConfig,
+
+  waves ? [ ],
 }:
 
 let
-  inherit (lib) concatStringsSep imap0 fixedWidthString;
-
-  phaseEntries = dirBuilder.buildOrderedDirs "kapp-${clusterName}-phases" phaseOrder phases;
+  bundleEntries = dirBuilder.buildWaveDirs "kapp-${clusterName}-bundles" packages waves;
 
 in
 pkgs.runCommand "kapp-${clusterName}"
@@ -27,9 +27,8 @@ pkgs.runCommand "kapp-${clusterName}"
   }
   ''
     mkdir -p "$out/${clusterName}"
-    cp -r --no-preserve=mode ${phaseEntries}/. "$out/${clusterName}/"
+    cp -r --no-preserve=mode ${bundleEntries}/. "$out/${clusterName}/"
 
-    # Apply prefix to resource names
     ${prefixUtil.applyToDir { inherit prefix labNamespaces; } "$out/${clusterName}"}
 
     echo "kapp" > "$out/${clusterName}/.deploy-strategy"

@@ -1,33 +1,61 @@
 { lib, pkgs }:
 
+let
+
+  stripEmptyMetadataFields' =
+    preserveEmptyMeta: val:
+    let
+      recurse = stripEmptyMetadataFields' preserveEmptyMeta;
+    in
+    if lib.isAttrs val then
+      let
+        recursed = lib.mapAttrs (_: recurse) (lib.filterAttrs (_: v: v != null) val);
+        cleanMetadata =
+          m:
+          lib.filterAttrs (
+            n: v:
+            !((n == "finalizers" || n == "ownerReferences") && lib.isList v && v == [ ])
+            && !(!preserveEmptyMeta && (n == "labels" || n == "annotations") && lib.isAttrs v && v == { })
+          ) m;
+      in
+      if recursed ? metadata && lib.isAttrs recursed.metadata then
+        recursed // { metadata = cleanMetadata recursed.metadata; }
+      else
+        recursed
+    else if lib.isList val then
+      map recurse val
+    else
+      val;
+
+  stripEmptyMetadataFields = stripEmptyMetadataFields' true;
+in
 {
-  # Convert an attribute set to a human-readable YAML file.
+  inherit stripEmptyMetadataFields;
+
   toYamlFile =
     name: attrs:
     pkgs.runCommand "${name}.yaml"
       {
         nativeBuildInputs = [ pkgs.yq-go ];
         passAsFile = [ "jsonInput" ];
-        jsonInput = builtins.toJSON attrs;
+        jsonInput = builtins.toJSON (stripEmptyMetadataFields attrs);
       }
       ''
         yq -P '.' "$jsonInputPath" > $out
       '';
 
-  # Convert a list of attribute sets to a multi-document YAML file.
   toMultiDocYamlFile =
     name: docs:
     pkgs.runCommand "${name}.yaml"
       {
         nativeBuildInputs = [ pkgs.yq-go ];
         passAsFile = [ "jsonInput" ];
-        jsonInput = builtins.toJSON docs;
+        jsonInput = builtins.toJSON (stripEmptyMetadataFields docs);
       }
       ''
         yq -P '.[]' "$jsonInputPath" | sed 's/^---$/\n---/' > $out
       '';
 
-  # Convert a JSON file (derivation) to a human-readable YAML file.
   jsonFileToYaml =
     name: jsonFile:
     pkgs.runCommand "${name}.yaml"
@@ -38,8 +66,6 @@
         yq -P '.' ${jsonFile} > $out
       '';
 
-  # Recursively convert all .yaml files in a directory from JSON to pretty YAML.
-  # Returns a new directory derivation with converted files.
   convertDir =
     name: dir:
     pkgs.runCommand name

@@ -35,7 +35,6 @@ let
     }
   ) specDefs;
 
-  # Standalone CRD sources (not coupled to any chart)
   standaloneCrdDefs = {
     gateway-api = {
       url = "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/experimental-install.yaml";
@@ -51,8 +50,6 @@ let
     }
   ) standaloneCrdDefs;
 
-  # Combined CRDs: chart-coupled + standalone
-  # Used by the type generator to produce typed Nix options
   crds =
     (lib.filterAttrs (_: v: v != null) (lib.mapAttrs (_: entry: entry.crds or null) cataCharts))
     // standaloneCrds;

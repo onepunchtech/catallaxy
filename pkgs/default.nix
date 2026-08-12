@@ -1,7 +1,3 @@
-# pkgs/default.nix
-#
-# All package derivations for catallaxy.
-
 {
   self,
   lib,
@@ -13,7 +9,6 @@
 }:
 
 let
-  # Runtime tools available to the CLI and scripts
   tools =
     with pkgs;
     [
@@ -21,6 +16,7 @@ let
       k3d
       kubectl
       kapp
+      kyverno-chainsaw
       kubernetes-helm
       jq
       yq-go
@@ -29,15 +25,16 @@ let
       openssl
       sops
       age
+      crane
+      gzip
     ]
     ++ lib.optionals pkgs.stdenv.isLinux [
-      pkgs.nssTools # certutil for browser CA trust
+      pkgs.nssTools
     ]
     ++ lib.optionals pkgs.stdenv.isDarwin [
       pkgs.colima
     ];
 
-  # Build the CLI binary
   cata = import ./cli.nix {
     inherit
       lib
@@ -47,7 +44,6 @@ let
       ;
   };
 
-  # Generic runner for operational scripts
   mkScript =
     name: text:
     pkgs.writeShellApplication {
@@ -60,7 +56,6 @@ let
       '';
     };
 
-  # Wrap cata with runtime tools in PATH
   cataWrapped = pkgs.writeShellApplication {
     name = "cata";
     runtimeInputs = tools ++ [
@@ -68,11 +63,11 @@ let
       pkgs.nix
     ];
     text = ''
+      export CATALLAXY_SYSTEM_CA_BUNDLE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
       exec ${cata}/bin/cata "$@"
     '';
   };
 
-  # Option docs — auto-generated from Nix module system
   optionDocs =
     if cataCharts != null && k8sSpecs != null then
       let
@@ -86,15 +81,19 @@ let
           sourceRoot = toString self;
         };
       in
-      pkgs.runCommand "catallaxy-option-docs" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-        python3 ${../lib/docs/render.py} \
-          ${raw.json}/share/doc/nixos/options.json \
-          $out
+      pkgs.runCommand "catallaxy-option-docs" { nativeBuildInputs = [ cata ]; } ''
+        cata docs render ${raw.json}/share/doc/nixos/options.json \
+          ${../docs/book/src/SUMMARY.md} $out
       ''
     else
       null;
 
-  # Documentation site
+  stepKindDocs = pkgs.writeText "step-kinds.md" (import ../lib/docs/step-kinds.nix { inherit lib; });
+
+  e2e = import ./e2e.nix { inherit lib pkgs cataWrapped; };
+
+  siteUrl = "https://onepunchtech.github.io/catallaxy";
+
   docs =
     if optionDocs != null then
       pkgs.runCommand "catallaxy-docs"
@@ -102,17 +101,21 @@ let
           nativeBuildInputs = [
             pkgs.mdbook
             pkgs.mdbook-mermaid
+            cata
           ];
         }
         ''
           cp -r ${../docs/book} src
           chmod -R u+w src
-          mkdir -p src/src/reference/options/components
-          cp ${optionDocs}/lab.md src/src/reference/options/
-          cp ${optionDocs}/cluster.md src/src/reference/options/
-          cp ${optionDocs}/components/*.md src/src/reference/options/components/
+          cp -r ${optionDocs}/. src/src/reference/
+          chmod -R u+w src/src/reference
+          cp ${stepKindDocs} src/src/reference/step-kinds.md
+          mv src/src/reference/SUMMARY.md src/src/SUMMARY.md
+          rm -f src/src/reference/undescribed.txt
           mdbook-mermaid install src
           mdbook build src -d $out
+
+          cata docs llms src/src ${siteUrl} $out
         ''
     else
       null;
@@ -124,7 +127,9 @@ in
     cata
     cataWrapped
     mkScript
+    e2e
     optionDocs
+    stepKindDocs
     docs
     ;
 }

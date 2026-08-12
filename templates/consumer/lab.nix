@@ -1,12 +1,17 @@
-# Lab definition — your platform topology
-{ lib, ... }:
+{ myFloes }:
+
+{ ... }:
 {
   lab.name = "my-platform";
   lab.dns.zone = "example.test";
 
+  lab.policy.exposure.defaultTier = "internal";
+
   lab.clusters.app =
-    { ... }:
+    { config, ... }:
     {
+      imports = [ myFloes.hello-world ];
+
       cluster.name = "app";
       cluster.kubernetes = {
         distribution = "k3s";
@@ -14,12 +19,10 @@
         workers = 0;
       };
 
-      # Enable built-in components
-      components.gateway.enable = true;
-      components.cert-manager.enable = true;
+      floes.gateway.enable = true;
+      floes.cert-manager.enable = true;
 
-      # Enable your custom component
-      components.hello-world = {
+      floes.hello-world = {
         enable = true;
         domain = "hello.example.test";
         replicas = 2;

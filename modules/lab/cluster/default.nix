@@ -5,30 +5,55 @@ let
 in
 {
   imports = [
-    ./auth
-    ./components
-    ./phases
+    ./apiserver
+    ./floes
+    ./bundles.nix
+    ./shell.nix
+    ./steps.nix
+    ./verify.nix
     ./types.nix
+    ./drift.nix
     ./out.nix
+    ./security.nix
+    ./coredns-internal.nix
+    ./secrets.nix
     ../provisioners/docker.nix
     ../provisioners/k3d.nix
   ];
 
-  # Standard module system options needed by components
   options.assertions = mkOption {
-    type = types.listOf types.unspecified;
+    type = types.listOf (
+      types.submodule {
+        options = {
+          assertion = mkOption {
+            type = types.bool;
+            description = "True = check passes. False = violation reported.";
+          };
+          message = mkOption {
+            type = types.str;
+            description = ''
+              Diagnostic shown when the assertion fails. Mention the
+              offending option path and what the user should change.
+            '';
+          };
+        };
+      }
+    );
     default = [ ];
-    internal = true;
+    description = ''
+      Hard config-validity checks. Failed entries block `cata lab up`.
+    '';
   };
 
   options.warnings = mkOption {
     type = types.listOf types.str;
     default = [ ];
-    internal = true;
+    description = ''
+      Soft config-validity advisories. Surfaced via `cata lint` /
+      `cata lab up` but do not block deployment.
+    '';
   };
 
-  # Resource sets, compose services, managed secrets, databases, storage
-  # These are used by various components but option declarations are still WIP.
   options.resources = mkOption {
     type = types.attrsOf types.attrs;
     default = { };
@@ -50,9 +75,7 @@ in
     default = { };
   };
 
-  # Lifecycle hooks for cluster teardown. Components contribute ordered steps
-  # that run before the cluster is deprovisioned (e.g., CAPI deletes cloud resources).
-  options.lifecycle.teardown = mkOption {
+  options.lifecycle.preProvision = mkOption {
     type = types.listOf (
       types.submodule {
         options = {
@@ -71,23 +94,23 @@ in
           };
           package = mkOption {
             type = types.package;
-            description = "Script to execute for this step";
-          };
-          waitTimeout = mkOption {
-            type = types.str;
-            default = "5m";
-            description = "How long to wait for completion";
+            description = ''
+              Package whose `bin/<step-name>` is invoked. Non-zero
+              exit aborts provisioning; the step's stderr is shown
+              verbatim, so write a clear remediation message.
+            '';
           };
         };
       }
     );
     default = [ ];
-    description = "Ordered teardown steps executed before cluster deprovisioning";
+    description = ''
+      Ordered pre-provision steps executed before the cluster is
+      created. Each step is a package; the CLI invokes
+      `<package>/bin/<step-name>`. Non-zero exit aborts.
+    '';
   };
 
-  # Operational commands contributed by components.
-  # These bubble up to lab.ops where same-named commands from different clusters
-  # are merged (enum options get their values unioned, packages keyed by cluster).
   options.ops = mkOption {
     type = types.attrsOf (
       types.submodule {

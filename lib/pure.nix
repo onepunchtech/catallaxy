@@ -1,5 +1,3 @@
-# Pure library — no pkgs dependency, works on any system.
-# Contains the stable API for downstream consumers.
 { lib }:
 
 let
@@ -8,54 +6,14 @@ in
 {
   inherit (evalMod) evalModule;
   inherit (import ./util/network.nix { inherit lib; }) network;
-  phases = import ./util/phases.nix;
+  inherit (import ./util/idempotent-job.nix { inherit lib; }) mkIdempotentJob hashContent;
 
-  ## Helper for writing custom components that follow the established pattern.
-  mkComponent =
-    {
-      name,
-      phase ? "apps",
-      options ? { },
-      module,
-    }:
-    {
-      config,
-      lib,
-      ...
-    }:
-    let
-      cfg = config.components.${name};
-    in
-    {
-      options.components.${name} = {
-        enable = lib.mkEnableOption "the ${name} component";
-        phase = lib.mkOption {
-          type = lib.types.str;
-          default = phase;
-          description = "Deployment phase for ${name}";
-        };
-        namespace = lib.mkOption {
-          type = lib.types.str;
-          default = name;
-          description = "Kubernetes namespace for ${name}";
-        };
-        version = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = "Version of ${name}";
-        };
-        ref = lib.mkOption {
-          type = lib.types.attrs;
-          default = { };
-          description = "Computed references for ${name}";
-        };
-      }
-      // options;
+  floe = import ./floe { inherit lib; };
 
-      config = lib.mkIf cfg.enable (module cfg);
-    };
+  planTokens = import ./plan-tokens.nix { inherit lib; };
 
-  ## Helper for generating Kubernetes NetworkPolicy resources.
+  inherit (import ./util/kapp.nix { inherit lib; }) mkPreserveRuntimePatches;
+
   mkNetworkPolicy =
     {
       name,

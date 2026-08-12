@@ -1,36 +1,25 @@
-//! YAML manifest loading and Kubernetes resource model
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
-/// Minimal Kubernetes resource identity parsed from YAML manifests
 #[derive(Debug, Clone)]
 pub struct K8sResource {
     pub api_version: String,
     pub kind: String,
     pub name: String,
     pub namespace: Option<String>,
-    /// Service.spec.selector (for selector check)
     pub selector: Option<BTreeMap<String, String>>,
-    /// Workload .spec.template.metadata.labels (for selector check)
     pub pod_labels: Option<BTreeMap<String, String>>,
-    /// ConfigMap names referenced by this resource
     pub configmap_refs: Vec<String>,
-    /// Secret names referenced by this resource
     pub secret_refs: Vec<String>,
-    /// Source file for error reporting
     pub source_file: PathBuf,
-    /// Full parsed YAML value (for CRD schema validation)
     pub raw: serde_yaml::Value,
-    /// Lint checks to skip (from `catallaxy.io/lint-skip` annotation)
     pub lint_skip: Vec<String>,
 }
 
 impl K8sResource {
-    /// Display identity for diagnostics (e.g. "Deployment/my-app")
     pub fn display_id(&self) -> String {
         match &self.namespace {
             Some(ns) => format!("{}/{}/{}", ns, self.kind, self.name),
@@ -66,9 +55,6 @@ impl K8sResource {
     }
 }
 
-/// Load all Kubernetes resources from YAML files in a directory tree.
-///
-/// Follows symlinks (out.package uses them), skips dotfiles and fleet metadata.
 pub fn load_manifests(dir: &Path) -> Result<Vec<K8sResource>> {
     let mut resources = Vec::new();
 
@@ -82,7 +68,6 @@ pub fn load_manifests(dir: &Path) -> Result<Vec<K8sResource>> {
         let path = entry.path();
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-        // Skip non-YAML and metadata files
         if !file_name.ends_with(".yaml") {
             continue;
         }
@@ -99,7 +84,6 @@ pub fn load_manifests(dir: &Path) -> Result<Vec<K8sResource>> {
     Ok(resources)
 }
 
-/// Parse a potentially multi-document YAML string into K8sResources.
 fn parse_yaml_documents(
     content: &str,
     source_file: &Path,
@@ -108,7 +92,7 @@ fn parse_yaml_documents(
     for doc in serde_yaml::Deserializer::from_str(content) {
         let value: serde_yaml::Value = match serde_yaml::Value::deserialize(doc) {
             Ok(v) => v,
-            Err(_) => continue, // skip unparseable documents (empty, comments-only)
+            Err(_) => continue,
         };
 
         if value.is_null() {
@@ -122,9 +106,7 @@ fn parse_yaml_documents(
     Ok(())
 }
 
-/// Extract a K8sResource from a parsed YAML value.
-/// Returns None if the value doesn't look like a K8s resource.
-fn parse_resource(value: &serde_yaml::Value, source_file: &Path) -> Option<K8sResource> {
+pub(crate) fn parse_resource(value: &serde_yaml::Value, source_file: &Path) -> Option<K8sResource> {
     let mapping = value.as_mapping()?;
 
     let api_version = get_str(mapping, "apiVersion")?;
@@ -154,8 +136,6 @@ fn parse_resource(value: &serde_yaml::Value, source_file: &Path) -> Option<K8sRe
     })
 }
 
-/// Extract lint-skip checks from `catallaxy.io/lint-skip` annotation.
-/// Value is a comma-separated list of check names, e.g. "selector,reference".
 fn extract_lint_skip(metadata: &serde_yaml::Mapping) -> Vec<String> {
     metadata
         .get(serde_yaml::Value::String("annotations".into()))
@@ -173,7 +153,6 @@ fn get_str(mapping: &serde_yaml::Mapping, key: &str) -> Option<String> {
         .map(String::from)
 }
 
-/// Extract Service.spec.selector as a string map
 fn extract_service_selector(
     mapping: &serde_yaml::Mapping,
     kind: &str,
@@ -197,7 +176,6 @@ fn extract_service_selector(
     if map.is_empty() { None } else { Some(map) }
 }
 
-/// Extract workload .spec.template.metadata.labels
 fn extract_pod_labels(
     mapping: &serde_yaml::Mapping,
     kind: &str,
@@ -227,12 +205,20 @@ fn extract_pod_labels(
     if map.is_empty() { None } else { Some(map) }
 }
 
-/// Extract ConfigMap and Secret references from a resource's spec.
-///
-/// Covers common patterns:
-/// - volumes[].configMap.name / volumes[].secret.secretName
-/// - containers[].envFrom[].configMapRef.name / secretRef.name
-/// - containers[].env[].valueFrom.configMapKeyRef.name / secretKeyRef.name
+fn optional_aware_ref(m: &serde_yaml::Mapping, key: &str) -> Option<String> {
+    let r = m
+        .get(serde_yaml::Value::String(key.into()))
+        .and_then(|r| r.as_mapping())?;
+    let optional = r
+        .get(serde_yaml::Value::String("optional".into()))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if optional {
+        return None;
+    }
+    get_str(r, "name")
+}
+
 fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
     let mut cm_refs = Vec::new();
     let mut secret_refs = Vec::new();
@@ -242,7 +228,6 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
         None => return (cm_refs, secret_refs),
     };
 
-    // For workloads, look inside spec.template.spec; for Pods, look in spec directly
     let pod_spec = spec
         .as_mapping()
         .and_then(|s| s.get(serde_yaml::Value::String("template".into())))
@@ -251,7 +236,6 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
         .or(Some(spec));
 
     if let Some(pod_spec) = pod_spec.and_then(|s| s.as_mapping()) {
-        // volumes[].configMap.name / volumes[].secret.secretName
         if let Some(volumes) = pod_spec
             .get(serde_yaml::Value::String("volumes".into()))
             .and_then(|v| v.as_sequence())
@@ -290,7 +274,6 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
             }
         }
 
-        // containers[].envFrom / env[].valueFrom
         for container_key in &["containers", "initContainers"] {
             if let Some(containers) = pod_spec
                 .get(serde_yaml::Value::String((*container_key).into()))
@@ -302,32 +285,22 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
                         None => continue,
                     };
 
-                    // envFrom[].configMapRef.name / secretRef.name
                     if let Some(env_from) = container
                         .get(serde_yaml::Value::String("envFrom".into()))
                         .and_then(|e| e.as_sequence())
                     {
                         for ef in env_from {
                             if let Some(m) = ef.as_mapping() {
-                                if let Some(name) = m
-                                    .get(serde_yaml::Value::String("configMapRef".into()))
-                                    .and_then(|r| r.as_mapping())
-                                    .and_then(|r| get_str(r, "name"))
-                                {
+                                if let Some(name) = optional_aware_ref(m, "configMapRef") {
                                     cm_refs.push(name);
                                 }
-                                if let Some(name) = m
-                                    .get(serde_yaml::Value::String("secretRef".into()))
-                                    .and_then(|r| r.as_mapping())
-                                    .and_then(|r| get_str(r, "name"))
-                                {
+                                if let Some(name) = optional_aware_ref(m, "secretRef") {
                                     secret_refs.push(name);
                                 }
                             }
                         }
                     }
 
-                    // env[].valueFrom.configMapKeyRef.name / secretKeyRef.name
                     if let Some(env) = container
                         .get(serde_yaml::Value::String("env".into()))
                         .and_then(|e| e.as_sequence())
@@ -338,18 +311,10 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
                                 .and_then(|m| m.get(serde_yaml::Value::String("valueFrom".into())))
                                 .and_then(|v| v.as_mapping())
                             {
-                                if let Some(name) = vf
-                                    .get(serde_yaml::Value::String("configMapKeyRef".into()))
-                                    .and_then(|r| r.as_mapping())
-                                    .and_then(|r| get_str(r, "name"))
-                                {
+                                if let Some(name) = optional_aware_ref(vf, "configMapKeyRef") {
                                     cm_refs.push(name);
                                 }
-                                if let Some(name) = vf
-                                    .get(serde_yaml::Value::String("secretKeyRef".into()))
-                                    .and_then(|r| r.as_mapping())
-                                    .and_then(|r| get_str(r, "name"))
-                                {
+                                if let Some(name) = optional_aware_ref(vf, "secretKeyRef") {
                                     secret_refs.push(name);
                                 }
                             }

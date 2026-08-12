@@ -1,0 +1,145 @@
+use std::process::Command;
+
+use anyhow::Result;
+use console::style;
+
+use crate::io;
+use crate::plan::StepContext;
+
+pub async fn run(
+    sctx: &StepContext<'_>,
+    cluster_name: &str,
+    _provisioner: &str,
+    skip_if_missing: bool,
+) -> Result<()> {
+    let mut step_failed = false;
+
+    match crate::io::nix::get_cluster_config_from_lab(sctx.lab, cluster_name) {
+        Ok(config) => {
+            if skip_if_missing && k3d_already_gone(sctx, cluster_name, &config) {
+                return Ok(());
+            }
+            if let Err(e) =
+                crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster_name, &config)
+            {
+                step_failed = true;
+                println!(
+                    "{} Failed to destroy '{}': {}",
+                    style("ERROR").red(),
+                    cluster_name,
+                    e,
+                );
+            }
+        }
+        Err(e) => {
+            step_failed = true;
+            println!(
+                "{} Failed to load config for '{}': {}",
+                style("ERROR").red(),
+                cluster_name,
+                e,
+            );
+        }
+    }
+
+    if !verify_no_stragglers(sctx.lab_name, cluster_name) {
+        step_failed = true;
+    }
+
+    if let Err(e) = crate::commands::kubeconfig::cleanup_kubeconfig(sctx.ctx, cluster_name) {
+        println!(
+            "{} Failed to cleanup kubeconfig for '{}': {}",
+            style("Warning:").yellow(),
+            cluster_name,
+            e,
+        );
+    }
+
+    if step_failed {
+        sctx.failures
+            .borrow_mut()
+            .push(format!("destroy-cluster {cluster_name}"));
+    }
+    Ok(())
+}
+
+fn k3d_already_gone(
+    sctx: &StepContext<'_>,
+    cluster_name: &str,
+    config: &serde_json::Value,
+) -> bool {
+    let provisioner = config.pointer("/provisioner").and_then(|v| v.as_str());
+    if provisioner != Some("k3d") {
+        return false;
+    }
+    let cluster_short = config
+        .pointer("/provisionerConfig/k3d/clusterName")
+        .and_then(|v| v.as_str())
+        .unwrap_or(cluster_name);
+    let docker_host = crate::commands::cluster::resolve_docker_host(sctx.ctx, config)
+        .ok()
+        .flatten();
+    if io::k3d::cluster_exists(cluster_short, docker_host.as_deref()) {
+        return false;
+    }
+    println!(
+        "{} k3d cluster '{}' already gone; skipping",
+        style(">>>").green(),
+        cluster_short
+    );
+    true
+}
+
+fn verify_no_stragglers(lab_name: &str, cluster_name: &str) -> bool {
+    let container_prefix = format!("k3d-{lab_name}-{cluster_name}-");
+    let out = match Command::new("docker")
+        .args([
+            "ps",
+            "-a",
+            "--format",
+            "{{.Names}}",
+            "--filter",
+            &format!("name={container_prefix}"),
+        ])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        Ok(o) => {
+            println!(
+                "{} `docker ps` failed (exit {:?}): {}",
+                style("ERROR").red(),
+                o.status.code(),
+                String::from_utf8_lossy(&o.stderr),
+            );
+            return false;
+        }
+        Err(e) => {
+            println!(
+                "{} could not run `docker ps` to verify destroy: {e}",
+                style("ERROR").red(),
+            );
+            return false;
+        }
+    };
+
+    let stragglers: Vec<&str> = std::str::from_utf8(&out.stdout)
+        .unwrap_or("")
+        .lines()
+        .filter(|l| !l.is_empty())
+        .collect();
+    if stragglers.is_empty() {
+        return true;
+    }
+    println!(
+        "{} '{}' left {} container(s) behind: {}",
+        style("ERROR").red(),
+        cluster_name,
+        stragglers.len(),
+        stragglers.join(", "),
+    );
+    for c in &stragglers {
+        println!("{} docker rm -f {c}", style(">>>").yellow());
+        let _ = Command::new("docker").args(["rm", "-f", c]).status();
+    }
+    false
+}

@@ -1,16 +1,3 @@
-//! PKI management commands — CA and client certificate lifecycle
-//!
-//! Manages a local CA and issues client certificates for passwordless
-//! Kubernetes authentication via YubiKey PIV slots.
-//!
-//! State is stored in ~/.local/share/catallaxy/pki/<cluster>/
-//!
-//!   cata pki init           # Create the CA
-//!   cata pki issue <user>   # Issue a client certificate
-//!   cata pki provision <user> # Write cert to YubiKey PIV slot
-//!   cata pki list           # Show CA and user cert status
-//!   cata pki kubeconfig <user> # Generate kubeconfig for a user
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -25,59 +12,61 @@ use time::{Duration, OffsetDateTime};
 
 use crate::config::Context as CataContext;
 
+const PKI_CLUSTER_HELP: &str = "Cluster to act on. Defaults to the flake fragment";
+const USER_HELP: &str = "User to act on, declared in the cluster's apiserver.pki.users";
+
 #[derive(Subcommand)]
 pub enum PkiCommands {
-    /// Initialize the PKI CA for a cluster
+    #[command(about = "Initialize the cluster's client CA")]
     Init {
-        /// Cluster name
+        #[arg(help = PKI_CLUSTER_HELP)]
         name: Option<String>,
 
-        /// Force re-creation of existing CA
-        #[arg(long)]
+        #[arg(long, help = "Replace an existing CA")]
         force: bool,
     },
 
-    /// Issue a client certificate for a user
+    #[command(about = "Issue a client certificate for a user")]
     Issue {
-        /// User name (as defined in pki-auth.users)
+        #[arg(help = USER_HELP)]
         user: String,
 
-        /// Cluster name
-        #[arg(long)]
+        #[arg(long, value_name = "NAME", help = PKI_CLUSTER_HELP)]
         cluster: Option<String>,
 
-        /// Force re-issue even if cert exists
-        #[arg(long)]
+        #[arg(long, help = "Reissue even if a certificate already exists")]
         force: bool,
     },
 
-    /// Write certificate to a YubiKey PIV slot
+    #[command(about = "Write a user's certificate to a YubiKey PIV slot")]
     Provision {
-        /// User name
+        #[arg(help = USER_HELP)]
         user: String,
 
-        /// Cluster name
-        #[arg(long)]
+        #[arg(long, value_name = "NAME", help = PKI_CLUSTER_HELP)]
         cluster: Option<String>,
     },
 
-    /// List CA and certificate status
+    #[command(about = "Show CA and certificate status")]
     List {
-        /// Cluster name
+        #[arg(help = PKI_CLUSTER_HELP)]
         name: Option<String>,
     },
 
-    /// Generate a kubeconfig entry for a user
+    #[command(about = "Generate a kubeconfig entry for a user's certificate")]
     Kubeconfig {
-        /// User name
+        #[arg(help = USER_HELP)]
         user: String,
 
-        /// Cluster name
-        #[arg(long)]
+        #[arg(long, value_name = "NAME", help = PKI_CLUSTER_HELP)]
         cluster: Option<String>,
 
-        /// Output file (default: stdout)
-        #[arg(long, short)]
+        #[arg(
+            long,
+            short,
+            value_name = "PATH",
+            help = "Where to write the kubeconfig. Defaults to stdout"
+        )]
         output: Option<String>,
     },
 }
@@ -115,8 +104,6 @@ pub async fn run(ctx: &CataContext, command: PkiCommands) -> Result<()> {
     }
 }
 
-// --- Path helpers ---
-
 fn pki_dir(cluster_name: &str) -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     PathBuf::from(home)
@@ -144,26 +131,22 @@ fn user_cert_path(cluster_name: &str, user: &str) -> PathBuf {
     user_dir(cluster_name, user).join(format!("{user}.crt"))
 }
 
-// --- PKI config from Nix ---
-
 fn get_pki_config(ctx: &CataContext, cluster_name: &str) -> Result<serde_json::Value> {
-    let config = crate::nix::get_cluster_config(ctx, cluster_name)?;
+    let config = crate::io::nix::get_cluster_config(ctx, cluster_name)?;
     let pki = config
-        .pointer("/components/pki-auth")
+        .pointer("/apiserver/pki")
         .cloned()
         .unwrap_or_default();
 
     if !pki["enable"].as_bool().unwrap_or(false) {
         bail!(
             "PKI auth is not enabled on cluster '{cluster_name}'. \
-             Set components.pki-auth.enable = true;"
+             Set cluster.apiserver.pki.enable = true;"
         );
     }
 
     Ok(pki)
 }
-
-// --- Key algorithm helpers ---
 
 fn parse_validity(s: &str) -> Result<u32> {
     let s = s.trim();
@@ -182,12 +165,9 @@ fn make_key_pair(algorithm: &str) -> Result<KeyPair> {
     match algorithm {
         "ecdsa-p256" => Ok(KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?),
         "ecdsa-p384" => Ok(KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384)?),
-        // ed25519 and RSA would need additional feature flags in rcgen
         other => bail!("unsupported key algorithm: {other}"),
     }
 }
-
-// --- Commands ---
 
 async fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> {
     let pki = get_pki_config(ctx, cluster_name)?;
@@ -230,10 +210,8 @@ async fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> 
     println!("  Algorithm: {algorithm}");
     println!("  Validity:  {validity_str} ({validity_days} days)");
 
-    // Generate CA key pair
     let key_pair = make_key_pair(algorithm)?;
 
-    // Build CA certificate params
     let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
     params
@@ -246,7 +224,6 @@ async fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> 
 
     let cert = params.self_signed(&key_pair)?;
 
-    // Write files
     let dir = pki_dir(cluster_name);
     fs::create_dir_all(&dir).with_context(|| format!("Failed to create {}", dir.display()))?;
 
@@ -255,7 +232,6 @@ async fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> 
     fs::write(&ca_cert, cert.pem())
         .with_context(|| format!("Failed to write {}", ca_cert.display()))?;
 
-    // Restrict key permissions
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -272,16 +248,14 @@ async fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> 
 async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -> Result<()> {
     let pki = get_pki_config(ctx, cluster_name)?;
 
-    // Check CA exists
     let ca_key_file = ca_key_path(cluster_name);
     let ca_cert_file = ca_cert_path(cluster_name);
     if !ca_key_file.exists() || !ca_cert_file.exists() {
         bail!("CA not initialized for cluster '{cluster_name}'. Run `cata pki init` first.");
     }
 
-    // Look up user in config
     let user_config = pki
-        .pointer(&format!("/ref/pki/users/{user}"))
+        .pointer(&format!("/out/pki/users/{user}"))
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "User '{user}' not found in pki-auth.users for cluster '{cluster_name}'"
@@ -313,7 +287,7 @@ async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -
     let algorithm = user_config["keyAlgorithm"]
         .as_str()
         .or_else(|| {
-            pki.pointer("/ref/pki/defaults/keyAlgorithm")
+            pki.pointer("/out/pki/defaults/keyAlgorithm")
                 .and_then(|v| v.as_str())
         })
         .unwrap_or("ecdsa-p256");
@@ -321,7 +295,7 @@ async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -
     let validity_str = user_config["validity"]
         .as_str()
         .or_else(|| {
-            pki.pointer("/ref/pki/defaults/validity")
+            pki.pointer("/out/pki/defaults/validity")
                 .and_then(|v| v.as_str())
         })
         .unwrap_or("1y");
@@ -337,7 +311,6 @@ async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -
     println!("  Algorithm:     {algorithm}");
     println!("  Validity:      {validity_str} ({validity_days} days)");
 
-    // Load CA
     let ca_key_pem = fs::read_to_string(&ca_key_file)?;
     let ca_cert_pem = fs::read_to_string(&ca_cert_file)?;
 
@@ -346,10 +319,8 @@ async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -
         .map_err(|e| anyhow::anyhow!("Failed to parse CA cert: {e}"))?;
     let ca_cert = ca_params.self_signed(&ca_key_pair)?;
 
-    // Generate user key pair
     let user_key_pair = make_key_pair(algorithm)?;
 
-    // Build user certificate params
     let mut params = CertificateParams::default();
     params.distinguished_name = DistinguishedName::new();
     params
@@ -368,7 +339,6 @@ async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -
 
     let user_cert = params.signed_by(&user_key_pair, &ca_cert, &ca_key_pair)?;
 
-    // Write files
     let dir = user_dir(cluster_name, user);
     fs::create_dir_all(&dir)?;
 
@@ -393,7 +363,7 @@ async fn provision(_ctx: &CataContext, cluster_name: &str, user: &str) -> Result
     let pki_config = get_pki_config(_ctx, cluster_name)?;
 
     let user_config = pki_config
-        .pointer(&format!("/ref/pki/users/{user}"))
+        .pointer(&format!("/out/pki/users/{user}"))
         .ok_or_else(|| anyhow::anyhow!("User '{user}' not found in pki-auth.users"))?;
 
     let slot = user_config
@@ -422,7 +392,6 @@ async fn provision(_ctx: &CataContext, cluster_name: &str, user: &str) -> Result
         bail!("Certificate not found for '{user}'. Run `cata pki issue {user}` first.");
     }
 
-    // Check ykman is available
     which::which("ykman").context(
         "ykman not found. Install it: brew install ykman (macOS) or pip install yubikey-manager",
     )?;
@@ -437,10 +406,6 @@ async fn provision(_ctx: &CataContext, cluster_name: &str, user: &str) -> Result
     if let Some(s) = serial {
         println!("  Serial:       {s}");
     }
-
-    // Generate key on the YubiKey and get a CSR? No — we import the existing key+cert.
-    // ykman piv keys import <slot> <key_file>
-    // ykman piv certificates import <slot> <cert_file>
 
     let mut key_cmd = std::process::Command::new("ykman");
     key_cmd.args(["piv", "keys", "import"]);
@@ -494,7 +459,6 @@ async fn list(ctx: &CataContext, cluster_name: &str) -> Result<()> {
     let dir = pki_dir(cluster_name);
     let ca_cert = ca_cert_path(cluster_name);
 
-    // CA status
     if ca_cert.exists() {
         let pem_data = fs::read_to_string(&ca_cert)?;
         let (_, parsed) = x509_parser::pem::parse_x509_pem(pem_data.as_bytes())
@@ -525,9 +489,8 @@ async fn list(ctx: &CataContext, cluster_name: &str) -> Result<()> {
         );
     }
 
-    // User certificates
     let users = pki
-        .pointer("/ref/pki/users")
+        .pointer("/out/pki/users")
         .and_then(|v| v.as_object())
         .cloned()
         .unwrap_or_default();
@@ -598,7 +561,7 @@ async fn kubeconfig(
     let pki = get_pki_config(ctx, cluster_name)?;
 
     let user_config = pki
-        .pointer(&format!("/ref/pki/users/{user}"))
+        .pointer(&format!("/out/pki/users/{user}"))
         .ok_or_else(|| anyhow::anyhow!("User '{user}' not found in pki-auth.users"))?;
 
     let cn = user_config["commonName"].as_str().unwrap_or(user);
@@ -627,8 +590,7 @@ async fn kubeconfig(
         fs::read(&ca_cert)?,
     );
 
-    // Determine the server URL from provisioner config
-    let cluster_config = crate::nix::get_cluster_config(ctx, cluster_name)?;
+    let cluster_config = crate::io::nix::get_cluster_config(ctx, cluster_name)?;
     let k3d_name = cluster_config
         .pointer("/provisionerConfig/k3d/clusterName")
         .and_then(|v| v.as_str())
