@@ -191,7 +191,7 @@ checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 
 [[package]]
 name = "cata"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "assert_cmd",

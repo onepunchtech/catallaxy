@@ -7,6 +7,25 @@ The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **`flake.nix` is 172 lines instead of 1097.** It had grown to hold every
+  check inline, most of them the same eight-line `runCommand` wrapper around
+  a list of failures, repeated thirty times. The flake now declares inputs
+  and wires outputs together, and the bodies live under `nix/`: `checks/`
+  split by subject, plus `treefmt.nix` and `devshell.nix`. Every flake
+  output is unchanged, the same 62 checks by the same names.
+
+  The 23 floe isolation checks stay an explicit list, the way floes and step
+  kinds are registered rather than discovered. Two assertions keep the list
+  honest in both directions: a test file in `lib/tests/floes/` that no check
+  runs fails eval naming the file, and a registered name with no file fails
+  eval naming the name. The registry stays the source of truth, without the
+  failure mode a hand-maintained registry usually carries, which is a test
+  that silently never runs.
+
+## [0.7.0] - 2026-08-11
+
 ### Added
 
 - **Floes assert their own correctness, and `cata lab verify` runs it.** A
