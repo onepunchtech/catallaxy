@@ -80,6 +80,21 @@ The format is based on
 
 ### Fixed
 
+- **The lab proxy routes a floe that names its hostname under `gateway`.**
+  `modules/lab/host/proxy.nix` built its HAProxy host map from each floe's
+  top-level `domain`, so `floes.prometheus` and `floes.otel-collector`,
+  which declare theirs at `gateway.domain`, were never given a backend. A
+  request to `prometheus-rw.<zone>` reached HAProxy's default backend and
+  came back 503 without ever leaving the host, which is what
+  `homelab.local`'s verify had been failing on. The map now takes
+  `gateway.domain` when it is set and the top-level `domain` otherwise.
+
+  `example-lab-routed-hosts-are-proxied` keeps it honest: for every example
+  lab it compares the hostnames with a public route inside a cluster against
+  the hostnames the proxy has a backend for, and fails naming any that are
+  routed but unreachable. Reverting the one-line fix makes it name
+  `prometheus-rw.homelab.test` on both homelab labs.
+
 - **`cata lab verify` probes a host where its route actually routes.** It
   asked every public host for `/`. `prometheus-rw.<zone>` matches only
   `PathPrefix: /api/v1/write`, so the probe asked for a path the gateway is

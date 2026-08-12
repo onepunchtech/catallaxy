@@ -41,6 +41,43 @@ let
     n: lib.count (m: m == n) (map (c: c.interfaceName) meshClients) > 1
   ) (lib.unique (map (c: c.interfaceName) meshClients));
 
+  proxiedHosts =
+    labName:
+    let
+      lab = exampleLabDefs.${labName}.config.lab;
+      config = lab.proxy.out.service.volumes or { };
+      contents = lib.concatStringsSep "\n" (lib.mapAttrsToList (_: v: v.content or "") config);
+    in
+    lib.filter (h: h != "") (
+      map (m: lib.head m) (
+        lib.filter (m: m != null) (
+          map (line: builtins.match ".*-i ([^ ]+) [}].*" line) (lib.splitString "\n" contents)
+        )
+      )
+    );
+
+  publicRoutedHosts =
+    labName:
+    lib.unique (
+      lib.concatMap (
+        c: map (h: h.host) (lib.filter (h: h.tier == "public") (c.cluster.out.exposedHosts or [ ]))
+      ) (lib.attrValues exampleLabDefs.${labName}.config.lab.out.allClusters)
+    );
+
+  unproxiedHosts = lib.concatMap (
+    labName:
+    let
+      lab = exampleLabDefs.${labName}.config.lab;
+      proxied = proxiedHosts labName;
+    in
+    if !(lab.proxy.enable or false) then
+      [ ]
+    else
+      map (h: "  ${labName}: ${h}") (
+        lib.filter (h: !(builtins.elem h proxied)) (publicRoutedHosts labName)
+      )
+  ) labNames;
+
   planSnapshotCheck =
     labName: direction:
     let
@@ -144,6 +181,24 @@ in
       fi
       echo "example lab mesh clients are pairwise distinct" > $out
     '';
+  example-lab-routed-hosts-are-proxied = pkgs.runCommand "example-lab-routed-hosts-are-proxied" { } ''
+    if [ ${toString (builtins.length unproxiedHosts)} -ne 0 ]; then
+      cat >&2 <<'EOF'
+    These hostnames have a public route inside a cluster, but the lab
+    proxy has no backend for them, so a request from the operator's
+    machine reaches HAProxy's default backend and gets a 503:
+
+    ${lib.concatStringsSep "\n" unproxiedHosts}
+
+    The proxy builds its host map in modules/lab/host/proxy.nix from each
+    floe's `domain` and `gateway.domain`. A floe that names its hostname
+    anywhere else is invisible to it.
+    EOF
+      exit 1
+    fi
+    echo "every publicly routed host has a proxy backend" > $out
+  '';
+
 }
 // planSnapshotChecks
 // lintChecks

@@ -49,7 +49,11 @@ let
         floeEntries = concatLists (
           mapAttrsToList (
             name: floe:
-            if (floe.enable or false) then entriesFor name (floe.domain or "") (floe.gateway or { }) else [ ]
+            let
+              gw = floe.gateway or { };
+              domain = if (gw.domain or "") != "" then gw.domain else (floe.domain or "");
+            in
+            if (floe.enable or false) then entriesFor name domain gw else [ ]
           ) floes
         );
 
