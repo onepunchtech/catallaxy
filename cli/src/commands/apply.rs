@@ -1,20 +1,19 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use console::style;
 use serde::Deserialize;
 
-use crate::commands::secrets as secrets_mod;
 use crate::config::Context as CataContext;
 use crate::domain::ClusterSpec;
+use crate::domain::secrets::{self, SecretsSpec};
 use crate::io;
 use crate::io::nix;
 
-pub type SecretsCache = Arc<HashMap<String, HashMap<String, HashMap<String, String>>>>;
+pub use crate::domain::secrets::SecretsCache;
 
 #[derive(Args)]
 pub struct ApplyArgs {
@@ -449,33 +448,25 @@ where
         .unwrap_or_else(|| "default".to_string());
 
     let secrets_tmp = tempfile::tempdir()?;
+    let spec = SecretsSpec::from_lab_config(config)?;
 
     let mut store_cache: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
 
     for (proj_name, proj) in projections {
-        let store_name = config
-            .pointer(&format!("/secrets/managed/{}/store", proj.source))
-            .and_then(|v| v.as_str())
-            .unwrap_or(&proj.source);
+        let store_name = spec.store_of(&proj.source).unwrap_or(&proj.source);
 
         let store_data = if let Some(cached) = pre_cache.and_then(|c| c.get(store_name)) {
             cached.clone()
         } else if let Some(cached) = store_cache.get(store_name) {
             cached.clone()
         } else {
-            let enc_path = secrets_mod::store_file_path(ctx, &lab_name, store_name);
-
-            if !enc_path.exists() {
-                println!(
-                    "{} Store '{}' not found at {}: run `cata secrets generate` first",
-                    style("!!!").red(),
-                    store_name,
-                    enc_path.display()
-                );
-                continue;
+            let data = io::secrets::load_store(ctx, &lab_name, store_name, &spec)?;
+            let problems = secrets::validate_store(&spec, store_name, &data);
+            if !problems.is_empty() {
+                bail!(secrets::describe_store_problems(
+                    &spec, &lab_name, store_name, &problems
+                ));
             }
-
-            let data = secrets_mod::decrypt_sops_store(&enc_path)?;
             store_cache.insert(store_name.to_string(), data.clone());
             data
         };
@@ -490,13 +481,9 @@ where
 
         let source_keys = store_data.get(&proj.source).ok_or_else(|| {
             anyhow::anyhow!(
-                "projection '{}' references managed secret '{}' which is missing from store '{}'. \
-                 Run `cata secrets edit {} {}` to add it.",
-                proj_name,
+                "projection '{proj_name}' references managed secret '{}', which store '{store_name}' does not carry. {}",
                 proj.source,
-                store_name,
-                lab_name,
-                store_name
+                secrets::describe_store_source(&spec, &lab_name, store_name),
             )
         })?;
         let mut k8s_data: HashMap<String, String> = HashMap::new();
@@ -504,14 +491,16 @@ where
         for (key_name, key_def) in &proj.keys {
             let source_value = source_keys.get(&key_def.from).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "projection '{}' wants key '{}' from managed secret '{}', but that key \
-                     is missing from store '{}'. Run `cata secrets edit {} {}` to add it.",
-                    proj_name,
+                    "projection '{proj_name}' wants key '{}' of managed secret '{}': {}",
                     key_def.from,
                     proj.source,
-                    store_name,
-                    lab_name,
-                    store_name
+                    secrets::describe_missing_value(
+                        &spec,
+                        &lab_name,
+                        store_name,
+                        &proj.source,
+                        &key_def.from
+                    ),
                 )
             })?;
             let source_value = source_value.as_str();

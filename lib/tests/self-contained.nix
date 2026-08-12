@@ -21,7 +21,7 @@ let
     "mesh.local" = {
       eligible = false;
       mentions = [
-        "lab-ca is a CA"
+        "lab-ca in store trust, backend sops"
         "cannot finish without a human"
       ];
     };

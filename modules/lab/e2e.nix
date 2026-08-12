@@ -17,22 +17,16 @@ let
 
   provisioningClusters = lib.attrNames (lib.filterAttrs (_: c: c.cluster.provisions != { }) clusters);
 
-  sopsStores = lib.attrNames (
-    lib.filterAttrs (_: store: store.backend == "sops") config.lab.secrets.stores
-  );
+  backendOf = storeName: config.lab.secrets.stores.${storeName}.backend or "sops";
 
-  inSopsStore = secret: builtins.elem secret.store sopsStores;
+  storedOutsideEnv = lib.mapAttrsToList (
+    secretName: secret: "${secretName} in store ${secret.store}, backend ${backendOf secret.store}"
+  ) (lib.filterAttrs (_: secret: backendOf secret.store != "env") config.lab.secrets.managed);
 
-  handWrittenKeys = lib.concatLists (
-    lib.mapAttrsToList (
-      secretName: secret:
-      lib.optionals (inSopsStore secret) (
-        lib.optional (secret.kind == "ca") "${secretName} is a CA, which an ops command mints"
-        ++ map (keyName: "${secretName}.${keyName} has no generator, so somebody types it in") (
-          lib.attrNames (lib.filterAttrs (_: key: key.generator == null) secret.keys)
-        )
-      )
-    ) config.lab.secrets.managed
+  envSecretsWithNoFile = lib.optionals (config.lab.secrets.envFile == null) (
+    lib.attrNames (
+      lib.filterAttrs (_: secret: backendOf secret.store == "env") config.lab.secrets.managed
+    )
   );
 
   interactiveSteps = map (s: s.name) (
@@ -49,8 +43,11 @@ let
     ++ lib.optional (provisioningClusters != [ ]) (
       "${quote provisioningClusters} provisions further clusters, which happens off this machine"
     )
-    ++ lib.optional (handWrittenKeys != [ ]) (
-      "these hold material nothing can generate: ${quote handWrittenKeys}"
+    ++ lib.optional (storedOutsideEnv != [ ]) (
+      "these live in a store nothing here can open: ${quote storedOutsideEnv}, and a store only opens with no credentials on the machine when its backend is \"env\""
+    )
+    ++ lib.optional (envSecretsWithNoFile != [ ]) (
+      "${quote envSecretsWithNoFile} take their values from the environment, and the lab names no file that sets them, so point lab.secrets.envFile at one such as ./ci.env beside the lab"
     )
     ++ lib.optional (interactiveSteps != [ ]) (
       "step ${quote interactiveSteps} cannot finish without a human"
@@ -70,6 +67,10 @@ in
           type = types.listOf types.str;
           description = "What does stand in the way, one sentence each. Empty exactly when `eligible`.";
         };
+        envFile = mkOption {
+          type = types.nullOr types.str;
+          description = "File the runner loads before the lab starts, from `lab.secrets.envFile`. Null when the lab needs nothing from the environment.";
+        };
       };
     };
     description = ''
@@ -86,5 +87,6 @@ in
   config.lab.out.selfContained = {
     eligible = reasons == [ ];
     inherit reasons;
+    envFile = if config.lab.secrets.envFile == null then null else toString config.lab.secrets.envFile;
   };
 }

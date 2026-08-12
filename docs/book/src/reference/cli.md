@@ -77,7 +77,7 @@ against a baseline and exits non-zero on mismatch.
 ## `lab ops` passes everything through
 
 ```bash
-cata --flake .#<lab> lab ops -- trust init-ca
+cata --flake .#<lab> lab ops -- trust setup
 cata --flake .#<lab> lab ops idm init-user lab-admin
 ```
 

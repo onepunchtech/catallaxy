@@ -27,8 +27,8 @@ pub fn run(sctx: &StepContext<'_>) -> Result<()> {
             "No lab CA at {}.\n    \
              Expected either a `cert-generate` step (labs with a proxy that \
              terminates TLS) or a `kind = \"ca\"` managed secret whose \
-             `hostPaths` project it there. If this lab keeps its CA in SOPS, \
-             run `cata lab ops -- trust init-ca`.",
+             `hostPaths` project it there. If this lab declares one, run \
+             `cata secrets generate` to mint it.",
             trust::lab_ca_path(sctx.lab_name).display(),
         ),
         Outcome::NoSystemRoots => {

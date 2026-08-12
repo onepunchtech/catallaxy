@@ -10,7 +10,8 @@
   lab.registry.enable = true;
   lab.proxy.enable = true;
 
-  lab.secrets.stores.app.backend = "sops";
+  lab.secrets.stores.app.backend = "env";
+  lab.secrets.envFile = ./ci.env;
   lab.secrets.managed.session-key = {
     store = "app";
     keys.secret = {

@@ -66,7 +66,7 @@ pub async fn execute(
         steps.len(),
     );
 
-    let secrets_cache = decrypt_stores_upfront(ctx, lab_name, &lab)?;
+    let secrets_cache = load_stores_upfront(ctx, lab_name, &lab)?;
     let lab_package = if direction == Direction::Deploy {
         println!();
         println!("{} Building lab manifests...", style(">>>").cyan());
@@ -633,56 +633,17 @@ fn load_steps(lab: &Value, direction: Direction) -> Result<Vec<PlannedStep>> {
         .collect()
 }
 
-fn decrypt_stores_upfront(
+fn load_stores_upfront(
     ctx: &CataContext,
     lab_name: &str,
     lab: &Value,
 ) -> Result<Option<crate::commands::apply::SecretsCache>> {
-    let Some(stores) = lab.pointer("/secrets/stores").and_then(|v| v.as_object()) else {
-        return Ok(None);
-    };
-    let store_names: Vec<&str> = stores
-        .iter()
-        .filter(|(_, v)| v.pointer("/backend").and_then(|b| b.as_str()) == Some("sops"))
-        .map(|(k, _)| k.as_str())
-        .collect();
-    if store_names.is_empty() {
-        return Ok(None);
-    }
-
-    println!();
-    println!(
-        "{} Decrypting {} secret store(s) now so you're not interrupted later...",
-        style(">>>").cyan(),
-        store_names.len(),
-    );
-    let mut cache = std::collections::HashMap::new();
-    for store_name in &store_names {
-        let enc_path = crate::commands::secrets::store_file_path(ctx, lab_name, store_name);
-        if !enc_path.exists() {
-            bail!(
-                "Secret store '{}' not found at {}. Run `cata secrets generate` first.",
-                store_name,
-                enc_path.display()
-            );
-        }
-        let data = crate::commands::secrets::decrypt_sops_store(&enc_path)?;
-        crate::commands::secrets::validate_store_against_managed_with_config(
-            ctx,
-            Some(lab_name),
-            store_name,
-            &data,
-            Some(lab),
-        )
-        .with_context(|| format!("validating store '{}'", store_name))?;
-        cache.insert(store_name.to_string(), data);
-        println!("{} Decrypted store '{}'", style(">>>").green(), store_name);
-    }
-    let cache = std::sync::Arc::new(cache);
-
-    crate::commands::lab::state::project_host_secrets(lab, &cache, lab_name)?;
-
-    Ok(Some(cache))
+    crate::commands::secrets::load_secrets_cache(
+        ctx,
+        lab_name,
+        lab,
+        "Loading secret stores now so you're not interrupted later...",
+    )
 }
 
 #[cfg(test)]

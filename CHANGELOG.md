@@ -7,7 +7,88 @@ The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **A secret store can take its values from the environment.**
+  `lab.secrets.stores.<n>.backend = "env"` reads one variable per key, named
+  `CATA_SECRET_<STORE>__<SECRET>__<KEY>`, uppercased with every character
+  that is not a letter or a digit replaced by an underscore. The name is
+  derived, so there is nothing to declare and nothing to keep in sync; two
+  underscores between the parts keep store `a_b` from colliding with secret
+  `b_c`. `lab.secrets.envFile` names a file that sets them, which
+  `nix run .#e2e` loads before it stands the lab up. Catallaxy never reads
+  that file: the environment is the interface, and the file is one way to
+  fill it, named where a runner can find it.
+
+  This is what CI needed. `.sops.yaml` and `secrets/` are both gitignored,
+  so a fresh checkout can open no sops store, and every e2e run of
+  `gitops.local` died at `cp: cannot stat '.sops.yaml'`. `gitops.local` now
+  keeps its `app` store in the environment and commits the dummy values at
+  `examples/labs/gitops/envs/ci.env`. They are throwaway by construction:
+  every key is generated and the lab is destroyed at the end of the run.
+
+  `cata secrets generate --format env` prints the `VAR='value'` lines an env
+  store reads and writes nothing, which is how that file is regenerated when
+  a lab's keys change. `secrets list` prints the derived names and whether
+  they are set, rather than a `.enc.yaml` path that will never exist.
+
+- **The CLI mints the lab CA.** `cata secrets generate` mints a
+  `kind = "ca"` secret's certificate and key together with rcgen, the same
+  way `cata pki init` already did, and
+  `cata secrets init-intermediate <name>` signs a second CA with the root
+  already in the store. Both work against either backend. `kind = "ca"` now
+  always carries `ca.crt` and `ca.key`, which the option docs claimed but
+  nothing implemented, so a lab no longer has to name them.
+
+  This replaces `cata lab ops -- trust {init-ca,init-intermediate}`, two
+  shell scripts over openssl, sops and yq. They copied the plaintext YAML,
+  CA private key and all, into `secrets/<lab>/.init-ca.staging.enc.yaml` at
+  umask permissions before encrypting it, purely so that sops's `path_regex`
+  would match. `secrets generate` had already solved that with
+  `--filename-override` and a 0600 temporary file. They also hardcoded
+  `secrets/$lab/$store.enc.yaml` relative to the working directory, ignored
+  the store's backend, and closed by telling you to `git add` a path this
+  repo gitignores.
+
+### Removed
+
+- **`cata lab ops -- trust init-ca` and `trust init-intermediate` are
+  gone**, replaced by the two `cata secrets` commands above. `trust setup`,
+  `browser`, `teardown` and `export` are unchanged. A CA minted by the old
+  script keeps working; nothing rereads it. The new one is P-256 rather than
+  RSA-4096, because that is what rcgen generates and what the rest of the
+  CLI's PKI already uses; `secrets generate --force` rotates if you would
+  rather have the new one.
+
+- **`nix run .#e2e` no longer mints an age key or rewrites `.sops.yaml`.**
+  It used to merge a throwaway rule into the repo's own file and restore it
+  on exit, which never worked in CI (there is no file to merge into) and
+  edited a developer's real `.sops.yaml` when run by hand. The runner now
+  loads the lab's `envFile` and nothing else.
+
 ### Changed
+
+- **A lab whose managed secrets live outside an `env` store is no longer
+  e2e-eligible**, and `nix eval .#e2eLabs` says so in a sentence naming the
+  secret, its store and the backend. A machine with no credentials cannot
+  open a sops store, so claiming otherwise put the failure in the middle of
+  a CI run instead of in the eligibility output. A lab with env-backed
+  secrets and no `lab.secrets.envFile` is ineligible for the same reason:
+  the values would have to arrive from somewhere the lab does not describe.
+
+  The rule those two replace, "these hold material nothing can generate", is
+  gone. A CA is generated material now, and every other case it caught was a
+  secret in a sops store, which the first rule already names. `mesh.local`
+  is down from three reasons to two, and the one that remains is its
+  interactive netbird join.
+
+- **A projection whose store cannot be read is now an error.** It used to
+  print a red line and carry on, so a deploy could report success with the
+  Secret absent from the cluster.
+
+- **`lab.secrets.managed.<n>.store` must name a declared store.** There was
+  no assertion, so a typo silently fell back to sops behaviour. A downstream
+  lab carrying one now fails eval, naming the stores that do exist.
 
 - **`flake.nix` is 172 lines instead of 1097.** It had grown to hold every
   check inline, most of them the same eight-line `runCommand` wrapper around

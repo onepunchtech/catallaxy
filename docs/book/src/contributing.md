@@ -100,11 +100,11 @@ Locally, the same thing, without GitHub:
 nix run .#e2e -- minimal.local
 ```
 
-That is the script CI runs, so the two cannot drift. It generates any secret
-store the plan needs, brings the lab up, verifies it, brings it up again to
-prove that changes nothing, tears it down, and asserts nothing survived. Run
-it with no argument to see which labs it can stand up, and the reason for
-each one it cannot.
+That is the script CI runs, so the two cannot drift. It loads the lab's
+`lab.secrets.envFile` if it declares one, brings the lab up, verifies it,
+brings it up again to prove that changes nothing, tears it down, and asserts
+nothing survived. Run it with no argument to see which labs it can stand up,
+and the reason for each one it cannot.
 
 `minimal.local` takes about 25 seconds and touches nothing but docker.
 `gitops.local` takes about two minutes and wants `sudo` once, because
@@ -114,22 +114,29 @@ Only one lab can be up at a time: the host services take fixed container
 names and ports, so the script refuses to start when it finds another lab
 running rather than fighting it for port 80.
 
-Which labs CI can run is derived, not listed:
+Which labs CI runs is two hand-written lists in the matrix at the top of
+`e2e.yml`: a pull request runs the pair that stands up in minutes, and push,
+nightly, `workflow_dispatch` and a pull request labelled `e2e-full` run all
+four. Add a lab to a list to have it tested.
+
+Whether a lab _can_ run on a runner at all is still derived:
 
 ```bash
 nix eval .#legacyPackages.x86_64-linux.e2eLabs --json | jq
 ```
 
 A lab is eligible when every cluster is k3d, nothing provisions further
-clusters, no secret store holds material nothing can generate, and no step
-needs a human. `lib/tests/self-contained.nix` pins the answer for every
+clusters, every managed secret lives in a `backend = "env"` store whose
+values a committed `lab.secrets.envFile` supplies, and no step needs a
+human. A sops store makes a lab ineligible: the runner holds no key, and
+saying otherwise would move the failure from the eligibility output into the
+middle of a CI run. `lib/tests/self-contained.nix` pins the answer for every
 example, so the predicate cannot collapse to nothing without a test failing.
 
-Which of the eligible ones run on a pull request is `PULL_REQUEST_LABS` at
-the top of `e2e.yml`, next to the triggers. Everything eligible runs
-nightly, on `workflow_dispatch`, and on a pull request labelled `e2e-full`.
-The discover job writes the list it chose, and the ones it skipped with the
-reason, into the run summary.
+The two sides meet in the runner rather than in the workflow: `cata-e2e`
+refuses a lab that is not eligible and prints the reasons, so a name in the
+matrix that does not belong there fails loudly on its own job instead of
+being silently dropped from a computed list.
 
 Adding a lab that costs 39 image pulls to test one code path is the wrong
 move; `examples/labs/gitops` exists because reaching the argocd handoff

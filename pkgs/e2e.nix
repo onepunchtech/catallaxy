@@ -9,11 +9,9 @@ pkgs.writeShellApplication {
 
   runtimeInputs = [
     cataWrapped
-    pkgs.age
     pkgs.jq
     pkgs.docker-client
     pkgs.gnugrep
-    pkgs.gnused
   ];
 
   text = ''
@@ -22,25 +20,23 @@ pkgs.writeShellApplication {
     lab="''${1:-}"
     flake="''${CATA_E2E_FLAKE:-.}"
 
+    labs=$(nix eval --json "$flake#legacyPackages.${pkgs.stdenv.hostPlatform.system}.e2eLabs")
+
     if [ -z "$lab" ]; then
       echo "usage: cata-e2e <lab>" >&2
       echo "" >&2
       echo "labs this can stand up:" >&2
-      nix eval --json "$flake#legacyPackages.${pkgs.stdenv.hostPlatform.system}.e2eLabs" \
-        | jq -r 'to_entries[] | select(.value.eligible) | "  " + .key' >&2
+      jq -r 'to_entries[] | select(.value.eligible) | "  " + .key' <<< "$labs" >&2
       echo "" >&2
       echo "and the ones it cannot, with the reason:" >&2
-      nix eval --json "$flake#legacyPackages.${pkgs.stdenv.hostPlatform.system}.e2eLabs" \
-        | jq -r 'to_entries[] | select(.value.eligible | not) | "  \(.key): \(.value.reasons | join("; "))"' >&2
+      jq -r 'to_entries[] | select(.value.eligible | not) | "  \(.key): \(.value.reasons | join("; "))"' <<< "$labs" >&2
       exit 64
     fi
 
-    eligible=$(nix eval --json "$flake#legacyPackages.${pkgs.stdenv.hostPlatform.system}.e2eLabs" \
-      | jq -r --arg lab "$lab" '.[$lab].eligible // false')
+    eligible=$(jq -r --arg lab "$lab" '.[$lab].eligible // false' <<< "$labs")
     if [ "$eligible" != "true" ]; then
       echo "cata-e2e: '$lab' cannot be stood up here:" >&2
-      nix eval --json "$flake#legacyPackages.${pkgs.stdenv.hostPlatform.system}.e2eLabs" \
-        | jq -r --arg lab "$lab" '.[$lab].reasons[]? | "  " + .' >&2
+      jq -r --arg lab "$lab" '.[$lab].reasons[]? | "  " + .' <<< "$labs" >&2
       exit 1
     fi
 
@@ -54,37 +50,22 @@ pkgs.writeShellApplication {
     fi
 
     workdir=$(mktemp -d)
-    restore_sops=""
-    cleanup() {
-      if [ -n "$restore_sops" ] && [ -f "$restore_sops" ]; then
-        cp "$restore_sops" .sops.yaml
-      fi
-      rm -rf "$workdir"
-    }
-    trap cleanup EXIT
+    trap 'rm -rf "$workdir"' EXIT
 
     step() { echo "" >&2; echo "=== $* ===" >&2; }
 
-    # A lab whose plan has ensure-secrets needs its store to exist first.
-    # Every key in it is generated, which is what makes the lab eligible at
-    # all, so the key is made here and thrown away on exit. The rule is
-    # merged into .sops.yaml rather than prepended as a second document,
-    # because two creation_rules keys is not valid YAML.
-    if cata --flake "$flake#$lab" lab plan --stable | grep -q '^\[[0-9]*\] ensure-secrets'; then
-      step "generating secret stores"
-      age-keygen -o "$workdir/age.key" 2>/dev/null
-      recipient=$(age-keygen -y "$workdir/age.key")
-      restore_sops="$workdir/sops.yaml.orig"
-      cp .sops.yaml "$restore_sops"
-      {
-        echo "creation_rules:"
-        echo "  - path_regex: secrets/.*\.enc\.yaml\$"
-        echo "    age: $recipient"
-        sed '0,/^creation_rules:/d' .sops.yaml
-      } > .sops.yaml.e2e
-      mv .sops.yaml.e2e .sops.yaml
-      export SOPS_AGE_KEY_FILE="$workdir/age.key"
-      cata --flake "$flake#$lab" secrets generate
+    env_file=$(jq -r --arg lab "$lab" '.[$lab].envFile // ""' <<< "$labs")
+    if [ -n "$env_file" ]; then
+      if [ ! -f "$env_file" ]; then
+        echo "cata-e2e: $lab sets lab.secrets.envFile to $env_file, and there is no file there." >&2
+        echo "  If you just wrote it, git add it: nix only sees tracked files." >&2
+        exit 1
+      fi
+      step "loading secrets from $env_file"
+      set -a
+      # shellcheck disable=SC1090
+      . "$env_file"
+      set +a
     fi
 
     started=$SECONDS

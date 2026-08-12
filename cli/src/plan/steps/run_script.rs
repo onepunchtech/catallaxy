@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::domain::plan::ScriptEnv;
+use crate::domain::secrets::{SecretsSpec, describe_missing_value};
 use crate::plan::StepContext;
 
 pub fn run(
@@ -84,20 +85,18 @@ fn resolve_env(
     let Some(cache) = sctx.secrets_cache.as_ref() else {
         bail!(
             "Lifecycle hook '{hook_name}' declares {} secret-sourced \
-             environment variable(s), but no secret stores were decrypted \
-             for this lab. Declare the store under `lab.secrets.stores` so \
-             the executor decrypts it before the plan runs.",
+             environment variable(s), but no secret store was loaded for this \
+             lab. Declare the store under `lab.secrets.stores` so the executor \
+             loads it before the plan runs.",
             env.len(),
         );
     };
 
+    let spec = SecretsSpec::from_lab_config(sctx.lab)?;
+
     env.iter()
         .map(|e| {
-            let store = sctx
-                .lab
-                .pointer(&format!("/secrets/managed/{}/store", e.secret))
-                .and_then(|v| v.as_str())
-                .unwrap_or(&e.secret);
+            let store = spec.store_of(&e.secret).unwrap_or(&e.secret);
 
             let value = cache
                 .get(store)
@@ -105,17 +104,9 @@ fn resolve_env(
                 .and_then(|keys| keys.get(&e.key))
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Lifecycle hook '{hook_name}' needs ${}, sourced from \
-                         key '{}' of managed secret '{}' (store '{}'), but that \
-                         value is not in the decrypted store cache. Check that \
-                         `lab.secrets.managed.{}` declares key '{}', and that \
-                         the store's SOPS file carries it.",
+                        "Lifecycle hook '{hook_name}' needs ${}: {}",
                         e.name,
-                        e.key,
-                        e.secret,
-                        store,
-                        e.secret,
-                        e.key,
+                        describe_missing_value(&spec, sctx.lab_name, store, &e.secret, &e.key),
                     )
                 })?;
             Ok((e.name.clone(), value.clone()))

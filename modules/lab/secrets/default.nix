@@ -43,13 +43,22 @@ let
       backend = mkOption {
         type = types.enum [
           "sops"
+          "env"
           "vault"
           "external"
         ];
         default = "sops";
         description = ''
           Storage backend:
-          - sops: encrypted YAML files in git
+          - sops: encrypted YAML files in git, at
+            `secrets/<lab-name>/<store-name>.enc.yaml`
+          - env: one environment variable per key, named
+            `CATA_SECRET_<STORE>__<SECRET>__<KEY>`, uppercased with every
+            character that is not a letter or a digit replaced by an
+            underscore. Store `app`, secret `session-key`, key `secret` is
+            `CATA_SECRET_APP__SESSION_KEY__SECRET`. The name is derived, so
+            there is nothing to declare and nothing to keep in sync. See
+            `lab.secrets.envFile` for where the values come from.
           - vault: HashiCorp Vault (future)
           - external: managed outside catallaxy
         '';
@@ -57,67 +66,70 @@ let
     };
   };
 
-  managedSecretType = types.submodule {
-    options = {
-      store = mkOption {
-        type = types.str;
-        description = "Name of the secret store this secret belongs to";
+  managedSecretType = types.submodule (
+    { config, ... }:
+    {
+      options = {
+        store = mkOption {
+          type = types.str;
+          description = "Name of the secret store this secret belongs to";
+        };
+
+        kind = mkOption {
+          type = types.enum [
+            "value"
+            "ca"
+          ];
+          default = "value";
+          description = ''
+            What kind of secret this is.
+
+            - `value` (default): arbitrary key/value pairs. Generators
+              produce independent random strings per key.
+
+            - `ca`: a self-signed CA cert+key pair. `keys` always carries
+              `ca.crt` and `ca.key`, and `cata secrets generate` mints the
+              pair together, because the cert is signed by the same key and
+              generating them separately does not compose. Written to disk
+              at the paths in `hostPaths`.
+          '';
+        };
+
+        hostPaths = mkOption {
+          type = types.attrsOf types.str;
+          default = { };
+          example = lib.literalExpression ''
+            {
+              "ca.crt" = "$LAB_STATE_DIR/proxy/ca.crt";
+              "ca.key" = "$LAB_STATE_DIR/proxy/ca.key";
+            }
+          '';
+          description = ''
+            Per-key absolute host paths. The CLI writes the values to these
+            paths during `cata lab up`'s preflight, after the store loads
+            and before any service starts. `*.crt` files are written 0644
+            (public PEM), everything else 0600. Re-runs are idempotent
+            (skip if file content already matches).
+          '';
+        };
+
+        keys = mkOption {
+          type = types.attrsOf secretKeyType;
+          default = { };
+          description = ''
+            Source key definitions, one entry per value the store holds.
+            A `kind = "ca"` secret always carries `ca.crt` and `ca.key`,
+            so labs do not repeat the conventional names.
+          '';
+        };
       };
 
-      kind = mkOption {
-        type = types.enum [
-          "value"
-          "ca"
-        ];
-        default = "value";
-        description = ''
-          What kind of secret this is.
-
-          - `value` (default): arbitrary key/value pairs. Generators
-            produce independent random strings per key. Today's
-            behavior; existing labs don't need to change.
-
-          - `ca`: a self-signed CA cert+key pair. `keys` is
-            implicitly `{ "ca.crt" = {}; "ca.key" = {}; }` and the
-            pair is minted together by
-            `cata lab ops -- trust init-ca` (the cert is signed by
-            the same key, so generating them separately doesn't
-            compose). Encrypted into the SOPS file as YAML literal
-            blocks; written to disk at the paths in `hostPaths`.
-        '';
+      config.keys = lib.mkIf (config.kind == "ca") {
+        "ca.crt" = { };
+        "ca.key" = { };
       };
-
-      hostPaths = mkOption {
-        type = types.attrsOf types.str;
-        default = { };
-        example = lib.literalExpression ''
-          {
-            "ca.crt" = "$LAB_STATE_DIR/proxy/ca.crt";
-            "ca.key" = "$LAB_STATE_DIR/proxy/ca.key";
-          }
-        '';
-        description = ''
-          Per-key absolute host paths. The CLI writes decrypted
-          values to these paths during `cata lab up`'s preflight,
-          after SOPS decryption succeeds and before service start.
-          `*.crt` files are written 0644 (public PEM), everything
-          else 0600. Re-runs are idempotent (skip if file content
-          already matches the decrypted value).
-        '';
-      };
-
-      keys = mkOption {
-        type = types.attrsOf secretKeyType;
-        default = { };
-        description = ''
-          Source key definitions. These appear in the SOPS file.
-          When `kind == "ca"`, this is auto-populated with
-          `ca.crt` and `ca.key` if empty; labs shouldn't have to
-          repeat the conventional names.
-        '';
-      };
-    };
-  };
+    }
+  );
 in
 {
 
@@ -126,8 +138,28 @@ in
       type = types.attrsOf storeType;
       default = { };
       description = ''
-        Secret stores. Each store maps to one SOPS file (or one Vault path).
-        SOPS files are at: secrets/<lab-name>/<store-name>.enc.yaml
+        Secret stores. Where a store's keys live is its `backend`: a SOPS
+        file at `secrets/<lab-name>/<store-name>.enc.yaml`, environment
+        variables, or somewhere outside catallaxy.
+      '';
+    };
+
+    envFile = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      example = lib.literalExpression "./ci.env";
+      description = ''
+        File that sets the variables an `env` backed store reads. A runner
+        loads it with `set -a; . "$file"; set +a` before the lab starts, so
+        every assignment in it becomes an environment variable.
+
+        Catallaxy never reads this file. The environment is the interface;
+        this only names one way to fill it, and names it where a runner can
+        find it without being told.
+
+        A lab whose managed secrets live in an `env` store and which sets no
+        `envFile` is not self-contained, because the values then have to
+        arrive from somewhere the lab does not describe.
       '';
     };
 
@@ -175,6 +207,20 @@ in
       '';
     };
   };
+
+  config.lab.assertions =
+    let
+      declaredStores = lib.concatStringsSep ", " (lib.attrNames config.lab.secrets.stores);
+    in
+    lib.mapAttrsToList (name: ms: {
+      assertion = config.lab.secrets.stores ? ${ms.store};
+      message = ''
+        lab.secrets.managed.${name}.store is "${ms.store}", which is not one
+        of the declared stores (${declaredStores}). The store decides where
+        the keys live, so a name with no store behind it has no backend
+        to read.
+      '';
+    }) config.lab.secrets.managed;
 
   config.lab.secrets.out.hostProjections = lib.concatLists (
     lib.mapAttrsToList (

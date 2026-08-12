@@ -75,6 +75,17 @@ fn secrets_help_mentions_edit_generate() {
 }
 
 #[test]
+fn secrets_generate_offers_both_store_formats() {
+    cata()
+        .args(["secrets", "generate", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--format"))
+        .stdout(contains("sops"))
+        .stdout(contains("env"));
+}
+
+#[test]
 fn images_help_lists_subcommands() {
     cata()
         .args(["images", "--help"])

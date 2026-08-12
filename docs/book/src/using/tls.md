@@ -31,8 +31,8 @@ signature.
 
 ## Getting the root
 
-The CA is a managed secret with `kind = "ca"`, which means it lives
-encrypted in SOPS and gets written to disk during preflight:
+The CA is a managed secret with `kind = "ca"`, which means it lives in a
+store and gets written to disk during preflight:
 
 ```nix
 lab.secrets.managed.lab-ca = {
@@ -46,17 +46,25 @@ lab.secrets.managed.lab-ca = {
 ```
 
 ```bash
-cata --flake .#<lab> lab ops -- trust init-ca
+cata --flake .#<lab> secrets generate
 ```
 
-That mints the root, encrypts it into the store, and from then on every
-machine that can decrypt the store gets the same CA. The CLI seeds it into
-every cluster as `lab-ca-ca-secret` when the cluster is created, so each
-`lab-ca` ClusterIssuer issues from that one root.
+`kind = "ca"` always carries `ca.crt` and `ca.key`, and `secrets generate`
+mints the pair together, because a certificate signed by a key generated
+separately from it is not a pair. From then on every machine that can read
+the store gets the same CA. The CLI seeds it into every cluster as
+`lab-ca-ca-secret` when the cluster is created, so each `lab-ca`
+ClusterIssuer issues from that one root.
 
-If you skip `init-ca`, `cert-generate` mints a throwaway local CA so the lab
-still comes up. It says so when it does. That is fine for a solo demo and
-wrong for anything shared, because nobody else can reproduce it.
+An intermediate is one more step, signed by the root already in the store:
+
+```bash
+cata --flake .#<lab> secrets init-intermediate lab-ca-intermediate
+```
+
+If you generate neither, `cert-generate` mints a throwaway local CA so the
+lab still comes up. It says so when it does. That is fine for a solo demo
+and wrong for anything shared, because nobody else can reproduce it.
 
 For the bundle that consumers mount inside the cluster, enable
 `floes.trust-manager`. cert-manager only emits the `lab-ca-bundle` ConfigMap

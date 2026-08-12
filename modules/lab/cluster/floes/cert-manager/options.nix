@@ -35,9 +35,9 @@ in
           description = ''
             When true, emit a second ClusterIssuer backed by an
             intermediate CA Secret (populated by an operator via
-            `cata lab ops trust init-intermediate`: the root signs
-            the intermediate CSR offline; only the intermediate key
-            is ever projected into a running cluster). The
+            `cata secrets init-intermediate`: the root signs the
+            intermediate offline; only the intermediate key is ever
+            projected into a running cluster). The
             intermediate becomes the default issuer (`defaultIssuerRef`
             resolves to it), so Certificate CRs across the lab
             automatically pick it up. The root ClusterIssuer stays

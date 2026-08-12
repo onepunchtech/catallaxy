@@ -20,9 +20,9 @@ pub fn ensure_ingress_cert(lab_name: &str, zone: &str) -> Result<PathBuf> {
 
     if !(ca_cert.exists() && ca_key.exists()) {
         println!(
-            "{} No SOPS-backed CA on disk. Minting a local one. Run \
-             `cata lab ops -- trust init-ca` and `cata lab up` to share \
-             across the team.",
+            "{} No stored CA on disk. Minting a local one. Declare a \
+             `kind = \"ca\"` managed secret and run `cata secrets generate` \
+             to share one across the team.",
             style(">>>").yellow(),
         );
         mint_local_ca(&ca_cert, &ca_key)?;

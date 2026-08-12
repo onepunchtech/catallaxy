@@ -40,9 +40,15 @@ from it.
 
 ## Secrets
 
-Two labs here hold a SOPS store, and neither will start without it:
-`mesh.local` (its root CA) and `gitops.local` (a session key). No key is
-shipped in this repo; you encrypt to your own.
+One lab here holds a SOPS store and will not start without it: `mesh.local`,
+whose root CA lives in it. No key is shipped in this repo; you encrypt to
+your own.
+
+`gitops.local` also has a secret, a session key, but its store is
+`backend = "env"`: the values come from environment variables, and the lab
+points `lab.secrets.envFile` at `gitops/envs/ci.env`, which is committed.
+The steps below do not apply to it. Nothing to encrypt, nothing to fill in,
+and `nix run .#e2e -- gitops.local` loads the file itself.
 
 **1. Have an age key.** If you don't already:
 
@@ -62,8 +68,6 @@ key per lab. It is gitignored: it is yours, not the project's.
 creation_rules:
   - path_regex: secrets/mesh\.local/.*\.enc\.yaml$
     age: age1...your-public-key...
-  - path_regex: secrets/gitops\.local/.*\.enc\.yaml$
-    age: age1...your-public-key...
 ```
 
 sops resolves rules by walking **up** from the file being encrypted and
@@ -73,22 +77,13 @@ is a search, not an anchored match. If no rule matches you get "no matching
 creation rules found", which is the failure to expect when a lab is missing
 from the list.
 
-**3. Fill the store.** What that means depends on the lab, because
-`lab.secrets.managed.<n>.kind` differs:
+**3. Fill the store.** `cata --flake .#mesh.local secrets generate`. Its
+`trust` store holds a `kind = "ca"` secret, and the CLI mints the
+certificate and its key together, which is the only way that composes.
 
-| Lab            | Store   | Kind    | Fill it with                    |
-| -------------- | ------- | ------- | ------------------------------- |
-| `mesh.local`   | `trust` | `ca`    | `cata lab ops -- trust init-ca` |
-| `gitops.local` | `app`   | `value` | `cata secrets generate`         |
-
-`kind = "ca"` needs a coordinated cert+key pair, so `secrets generate` will
-not do: it writes `PLACEHOLDER_USE_SECRETS_EDIT` into `ca.crt` and `ca.key`,
-which fails later and confusingly. Use `trust init-ca`, which mints both and
-encrypts them in one step.
-
-`gitops.local` needs no editing after generating, because every key in its
-store declares a `generator`. A `value` key without one gets the same
-placeholder, and `cata secrets edit <store>` is where you replace it.
+For a `value` key, the same command mints the ones that declare a
+`generator`, and `cata secrets edit <store>` is where you replace the
+placeholder in the ones that do not.
 
 ## Mesh client ports
 

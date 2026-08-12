@@ -25,47 +25,12 @@ pub async fn run(
 
     println!("{} Applying lab '{name}'", style("catallaxy").cyan().bold());
 
-    let mut secrets_cache: Option<crate::commands::apply::SecretsCache> = None;
-    if let Some(stores) = lab.pointer("/secrets/stores").and_then(|v| v.as_object()) {
-        let store_names: Vec<&str> = stores
-            .iter()
-            .filter(|(_, v)| v.pointer("/backend").and_then(|b| b.as_str()) == Some("sops"))
-            .map(|(k, _)| k.as_str())
-            .collect();
-        if !store_names.is_empty() {
-            println!(
-                "{} Decrypting {} secret store(s) (cached for the rest of the run)...",
-                style(">>>").cyan(),
-                store_names.len(),
-            );
-            let mut cache = std::collections::HashMap::new();
-            for store_name in &store_names {
-                let enc_path = crate::commands::secrets::store_file_path(ctx, name, store_name);
-                if !enc_path.exists() {
-                    bail!(
-                        "Secret store '{}' not found at {}. Run `cata secrets generate` first.",
-                        store_name,
-                        enc_path.display()
-                    );
-                }
-                let data = crate::commands::secrets::decrypt_sops_store(&enc_path)?;
-                crate::commands::secrets::validate_store_against_managed_with_config(
-                    ctx,
-                    Some(name),
-                    store_name,
-                    &data,
-                    Some(&lab),
-                )?;
-                cache.insert(store_name.to_string(), data);
-                println!("{} Decrypted store '{}'", style(">>>").green(), store_name);
-            }
-            secrets_cache = Some(std::sync::Arc::new(cache));
-
-            if let Some(ref cache) = secrets_cache {
-                state::project_host_secrets(&lab, cache, name)?;
-            }
-        }
-    }
+    let secrets_cache = crate::commands::secrets::load_secrets_cache(
+        ctx,
+        name,
+        &lab,
+        "Loading secret stores (cached for the rest of the run)...",
+    )?;
 
     println!("{} Building lab manifests...", style(">>>").cyan());
     let lab_package = crate::io::nix::build_lab_package(ctx, name)?;

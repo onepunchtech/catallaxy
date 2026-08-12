@@ -46,15 +46,15 @@ You need an age key and a `.sops.yaml` rule for `secrets/mesh\.local/`; see
 [Secrets](../README.md#secrets) for both. With that in place:
 
 ```bash
-cata --flake .#mesh.local lab ops -- trust init-ca
+cata --flake .#mesh.local secrets generate
 cata --flake .#mesh.local lab plan
 cata --flake .#mesh.local lab up
 ```
 
-`init-ca` mints a 4096-bit CA and SOPS-encrypts it to
+`secrets generate` mints the CA (P-256, ten years) and SOPS-encrypts it to
 `secrets/mesh.local/trust.enc.yaml`. It is throwaway and local: the store is
 gitignored, so every operator runs this once against their own key rather
-than sharing one.
+than sharing one. Add `--force` to rotate.
 
 `lab up` writes the decrypted CA to
 `~/.local/share/catallaxy/labs/mesh.local/proxy/{ca.crt,ca.key}` (`.crt`

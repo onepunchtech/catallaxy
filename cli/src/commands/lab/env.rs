@@ -58,7 +58,7 @@ pub fn env(lab_name: &str, shell: Shell, unset: bool) -> Result<()> {
         Outcome::NoLabCa => bail!(
             "lab '{lab_name}' has no CA at {}.\n    \
              Run `cata lab up {lab_name}` first (it mints one), or \
-             `cata lab ops -- trust init-ca` for a CA shared through SOPS.\n    \
+             `cata secrets generate` for a CA the whole team shares.\n    \
              A lab that serves plain HTTP has no CA and needs none.",
             lab_ca.display(),
         ),
