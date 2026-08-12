@@ -114,10 +114,9 @@ Only one lab can be up at a time: the host services take fixed container
 names and ports, so the script refuses to start when it finds another lab
 running rather than fighting it for port 80.
 
-Which labs CI runs is two hand-written lists in the matrix at the top of
-`e2e.yml`: a pull request runs the pair that stands up in minutes, and push,
-nightly, `workflow_dispatch` and a pull request labelled `e2e-full` run all
-four. Add a lab to a list to have it tested.
+Which labs CI runs is a hand-written list in the matrix at the top of
+`e2e.yml`: `minimal.local` and `homelab.local`, on every trigger. Add a lab
+to the list to have it tested.
 
 Whether a lab _can_ run on a runner at all is still derived:
 

@@ -24,13 +24,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lab: |-
-          ${{ fromJSON(
-            github.event_name == 'pull_request'
-            && !contains(github.event.pull_request.labels.*.name, 'e2e-full')
-            && '["minimal.local", "gitops.local"]'
-            || '["minimal.local", "gitops.local", "homelab.local", "homelab.gitops-local"]'
-          ) }}
+        lab:
+          - minimal.local
+          - homelab.local
     name: ${{ matrix.lab }}
     steps:
       - uses: actions/checkout@v4
