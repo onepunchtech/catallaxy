@@ -178,11 +178,7 @@ pub fn current_system() -> String {
     let arch = std::env::consts::ARCH;
     let os = std::env::consts::OS;
 
-    let nix_arch = match arch {
-        "aarch64" => "aarch64",
-        "x86_64" => "x86_64",
-        _ => arch,
-    };
+    let nix_arch = arch;
     let nix_os = match os {
         "macos" => "darwin",
         "linux" => "linux",

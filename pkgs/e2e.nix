@@ -56,15 +56,16 @@ pkgs.writeShellApplication {
 
     env_file=$(jq -r --arg lab "$lab" '.[$lab].envFile // ""' <<< "$labs")
     if [ -n "$env_file" ]; then
-      if [ ! -f "$env_file" ]; then
-        echo "cata-e2e: $lab sets lab.secrets.envFile to $env_file, and there is no file there." >&2
-        echo "  If you just wrote it, git add it: nix only sees tracked files." >&2
+      env_path="$flake/$env_file"
+      if [ ! -f "$env_path" ]; then
+        echo "cata-e2e: $lab sets lab.secrets.envFile to $env_file, and $flake does not have that file." >&2
+        echo "  The path is relative to the flake root. If you just wrote the file, git add it." >&2
         exit 1
       fi
       step "loading secrets from $env_file"
       set -a
       # shellcheck disable=SC1090
-      . "$env_file"
+      . "$env_path"
       set +a
     fi
 

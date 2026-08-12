@@ -53,14 +53,14 @@ fn check_duplicate_create(plan: &[PlannedStep]) -> Vec<Diagnostic> {
     let mut seen: HashSet<&str> = HashSet::new();
     let mut diags = Vec::new();
     for step in plan {
-        if let StepParams::CreateCluster { name, .. } = &step.params {
-            if !seen.insert(name.as_str()) {
-                diags.push(diag(
-                    Severity::Error,
-                    name,
-                    format!("cluster '{}' has more than one create-cluster step", name),
-                ));
-            }
+        if let StepParams::CreateCluster { name, .. } = &step.params
+            && !seen.insert(name.as_str())
+        {
+            diags.push(diag(
+                Severity::Error,
+                name,
+                format!("cluster '{}' has more than one create-cluster step", name),
+            ));
         }
     }
     diags

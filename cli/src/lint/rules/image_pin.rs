@@ -137,10 +137,7 @@ fn check(resources: &[K8sResource], cluster: &str, policy: &super::ImagePolicy) 
             }
 
             if !policy.allowed_registries.is_empty()
-                && !policy
-                    .allowed_registries
-                    .iter()
-                    .any(|r| *r == parsed.registry)
+                && !policy.allowed_registries.contains(&parsed.registry)
             {
                 diags.push(Diagnostic {
                     severity: Severity::Warning,

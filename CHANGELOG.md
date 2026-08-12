@@ -9,16 +9,44 @@ The format is based on
 
 ### Added
 
+- **`nix flake check` now fails on a Rust warning, and on a lint
+  suppression.** `cli-clippy` runs
+  `cargo clippy --all-targets -- --deny warnings`, and
+  `cli-no-lint-suppressions` fails if any `#[allow(...)]` or
+  `#[expect(...)]` appears under `cli/`. The second exists because the first
+  cannot see what a suppression covers: an `#[allow]` hides the warning from
+  clippy exactly as it hid it from a human.
+
+  Nine suppressions came out to get there. Three file-level
+  `#![allow(unused_imports)]` were hiding 21 unused imports across
+  `commands/lab/{apply,down,orchestrate}.rs`; four `#[allow(dead_code)]`
+  were hiding three dead fields, and one of the four was hiding nothing at
+  all; two `#[allow(clippy::too_many_arguments)]` were hiding a 12-argument
+  and a 10-argument function. With them gone the crate had 123 findings, now
+  zero: parameter structs for the seven over-long argument lists, a
+  `SecretsByStore` alias for the three complex types, a real `FromStr` impl
+  for `TopologyFormat`, and roughly 40 functions split out of 21 that ran
+  past the 100-line limit the crate opts into.
+
 - **A secret store can take its values from the environment.**
   `lab.secrets.stores.<n>.backend = "env"` reads one variable per key, named
   `CATA_SECRET_<STORE>__<SECRET>__<KEY>`, uppercased with every character
   that is not a letter or a digit replaced by an underscore. The name is
   derived, so there is nothing to declare and nothing to keep in sync; two
   underscores between the parts keep store `a_b` from colliding with secret
-  `b_c`. `lab.secrets.envFile` names a file that sets them, which
-  `nix run .#e2e` loads before it stands the lab up. Catallaxy never reads
-  that file: the environment is the interface, and the file is one way to
-  fill it, named where a runner can find it.
+  `b_c`. `lab.secrets.envFile` names a file that sets them, as a path
+  relative to the flake root, which `nix run .#e2e` loads before it stands
+  the lab up. Catallaxy never reads that file: the environment is the
+  interface, and the file is one way to fill it, named where a runner can
+  find it.
+
+  A relative path rather than a Nix path, because a Nix path resolves to the
+  flake's source in the store, and Determinate Nix's lazy trees never write
+  that source to disk. The runner was handed
+  `/nix/store/<hash>-source/examples/labs/gitops/envs/ci.env` and found
+  nothing there, on a file that is committed and present in the checkout.
+  The repository is where the file actually is, and the relative form is
+  also what a human can act on: it is the argument to `git add`.
 
   This is what CI needed. `.sops.yaml` and `secrets/` are both gitignored,
   so a fresh checkout can open no sops store, and every e2e run of
@@ -49,6 +77,25 @@ The format is based on
   `secrets/$lab/$store.enc.yaml` relative to the working directory, ignored
   the store's backend, and closed by telling you to `git add` a path this
   repo gitignores.
+
+### Fixed
+
+- **`cata lab verify` probes a host where its route actually routes.** It
+  asked every public host for `/`. `prometheus-rw.<zone>` matches only
+  `PathPrefix: /api/v1/write`, so the probe asked for a path the gateway is
+  right to refuse, and `homelab.local` failed verify on every run.
+  `cluster.out.exposedHosts` now carries each route's path prefixes and the
+  check uses the first one. 405 joins 401 and 403 as an answer: a write-only
+  endpoint replies 405 to the GET this check makes, and only the workload
+  itself can.
+
+- **`publish-manifests` no longer needs the operator's git identity.** It
+  commits into the lab's own Forgejo, so it now identifies itself as
+  `catallaxy <catallaxy@invalid>` through `GIT_AUTHOR_*` and
+  `GIT_COMMITTER_*` rather than falling back to `git config`. On a fresh
+  runner there is none, and the step died with "Author identity unknown"
+  after the lab was already up. A machine-made commit should not depend on
+  who happens to be logged in.
 
 ### Removed
 

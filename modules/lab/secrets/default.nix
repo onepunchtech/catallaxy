@@ -145,13 +145,21 @@ in
     };
 
     envFile = mkOption {
-      type = types.nullOr types.path;
+      type = types.nullOr types.str;
       default = null;
-      example = lib.literalExpression "./ci.env";
+      example = "examples/labs/gitops/envs/ci.env";
       description = ''
-        File that sets the variables an `env` backed store reads. A runner
-        loads it with `set -a; . "$file"; set +a` before the lab starts, so
-        every assignment in it becomes an environment variable.
+        File that sets the variables an `env` backed store reads, as a path
+        relative to the flake root. A runner loads it with
+        `set -a; . "$flake/$file"; set +a` before the lab starts, so every
+        assignment in it becomes an environment variable.
+
+        A relative path rather than a Nix path on purpose. A Nix path
+        resolves to the flake's source in the store, which under lazy trees
+        is a name for something that was never written to disk, so the
+        runner is handed a path that does not exist. The repository is where
+        the file actually is, and a relative path is also what a human can
+        act on: it is the argument to `git add`.
 
         Catallaxy never reads this file. The environment is the interface;
         this only names one way to fill it, and names it where a runner can

@@ -50,20 +50,20 @@ fn check(
             });
         }
 
-        if let Some(ns) = &r.namespace {
-            if lab_ns_set.contains(ns.as_str()) {
-                diags.push(Diagnostic {
-                    severity: Severity::Error,
-                    check: "prefix",
-                    cluster: cluster.to_string(),
-                    file: r.source_file.clone(),
-                    resource: r.display_id(),
-                    message: format!(
-                        "namespace '{}' not prefixed (expected '{}{}')",
-                        ns, expected_prefix, ns
-                    ),
-                });
-            }
+        if let Some(ns) = &r.namespace
+            && lab_ns_set.contains(ns.as_str())
+        {
+            diags.push(Diagnostic {
+                severity: Severity::Error,
+                check: "prefix",
+                cluster: cluster.to_string(),
+                file: r.source_file.clone(),
+                resource: r.display_id(),
+                message: format!(
+                    "namespace '{}' not prefixed (expected '{}{}')",
+                    ns, expected_prefix, ns
+                ),
+            });
         }
     }
 

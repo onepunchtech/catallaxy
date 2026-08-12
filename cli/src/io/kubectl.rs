@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
@@ -157,25 +157,25 @@ pub fn wait_crossplane_healthy(context: &str) -> Result<()> {
             .stderr(Stdio::piped())
             .output();
 
-        if let Ok(ref o) = output {
-            if o.status.success() {
-                let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
-                if let Some(items) = json["items"].as_array() {
-                    let all_healthy = !items.is_empty()
-                        && items.iter().all(|p| {
-                            p["status"]["conditions"]
-                                .as_array()
-                                .map(|conds| {
-                                    conds.iter().any(|c| {
-                                        c["type"].as_str() == Some("Healthy")
-                                            && c["status"].as_str() == Some("True")
-                                    })
+        if let Ok(ref o) = output
+            && o.status.success()
+        {
+            let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+            if let Some(items) = json["items"].as_array() {
+                let all_healthy = !items.is_empty()
+                    && items.iter().all(|p| {
+                        p["status"]["conditions"]
+                            .as_array()
+                            .map(|conds| {
+                                conds.iter().any(|c| {
+                                    c["type"].as_str() == Some("Healthy")
+                                        && c["status"].as_str() == Some("True")
                                 })
-                                .unwrap_or(false)
-                        });
-                    if all_healthy {
-                        return Ok(());
-                    }
+                            })
+                            .unwrap_or(false)
+                    });
+                if all_healthy {
+                    return Ok(());
                 }
             }
         }
@@ -199,37 +199,37 @@ pub fn wait_managed_ready(context: &str, timeout_secs: u64) -> Result<()> {
             .stderr(Stdio::piped())
             .output();
 
-        if let Ok(ref o) = output {
-            if o.status.success() {
-                let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
-                if let Some(items) = json["items"].as_array() {
-                    if items.is_empty() {
-                    } else {
-                        let all_ready = items.iter().all(|r| {
-                            let conds = r["status"]["conditions"].as_array();
-                            let synced = conds
-                                .as_ref()
-                                .map(|cs| {
-                                    cs.iter().any(|c| {
-                                        c["type"].as_str() == Some("Synced")
-                                            && c["status"].as_str() == Some("True")
-                                    })
+        if let Ok(ref o) = output
+            && o.status.success()
+        {
+            let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+            if let Some(items) = json["items"].as_array() {
+                if items.is_empty() {
+                } else {
+                    let all_ready = items.iter().all(|r| {
+                        let conds = r["status"]["conditions"].as_array();
+                        let synced = conds
+                            .as_ref()
+                            .map(|cs| {
+                                cs.iter().any(|c| {
+                                    c["type"].as_str() == Some("Synced")
+                                        && c["status"].as_str() == Some("True")
                                 })
-                                .unwrap_or(false);
-                            let ready = conds
-                                .as_ref()
-                                .map(|cs| {
-                                    cs.iter().any(|c| {
-                                        c["type"].as_str() == Some("Ready")
-                                            && c["status"].as_str() == Some("True")
-                                    })
+                            })
+                            .unwrap_or(false);
+                        let ready = conds
+                            .as_ref()
+                            .map(|cs| {
+                                cs.iter().any(|c| {
+                                    c["type"].as_str() == Some("Ready")
+                                        && c["status"].as_str() == Some("True")
                                 })
-                                .unwrap_or(false);
-                            synced && ready
-                        });
-                        if all_ready {
-                            return Ok(());
-                        }
+                            })
+                            .unwrap_or(false);
+                        synced && ready
+                    });
+                    if all_ready {
+                        return Ok(());
                     }
                 }
             }
@@ -297,11 +297,11 @@ pub fn copy_external_names(bootstrap_ctx: &str, target_ctx: &str) -> Result<()> 
         .into_iter()
         .map(String::from)
         .collect::<Vec<_>>();
-        if let Some(ns) = namespace {
-            if !ns.is_empty() {
-                args.push("-n".into());
-                args.push(ns.into());
-            }
+        if let Some(ns) = namespace
+            && !ns.is_empty()
+        {
+            args.push("-n".into());
+            args.push(ns.into());
         }
 
         let status = Command::new("kubectl")
@@ -419,7 +419,7 @@ pub fn get_capi_kubeconfig(
     Ok(String::from_utf8_lossy(&decode_output.stdout).to_string())
 }
 
-pub fn merge_kubeconfig(kubeconfig_path: &PathBuf, context_name: &str) -> Result<()> {
+pub fn merge_kubeconfig(kubeconfig_path: &Path, context_name: &str) -> Result<()> {
     println!(
         "{} Merging kubeconfig for context '{context_name}'...",
         style(">>>").cyan()
@@ -629,10 +629,6 @@ pub struct Workload {
     pub desired: i64,
 }
 
-/// Every replicated workload in `namespaces`, with how many of its replicas
-/// are ready. A namespace that does not exist yields nothing rather than an
-/// error: the caller reports the absence, which is a better message than
-/// kubectl's.
 pub fn get_workload_readiness(context: &str, namespaces: &[String]) -> Result<Vec<Workload>> {
     let mut out = Vec::new();
     for namespace in namespaces {
@@ -686,7 +682,6 @@ pub fn get_workload_readiness(context: &str, namespaces: &[String]) -> Result<Ve
     Ok(out)
 }
 
-/// Whether `namespace` exists on `context`.
 pub fn namespace_exists(context: &str, namespace: &str) -> bool {
     let output = Command::new("kubectl")
         .args(["--context", context, "get", "namespace", namespace])

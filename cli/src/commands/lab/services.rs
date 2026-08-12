@@ -132,17 +132,7 @@ pub fn start_service(
         .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
         .unwrap_or_default();
 
-    if let Some(extra_mounts) = svc["extraMounts"].as_array() {
-        let state_dir = lab_state_dir(lab_name);
-        for mount in extra_mounts {
-            if let (Some(host), Some(container)) =
-                (mount["host"].as_str(), mount["container"].as_str())
-            {
-                let resolved = host.replace("{{STATE_DIR}}", &state_dir.display().to_string());
-                volume_mounts.push((resolved, container.to_string()));
-            }
-        }
-    }
+    add_extra_mounts(lab_name, svc, &mut volume_mounts);
 
     let mount_refs: Vec<(&str, &str)> = volume_mounts
         .iter()
@@ -151,38 +141,11 @@ pub fn start_service(
 
     let link = svc["link"].as_str();
     let network_mode = svc["networkMode"].as_str();
-    let cap_add: Vec<&str> = svc["capAdd"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-    let networks: Vec<&str> = svc["networks"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-
-    let mut network_ips = HashMap::new();
-    if let Some(net_cfg) = svc["networkConfig"].as_object() {
-        for (net_name, net_val) in net_cfg {
-            if let Some(ip) = net_val["ip"].as_str() {
-                network_ips.insert(net_name.clone(), ip.to_string());
-            }
-        }
-    }
-
-    let command: Vec<&str> = svc["command"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
-
-    let dns_ips: Vec<String> = svc["dnsContainers"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .filter_map(|name| io::docker::get_container_ip(name))
-                .collect()
-        })
-        .unwrap_or_default();
+    let cap_add = string_list(svc, "capAdd");
+    let networks = string_list(svc, "networks");
+    let command = string_list(svc, "command");
+    let network_ips = network_ips(svc);
+    let dns_ips = dns_container_ips(svc);
 
     println!("{} Starting {}...", style(">>>").cyan(), description);
 
@@ -194,17 +157,19 @@ pub fn start_service(
     {
         io::docker::run_container_extended(
             ctx,
-            container,
-            image,
-            &ports,
-            &mount_refs,
-            link,
-            &networks,
-            &dns_ips,
-            &command,
-            network_mode,
-            &cap_add,
-            &network_ips,
+            io::docker::RunContainer {
+                name: container,
+                image,
+                ports: &ports,
+                volume_mounts: &mount_refs,
+                link,
+                networks: &networks,
+                dns_ips: &dns_ips,
+                command: &command,
+                network_mode,
+                cap_add: &cap_add,
+                network_ips: &network_ips,
+            },
         )?;
     } else {
         io::docker::run_container(ctx, container, image, &ports, &mount_refs, &command)?;
@@ -215,6 +180,55 @@ pub fn start_service(
     println!("{} {} started", style(">>>").green(), description);
 
     Ok(())
+}
+
+fn add_extra_mounts(
+    lab_name: &str,
+    svc: &serde_json::Value,
+    volume_mounts: &mut Vec<(String, String)>,
+) {
+    let Some(extra_mounts) = svc["extraMounts"].as_array() else {
+        return;
+    };
+    let state_dir = lab_state_dir(lab_name);
+    for mount in extra_mounts {
+        if let (Some(host), Some(container)) = (mount["host"].as_str(), mount["container"].as_str())
+        {
+            let resolved = host.replace("{{STATE_DIR}}", &state_dir.display().to_string());
+            volume_mounts.push((resolved, container.to_string()));
+        }
+    }
+}
+
+fn string_list<'a>(svc: &'a serde_json::Value, key: &str) -> Vec<&'a str> {
+    svc[key]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default()
+}
+
+fn network_ips(svc: &serde_json::Value) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    if let Some(net_cfg) = svc["networkConfig"].as_object() {
+        for (net_name, net_val) in net_cfg {
+            if let Some(ip) = net_val["ip"].as_str() {
+                out.insert(net_name.clone(), ip.to_string());
+            }
+        }
+    }
+    out
+}
+
+fn dns_container_ips(svc: &serde_json::Value) -> Vec<String> {
+    svc["dnsContainers"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .filter_map(io::docker::get_container_ip)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_probe_timeout(s: &str) -> Duration {

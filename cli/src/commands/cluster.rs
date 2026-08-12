@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
@@ -222,9 +222,9 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
             Err(_) => continue,
         };
 
-        let contains_cluster = lab["clusterNames"].as_array().map_or(false, |names| {
-            names.iter().any(|n| n.as_str() == Some(cluster_name))
-        });
+        let contains_cluster = lab["clusterNames"]
+            .as_array()
+            .is_some_and(|names| names.iter().any(|n| n.as_str() == Some(cluster_name)));
 
         if !contains_cluster {
             continue;
@@ -362,122 +362,13 @@ pub fn provision_cluster_with_registry(
 
     match provisioner {
         "k3d" => {
-            let docker_host = resolve_docker_host(ctx, config)?;
-            if io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
-                println!(
-                    "{} Cluster '{name}' is already running",
-                    style(">>>").green()
-                );
-                io::k3d::kubeconfig_merge(&cluster_name, docker_host.as_deref())?;
-                return Ok(());
-            }
-
-            let workers = config["kubernetes"]["workers"].as_u64().unwrap_or(0) as u32;
-            let no_traefik = config
-                .pointer("/provisionerConfig/k3d/noTraefik")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let no_service_lb = config
-                .pointer("/provisionerConfig/k3d/noServiceLB")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let no_flannel = config
-                .pointer("/provisionerConfig/k3d/noFlannel")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let image = config
-                .pointer("/provisionerConfig/k3d/image")
-                .and_then(|v| v.as_str());
-
-            let service_cidr = config
-                .pointer("/network/serviceSubnet")
-                .and_then(|v| v.as_str());
-            let pod_cidr = config
-                .pointer("/network/podSubnet")
-                .and_then(|v| v.as_str());
-
-            let mut auto_deploy: Vec<(String, String)> = config
-                .pointer("/provisionerConfig/k3d/autoDeployManifests")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|m| {
-                            let name = m["name"].as_str()?.to_string();
-                            let path = m["path"].as_str()?.to_string();
-                            Some((name, path))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            if !auto_deploy.is_empty() {
-                let lab_pkg = if let Some(pkg) = lab_package {
-                    Some(pkg.to_string())
-                } else if let Ok(lab_name) = ctx.resolve_lab_name(None) {
-                    crate::io::nix::build_lab_package(ctx, &lab_name).ok()
-                } else {
-                    None
-                };
-                if let Some(lab_pkg) = lab_pkg {
-                    auto_deploy = auto_deploy
-                        .into_iter()
-                        .map(|(n, p)| {
-                            let pkg_path = format!("{lab_pkg}/autodeploy/{name}/{n}.yaml");
-                            if std::path::Path::new(&pkg_path).exists() {
-                                (n, pkg_path)
-                            } else {
-                                (n, p)
-                            }
-                        })
-                        .collect();
-                }
-            }
-
-            let ports: Vec<String> = config
-                .pointer("/provisionerConfig/k3d/ports")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let port_refs: Vec<&str> = ports.iter().map(|s| s.as_str()).collect();
-
-            let network = config
-                .pointer("/provisionerConfig/k3d/network")
-                .and_then(|v| v.as_str());
-
-            let registries_yaml_str = registries_yaml.map(|p| p.to_string_lossy().to_string());
-            let registry_dir = registries_yaml.and_then(|p| p.parent().map(|d| d.to_path_buf()));
-            let certs_d_str = registry_dir
-                .as_ref()
-                .map(|d| d.join("certs.d"))
-                .filter(|p| p.exists())
-                .map(|p| p.to_string_lossy().to_string());
-            let resolv_conf_str = registry_dir
-                .as_ref()
-                .map(|d| d.join("lab-resolv.conf"))
-                .filter(|p| p.exists())
-                .map(|p| p.to_string_lossy().to_string());
-
-            io::k3d::cluster_create(
+            provision_k3d(
                 ctx,
+                name,
                 &cluster_name,
-                workers,
-                no_traefik,
-                no_service_lb,
-                no_flannel,
-                image,
-                docker_host.as_deref(),
-                registries_yaml_str.as_deref(),
-                certs_d_str.as_deref(),
-                resolv_conf_str.as_deref(),
-                service_cidr,
-                pod_cidr,
-                &auto_deploy,
-                &port_refs,
-                network,
+                config,
+                registries_yaml,
+                lab_package,
             )?;
         }
         "talos" => {
@@ -534,13 +425,7 @@ async fn init(ctx: &CataContext, name: &str) -> Result<()> {
     println!("{} Loading cluster configuration...", style(">>>").cyan());
     let config = crate::io::nix::get_cluster_config(ctx, name)?;
 
-    provision_cluster_with_registry(
-        ctx,
-        name,
-        &config,
-        registries_yaml_path.as_ref().map(|p| p.as_path()),
-        None,
-    )?;
+    provision_cluster_with_registry(ctx, name, &config, registries_yaml_path.as_deref(), None)?;
 
     println!();
     println!(
@@ -805,7 +690,7 @@ fn sync_single_cluster(
     kube_context: &str,
     cluster_name: &str,
     namespace: &str,
-    kube_dir: &PathBuf,
+    kube_dir: &Path,
     timeout: &str,
     wait: bool,
 ) -> Result<()> {
@@ -915,4 +800,146 @@ fn parse_timeout(timeout: &str) -> Duration {
     } else {
         Duration::from_secs(s.parse::<u64>().unwrap_or(600))
     }
+}
+
+fn provision_k3d(
+    ctx: &CataContext,
+    name: &str,
+    cluster_name: &str,
+    config: &serde_json::Value,
+    registries_yaml: Option<&std::path::Path>,
+    lab_package: Option<&str>,
+) -> Result<()> {
+    let docker_host = resolve_docker_host(ctx, config)?;
+    if io::k3d::cluster_exists(cluster_name, docker_host.as_deref()) {
+        println!(
+            "{} Cluster '{name}' is already running",
+            style(">>>").green()
+        );
+        io::k3d::kubeconfig_merge(cluster_name, docker_host.as_deref())?;
+        return Ok(());
+    }
+
+    let workers = config["kubernetes"]["workers"].as_u64().unwrap_or(0) as u32;
+    let no_traefik = config
+        .pointer("/provisionerConfig/k3d/noTraefik")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let no_service_lb = config
+        .pointer("/provisionerConfig/k3d/noServiceLB")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let no_flannel = config
+        .pointer("/provisionerConfig/k3d/noFlannel")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let image = config
+        .pointer("/provisionerConfig/k3d/image")
+        .and_then(|v| v.as_str());
+
+    let service_cidr = config
+        .pointer("/network/serviceSubnet")
+        .and_then(|v| v.as_str());
+    let pod_cidr = config
+        .pointer("/network/podSubnet")
+        .and_then(|v| v.as_str());
+
+    let auto_deploy = resolve_auto_deploy(ctx, name, config, lab_package);
+
+    let ports: Vec<String> = config
+        .pointer("/provisionerConfig/k3d/ports")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let port_refs: Vec<&str> = ports.iter().map(|s| s.as_str()).collect();
+
+    let network = config
+        .pointer("/provisionerConfig/k3d/network")
+        .and_then(|v| v.as_str());
+
+    let registries_yaml_str = registries_yaml.map(|p| p.to_string_lossy().to_string());
+    let registry_dir = registries_yaml.and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let certs_d_str = registry_dir
+        .as_ref()
+        .map(|d| d.join("certs.d"))
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string());
+    let resolv_conf_str = registry_dir
+        .as_ref()
+        .map(|d| d.join("lab-resolv.conf"))
+        .filter(|p| p.exists())
+        .map(|p| p.to_string_lossy().to_string());
+
+    io::k3d::cluster_create(
+        ctx,
+        io::k3d::ClusterCreate {
+            name: cluster_name,
+            workers,
+            no_traefik,
+            no_service_lb,
+            no_flannel,
+            image,
+            docker_host: docker_host.as_deref(),
+            registries_yaml: registries_yaml_str.as_deref(),
+            certs_d: certs_d_str.as_deref(),
+            resolv_conf: resolv_conf_str.as_deref(),
+            service_cidr,
+            pod_cidr,
+            auto_deploy_manifests: &auto_deploy,
+            ports: &port_refs,
+            network,
+        },
+    )?;
+
+    Ok(())
+}
+
+fn resolve_auto_deploy(
+    ctx: &CataContext,
+    name: &str,
+    config: &serde_json::Value,
+    lab_package: Option<&str>,
+) -> Vec<(String, String)> {
+    let mut auto_deploy: Vec<(String, String)> = config
+        .pointer("/provisionerConfig/k3d/autoDeployManifests")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| {
+                    let name = m["name"].as_str()?.to_string();
+                    let path = m["path"].as_str()?.to_string();
+                    Some((name, path))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !auto_deploy.is_empty() {
+        let lab_pkg = if let Some(pkg) = lab_package {
+            Some(pkg.to_string())
+        } else if let Ok(lab_name) = ctx.resolve_lab_name(None) {
+            crate::io::nix::build_lab_package(ctx, &lab_name).ok()
+        } else {
+            None
+        };
+        if let Some(lab_pkg) = lab_pkg {
+            auto_deploy = auto_deploy
+                .into_iter()
+                .map(|(n, p)| {
+                    let pkg_path = format!("{lab_pkg}/autodeploy/{name}/{n}.yaml");
+                    if std::path::Path::new(&pkg_path).exists() {
+                        (n, pkg_path)
+                    } else {
+                        (n, p)
+                    }
+                })
+                .collect();
+        }
+    }
+
+    auto_deploy
 }

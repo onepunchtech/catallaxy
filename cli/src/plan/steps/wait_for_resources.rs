@@ -102,11 +102,11 @@ async fn wait_crossplane_managed(context: &str, resource: &Value, timeout_secs: 
                 "jsonpath={.items[0].status.conditions[?(@.type==\"Ready\")].status}",
             ])
             .output();
-        if let Ok(ref o) = output {
-            if String::from_utf8_lossy(&o.stdout).trim() == "True" {
-                println!("{} '{res_name}' is ready", style(">>>").green());
-                return Ok(());
-            }
+        if let Ok(ref o) = output
+            && String::from_utf8_lossy(&o.stdout).trim() == "True"
+        {
+            println!("{} '{res_name}' is ready", style(">>>").green());
+            return Ok(());
         }
         if start.elapsed() > timeout {
             bail!("Timed out waiting for '{res_name}' to be ready");

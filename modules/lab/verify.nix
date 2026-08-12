@@ -39,7 +39,9 @@ in
           Probe every public host in `cluster.out.exposedHosts` from the
           machine running the command, which is what proves the lab's
           ingress, routing and CA are wired together rather than merely
-          rendered.
+          rendered. Each host is asked for the first path its route
+          matches, so a route scoped to one prefix is probed there rather
+          than at `/`.
 
           Turn it off for a lab whose endpoints are deliberately
           unreachable from wherever `verify` runs.
@@ -53,11 +55,11 @@ in
         description = ''
           HTTP statuses to accept in addition to the defaults.
 
-          A response under 400 passes, and so do 401 and 403: a route that
-          resolved and then declined the request has proven what this check
-          asks. Everything else fails, 404 included, because a 404 is what
-          the gateway returns when no route matched, which is the failure
-          this check exists to catch.
+          A response under 400 passes, and so do 401, 403 and 405: a route
+          that resolved and then declined the request, the caller or the
+          method has proven what this check asks. Everything else fails, 404
+          included, because a 404 is what the gateway returns when no route
+          matched, which is the failure this check exists to catch.
         '';
       };
     };

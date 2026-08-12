@@ -174,11 +174,12 @@ fn preflight_safe_to_delete(cr: &Value, kube_ctx: &str, kind: &str, resource_nam
         })
         .unwrap_or(false);
 
-    if external_name.is_some() && has_xp_finalizer {
+    if let Some(name) = external_name
+        && has_xp_finalizer
+    {
         println!(
-            "{} Preflight OK: external-name='{}', finalizer attached",
+            "{} Preflight OK: external-name='{name}', finalizer attached",
             style(">>>").green(),
-            external_name.expect("checked above"),
         );
         return true;
     }
@@ -259,16 +260,16 @@ fn poll_until_gone(kube_ctx: &str, kind: &str, resource_name: &str, timeout_secs
                 "--ignore-not-found",
             ])
             .output();
-        if let Ok(o) = out {
-            if String::from_utf8_lossy(&o.stdout).trim().is_empty() {
-                println!(
-                    "{} {}/{} deleted",
-                    style(">>>").green(),
-                    kind,
-                    resource_name
-                );
-                return true;
-            }
+        if let Ok(o) = out
+            && String::from_utf8_lossy(&o.stdout).trim().is_empty()
+        {
+            println!(
+                "{} {}/{} deleted",
+                style(">>>").green(),
+                kind,
+                resource_name
+            );
+            return true;
         }
         println!(
             "{} still waiting on Crossplane to destroy {}/{}...",

@@ -65,7 +65,7 @@ read its values from the environment:
 
 ```nix
 lab.secrets.stores.app = { backend = "env"; };
-lab.secrets.envFile = ./ci.env;
+lab.secrets.envFile = "examples/labs/gitops/envs/ci.env";
 
 lab.secrets.managed.session-key = {
   store = "app";
@@ -81,9 +81,10 @@ secret `session-key` and key `secret` above is
 parts, so a store called `a_b` cannot collide with a secret called `b_c`.
 There is nothing to keep in sync, and `secrets list` prints the names.
 
-`lab.secrets.envFile` names a file that sets those variables. Catallaxy
-never reads it. The environment is the interface, and the file is one way to
-fill it, named where a runner can find it:
+`lab.secrets.envFile` names a file that sets those variables, as a path
+relative to the flake root. Catallaxy never reads it. The environment is the
+interface, and the file is one way to fill it, named where a runner can find
+it:
 
 ```bash
 set -a; . ./examples/labs/gitops/envs/ci.env; set +a
@@ -93,6 +94,12 @@ That is what `nix run .#e2e -- <lab>` does before it stands a lab up, and it
 is why a lab whose values come from the environment and which names no
 `envFile` is reported as not self-contained by `nix eval .#e2eLabs`. Values
 that arrive from somewhere the lab does not describe are not derivable.
+
+The path is relative rather than a Nix path (`./ci.env`) on purpose. A Nix
+path resolves to the flake's source in the store, and under Determinate
+Nix's lazy trees that source is never written to disk, so the runner would
+be handed a path that does not exist. The repository is where the file
+actually is, and the relative form is also the argument to `git add`.
 
 Write the file with the command that knows the names:
 

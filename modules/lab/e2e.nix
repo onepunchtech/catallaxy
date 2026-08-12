@@ -47,7 +47,7 @@ let
       "these live in a store nothing here can open: ${quote storedOutsideEnv}, and a store only opens with no credentials on the machine when its backend is \"env\""
     )
     ++ lib.optional (envSecretsWithNoFile != [ ]) (
-      "${quote envSecretsWithNoFile} take their values from the environment, and the lab names no file that sets them, so point lab.secrets.envFile at one such as ./ci.env beside the lab"
+      "${quote envSecretsWithNoFile} take their values from the environment, and the lab names no file that sets them, so point lab.secrets.envFile at one, as a path relative to the flake root"
     )
     ++ lib.optional (interactiveSteps != [ ]) (
       "step ${quote interactiveSteps} cannot finish without a human"
@@ -69,7 +69,7 @@ in
         };
         envFile = mkOption {
           type = types.nullOr types.str;
-          description = "File the runner loads before the lab starts, from `lab.secrets.envFile`. Null when the lab needs nothing from the environment.";
+          description = "File the runner loads before the lab starts, from `lab.secrets.envFile`, relative to the flake root. Null when the lab needs nothing from the environment.";
         };
       };
     };
@@ -87,6 +87,6 @@ in
   config.lab.out.selfContained = {
     eligible = reasons == [ ];
     inherit reasons;
-    envFile = if config.lab.secrets.envFile == null then null else toString config.lab.secrets.envFile;
+    inherit (config.lab.secrets) envFile;
   };
 }

@@ -234,6 +234,11 @@ pub fn setup_host_networking_macos(
         "{} Enabling IP forwarding in Colima VM...",
         style(">>>").cyan()
     );
+    open_vm_forwarding(docker_subnet, colima_profile);
+    add_host_route(docker_subnet, vm_ip)
+}
+
+fn open_vm_forwarding(docker_subnet: &str, colima_profile: &str) {
     let _ = io::colima::ssh_exec(
         colima_profile,
         &["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"],
@@ -325,7 +330,9 @@ pub fn setup_host_networking_macos(
             ],
         );
     }
+}
 
+fn add_host_route(docker_subnet: &str, vm_ip: &str) -> Result<()> {
     let existing_gw = Command::new("route")
         .args([
             "-n",
@@ -433,39 +440,36 @@ pub fn get_colima_vm_ip() -> Option<String> {
         .output()
         .ok();
 
-    if let Some(ref out) = output {
-        if out.status.success() {
-            let json_str = String::from_utf8_lossy(&out.stdout);
-            for line in json_str.lines() {
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
-                    if let Some(addr) = parsed["address"].as_str() {
-                        if !addr.is_empty() {
-                            return Some(addr.to_string());
-                        }
-                    }
-                }
+    if let Some(ref out) = output
+        && out.status.success()
+    {
+        let json_str = String::from_utf8_lossy(&out.stdout);
+        for line in json_str.lines() {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line)
+                && let Some(addr) = parsed["address"].as_str()
+                && !addr.is_empty()
+            {
+                return Some(addr.to_string());
             }
         }
     }
 
-    if cfg!(target_os = "macos") {
-        if let Ok(arp_out) = Command::new("arp")
+    if cfg!(target_os = "macos")
+        && let Ok(arp_out) = Command::new("arp")
             .args(["-an"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .output()
-        {
-            let arp_str = String::from_utf8_lossy(&arp_out.stdout);
-            for line in arp_str.lines() {
-                if line.contains("bridge100") {
-                    if let Some(start) = line.find('(') {
-                        if let Some(end) = line.find(')') {
-                            let ip = &line[start + 1..end];
-                            if !ip.is_empty() {
-                                return Some(ip.to_string());
-                            }
-                        }
-                    }
+    {
+        let arp_str = String::from_utf8_lossy(&arp_out.stdout);
+        for line in arp_str.lines() {
+            if line.contains("bridge100")
+                && let Some(start) = line.find('(')
+                && let Some(end) = line.find(')')
+            {
+                let ip = &line[start + 1..end];
+                if !ip.is_empty() {
+                    return Some(ip.to_string());
                 }
             }
         }

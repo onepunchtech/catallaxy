@@ -207,7 +207,7 @@ in
       ) config.lab.out.allClusters;
 
       secrets = {
-        envFile = if config.lab.secrets.envFile == null then null else toString config.lab.secrets.envFile;
+        inherit (config.lab.secrets) envFile;
 
         stores = lib.mapAttrs (name: store: {
           inherit (store) backend;
@@ -406,7 +406,7 @@ in
           };
 
           secrets = {
-            envFile = if config.lab.secrets.envFile == null then null else toString config.lab.secrets.envFile;
+            inherit (config.lab.secrets) envFile;
             stores = lib.mapAttrs (_: store: {
               inherit (store) backend;
             }) config.lab.secrets.stores;

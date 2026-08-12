@@ -6,6 +6,9 @@ use console::style;
 
 use crate::config::Context as CataContext;
 
+const COMMIT_IDENTITY_NAME: &str = "catallaxy";
+const COMMIT_IDENTITY_EMAIL: &str = "catallaxy@invalid";
+
 fn resolve_publish_auth(lab: &serde_json::Value) -> Option<(String, String)> {
     let cred = lab.pointer("/cd/git/credentialFromKubeSecret")?;
     if cred.is_null() {
@@ -69,6 +72,10 @@ fn maybe_embed_publish_auth(repo: &str, lab: &serde_json::Value) -> String {
 fn git() -> Command {
     let mut cmd = Command::new("git");
     crate::io::trust::apply(&mut cmd);
+    cmd.env("GIT_AUTHOR_NAME", COMMIT_IDENTITY_NAME)
+        .env("GIT_AUTHOR_EMAIL", COMMIT_IDENTITY_EMAIL)
+        .env("GIT_COMMITTER_NAME", COMMIT_IDENTITY_NAME)
+        .env("GIT_COMMITTER_EMAIL", COMMIT_IDENTITY_EMAIL);
     cmd
 }
 
@@ -137,28 +144,7 @@ pub async fn publish(
 
     let tmp_dir = tempfile::tempdir().context("Failed to create temp directory")?;
     let clone_dir = tmp_dir.path().join("repo");
-
-    println!("{} Cloning {}...", style(">>>").cyan(), repo);
-
-    let status = git()
-        .args(["clone", "--depth", "1", "--branch", branch, &effective_repo])
-        .arg(&clone_dir)
-        .stdout(Stdio::null())
-        .status()
-        .context("Failed to clone git repo")?;
-
-    if !status.success() {
-        let status = git()
-            .args(["clone", &effective_repo])
-            .arg(&clone_dir)
-            .stdout(Stdio::null())
-            .status()
-            .context("Failed to clone git repo")?;
-
-        if !status.success() {
-            bail!("Failed to clone {}", repo);
-        }
-    }
+    clone_repo(&effective_repo, repo, branch, &clone_dir)?;
 
     let target_dir = if repo_path.is_empty() {
         clone_dir.clone()
@@ -167,22 +153,82 @@ pub async fn publish(
     };
 
     let work_branch = if pr_enabled {
-        let branch_name = format!("catallaxy/{name}/{}", chrono_simple_timestamp());
-        let status = git()
-            .args(["-C"])
-            .arg(&clone_dir)
-            .args(["checkout", "-b", &branch_name])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()?;
-        if !status.success() {
-            bail!("Failed to create branch {}", branch_name);
-        }
-        Some(branch_name)
+        Some(checkout_work_branch(&clone_dir, name)?)
     } else {
         None
     };
 
+    copy_manifests(&manifests_src, &package_path, &target_dir)?;
+
+    if !commit_manifests(&clone_dir, message, name)? {
+        return Ok(());
+    }
+
+    let push_branch = work_branch.as_deref().unwrap_or(branch);
+    push_manifests(&clone_dir, repo, push_branch)?;
+
+    if pr_enabled {
+        let work_branch = work_branch
+            .as_deref()
+            .expect("work_branch is Some when pr_enabled is true");
+        open_pull_request(&clone_dir, name, provider, pr_base, work_branch)?;
+    }
+
+    println!("{} Manifests published to {}", style(">>>").green(), repo);
+
+    Ok(())
+}
+
+fn clone_repo(
+    effective_repo: &str,
+    repo: &str,
+    branch: &str,
+    clone_dir: &std::path::Path,
+) -> Result<()> {
+    println!("{} Cloning {}...", style(">>>").cyan(), repo);
+
+    let status = git()
+        .args(["clone", "--depth", "1", "--branch", branch, effective_repo])
+        .arg(clone_dir)
+        .stdout(Stdio::null())
+        .status()
+        .context("Failed to clone git repo")?;
+
+    if !status.success() {
+        let status = git()
+            .args(["clone", effective_repo])
+            .arg(clone_dir)
+            .stdout(Stdio::null())
+            .status()
+            .context("Failed to clone git repo")?;
+
+        if !status.success() {
+            bail!("Failed to clone {}", repo);
+        }
+    }
+    Ok(())
+}
+
+fn checkout_work_branch(clone_dir: &std::path::Path, name: &str) -> Result<String> {
+    let branch_name = format!("catallaxy/{name}/{}", chrono_simple_timestamp());
+    let status = git()
+        .args(["-C"])
+        .arg(clone_dir)
+        .args(["checkout", "-b", &branch_name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()?;
+    if !status.success() {
+        bail!("Failed to create branch {}", branch_name);
+    }
+    Ok(branch_name)
+}
+
+fn copy_manifests(
+    manifests_src: &str,
+    package_path: &str,
+    target_dir: &std::path::Path,
+) -> Result<()> {
     let manifests_target = target_dir.join("manifests");
     if manifests_target.exists() {
         fs::remove_dir_all(&manifests_target)?;
@@ -192,8 +238,8 @@ pub async fn publish(
 
     let status = Command::new("cp")
         .args(["-rL"])
-        .arg(&manifests_src)
-        .arg(&target_dir)
+        .arg(manifests_src)
+        .arg(target_dir)
         .status()
         .context("Failed to copy manifests")?;
 
@@ -201,17 +247,24 @@ pub async fn publish(
         bail!("Failed to copy manifests to repo");
     }
 
-    let metadata_src = format!("{}/metadata.json", package_path);
+    let metadata_src = format!("{package_path}/metadata.json");
     if std::path::Path::new(&metadata_src).exists() {
         fs::copy(&metadata_src, target_dir.join("metadata.json"))?;
     }
+    Ok(())
+}
 
+fn commit_manifests(
+    clone_dir: &std::path::Path,
+    message: Option<String>,
+    name: &str,
+) -> Result<bool> {
     let commit_msg =
         message.unwrap_or_else(|| format!("chore(catallaxy): update manifests for lab '{name}'"));
 
     let status = git()
         .args(["-C"])
-        .arg(&clone_dir)
+        .arg(clone_dir)
         .args(["add", "-A"])
         .status()?;
     if !status.success() {
@@ -220,7 +273,7 @@ pub async fn publish(
 
     let diff_status = git()
         .args(["-C"])
-        .arg(&clone_dir)
+        .arg(clone_dir)
         .args(["diff", "--cached", "--quiet"])
         .status()?;
 
@@ -229,12 +282,12 @@ pub async fn publish(
             "{} No changes to publish, manifests are up to date",
             style(">>>").green()
         );
-        return Ok(());
+        return Ok(false);
     }
 
     let status = git()
         .args(["-C"])
-        .arg(&clone_dir)
+        .arg(clone_dir)
         .args(["commit", "-m", &commit_msg])
         .stdout(Stdio::null())
         .status()?;
@@ -242,7 +295,10 @@ pub async fn publish(
         bail!("git commit failed");
     }
 
-    let push_branch = work_branch.as_deref().unwrap_or(branch);
+    Ok(true)
+}
+
+fn push_manifests(clone_dir: &std::path::Path, repo: &str, push_branch: &str) -> Result<()> {
     println!(
         "{} Pushing to {} (branch: {})...",
         style(">>>").cyan(),
@@ -252,84 +308,87 @@ pub async fn publish(
 
     let status = git()
         .args(["-C"])
-        .arg(&clone_dir)
+        .arg(clone_dir)
         .args(["push", "origin", push_branch])
         .status()?;
     if !status.success() {
         bail!("git push failed");
     }
 
-    if pr_enabled {
-        let work_branch = work_branch
-            .as_deref()
-            .expect("work_branch is Some when pr_enabled is true");
-        println!(
-            "{} Creating PR: {} → {}...",
-            style(">>>").cyan(),
-            work_branch,
-            pr_base
-        );
+    Ok(())
+}
 
-        let pr_title = format!("Update manifests for lab '{name}'");
-        let pr_body = format!("Automated manifest update from `cata lab publish`.\n\nLab: {name}");
+fn open_pull_request(
+    clone_dir: &std::path::Path,
+    name: &str,
+    provider: &str,
+    pr_base: &str,
+    work_branch: &str,
+) -> Result<()> {
+    println!(
+        "{} Creating PR: {} → {}...",
+        style(">>>").cyan(),
+        work_branch,
+        pr_base
+    );
 
-        let pr_result = match provider {
-            "github" => Command::new("gh")
-                .args(["-C"])
-                .arg(&clone_dir)
-                .args([
-                    "pr",
-                    "create",
-                    "--title",
-                    &pr_title,
-                    "--body",
-                    &pr_body,
-                    "--base",
-                    pr_base,
-                    "--head",
-                    work_branch,
-                ])
-                .status(),
-            "gitlab" => Command::new("glab")
-                .args(["-C"])
-                .arg(&clone_dir)
-                .args([
-                    "mr",
-                    "create",
-                    "--title",
-                    &pr_title,
-                    "--description",
-                    &pr_body,
-                    "--target-branch",
-                    pr_base,
-                    "--source-branch",
-                    work_branch,
-                ])
-                .status(),
-            _ => {
-                println!(
-                    "{} PR creation not yet supported for provider '{}'. Push succeeded, create PR manually.",
-                    style(">>>").yellow(),
-                    provider
-                );
-                return Ok(());
-            }
-        };
+    let pr_title = format!("Update manifests for lab '{name}'");
+    let pr_body = format!("Automated manifest update from `cata lab publish`.\n\nLab: {name}");
 
-        match pr_result {
-            Ok(s) if s.success() => {
-                println!("{} PR created successfully", style(">>>").green());
-            }
-            _ => {
-                println!(
-                    "{} PR creation may have failed. Push succeeded, check manually.",
-                    style(">>>").yellow()
-                );
-            }
+    let pr_result = match provider {
+        "github" => Command::new("gh")
+            .args(["-C"])
+            .arg(clone_dir)
+            .args([
+                "pr",
+                "create",
+                "--title",
+                &pr_title,
+                "--body",
+                &pr_body,
+                "--base",
+                pr_base,
+                "--head",
+                work_branch,
+            ])
+            .status(),
+        "gitlab" => Command::new("glab")
+            .args(["-C"])
+            .arg(clone_dir)
+            .args([
+                "mr",
+                "create",
+                "--title",
+                &pr_title,
+                "--description",
+                &pr_body,
+                "--target-branch",
+                pr_base,
+                "--source-branch",
+                work_branch,
+            ])
+            .status(),
+        _ => {
+            println!(
+                "{} PR creation not yet supported for provider '{}'. Push succeeded, create PR manually.",
+                style(">>>").yellow(),
+                provider
+            );
+            return Ok(());
+        }
+    };
+
+    match pr_result {
+        Ok(s) if s.success() => {
+            println!("{} PR created successfully", style(">>>").green());
+        }
+        _ => {
+            println!(
+                "{} PR creation may have failed. Push succeeded, check manually.",
+                style(">>>").yellow()
+            );
         }
     }
-
-    println!("{} Manifests published to {}", style(">>>").green(), repo);
 
     Ok(())
 }

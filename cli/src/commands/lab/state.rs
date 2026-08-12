@@ -114,13 +114,12 @@ pub fn project_host_secrets(
         let resolved = path_template.replace("$LAB_STATE_DIR", &state_dir.to_string_lossy());
         let target = PathBuf::from(resolved);
 
-        if target.exists() {
-            if let Ok(existing) = fs::read_to_string(&target) {
-                if existing == *value {
-                    skipped += 1;
-                    continue;
-                }
-            }
+        if target.exists()
+            && let Ok(existing) = fs::read_to_string(&target)
+            && existing == *value
+        {
+            skipped += 1;
+            continue;
         }
 
         if let Some(parent) = target.parent() {

@@ -36,6 +36,12 @@ fn render_table(topo: &LabTopology) {
     );
     println!();
 
+    render_services(topo);
+    render_clusters(topo);
+    render_edges(topo);
+}
+
+fn render_services(topo: &LabTopology) {
     if !topo.services.is_empty() {
         println!("{}", style("Services:").bold());
         for (name, svc) in &topo.services {
@@ -59,8 +65,10 @@ fn render_table(topo: &LabTopology) {
         }
         println!();
     }
+}
 
-    for (_, cluster) in &topo.clusters {
+fn render_clusters(topo: &LabTopology) {
+    for cluster in topo.clusters.values() {
         let status = match &cluster.live {
             Some(live) if live.reachable => style("ready").green(),
             Some(_) => style("not ready").yellow(),
@@ -86,22 +94,22 @@ fn render_table(topo: &LabTopology) {
             cluster.service_subnet,
         );
 
-        if let Some(live) = &cluster.live {
-            if !live.nodes.is_empty() {
-                println!("  {}", style("Nodes:").dim());
-                for node in &live.nodes {
-                    let node_status = if node.ready {
-                        style("Ready").green()
-                    } else {
-                        style("NotReady").red()
-                    };
-                    println!(
-                        "    {} [{}] {}",
-                        style(&node.name).cyan(),
-                        node_status,
-                        node.version
-                    );
-                }
+        if let Some(live) = &cluster.live
+            && !live.nodes.is_empty()
+        {
+            println!("  {}", style("Nodes:").dim());
+            for node in &live.nodes {
+                let node_status = if node.ready {
+                    style("Ready").green()
+                } else {
+                    style("NotReady").red()
+                };
+                println!(
+                    "    {} [{}] {}",
+                    style(&node.name).cyan(),
+                    node_status,
+                    node.version
+                );
             }
         }
 
@@ -153,7 +161,9 @@ fn render_table(topo: &LabTopology) {
         }
         println!();
     }
+}
 
+fn render_edges(topo: &LabTopology) {
     if !topo.edges.is_empty() {
         println!("{}", style("Relationships:").bold());
         for edge in &topo.edges {

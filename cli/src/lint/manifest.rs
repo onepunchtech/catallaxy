@@ -250,10 +250,8 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
                             .get(serde_yaml::Value::String("optional".into()))
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false);
-                        if !optional {
-                            if let Some(name) = get_str(cm, "name") {
-                                cm_refs.push(name);
-                            }
+                        if !optional && let Some(name) = get_str(cm, "name") {
+                            cm_refs.push(name);
                         }
                     }
                     if let Some(secret) = m
@@ -264,10 +262,8 @@ fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
                             .get(serde_yaml::Value::String("optional".into()))
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false);
-                        if !optional {
-                            if let Some(name) = get_str(secret, "secretName") {
-                                secret_refs.push(name);
-                            }
+                        if !optional && let Some(name) = get_str(secret, "secretName") {
+                            secret_refs.push(name);
                         }
                     }
                 }

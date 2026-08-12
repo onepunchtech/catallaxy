@@ -294,6 +294,12 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
             let name = ctx.resolve_lab_name(name.as_deref())?;
             destroy::run(ctx, &name).await
         }
+        other => run_tooling(ctx, other).await,
+    }
+}
+
+async fn run_tooling(ctx: &CataContext, command: LabCommands) -> Result<()> {
+    match command {
         LabCommands::Lint { name, path, skip } => lint_cmd::run(ctx, name, path, skip).await,
         LabCommands::Publish {
             name,
@@ -324,5 +330,6 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
             let name = ctx.resolve_lab_name(name.as_deref())?;
             display::topology_cmd(ctx, &name, &format, live).await
         }
+        _ => unreachable!("lifecycle commands are handled by run"),
     }
 }

@@ -167,7 +167,7 @@ in"#,
             let group = if resource.group.is_empty() || resource.group == "core" {
                 "core".to_string()
             } else {
-                resource.group.replace('.', "_").replace('-', "_")
+                resource.group.replace(['.', '-'], "_")
             };
 
             grouped
@@ -226,14 +226,14 @@ in"#,
 
         let mut parts = Vec::new();
 
-        if self.config.include_descriptions {
-            if let Some(desc) = &resource.description {
-                let short_desc = desc.lines().next().unwrap_or(desc);
-                if short_desc.len() < 80 {
-                    parts.push(self.arena.text(format!("# {}", short_desc)));
-                    parts.push(self.arena.hardline());
-                    parts.push(self.arena.text("      "));
-                }
+        if self.config.include_descriptions
+            && let Some(desc) = &resource.description
+        {
+            let short_desc = desc.lines().next().unwrap_or(desc);
+            if short_desc.len() < 80 {
+                parts.push(self.arena.text(format!("# {}", short_desc)));
+                parts.push(self.arena.hardline());
+                parts.push(self.arena.text("      "));
             }
         }
 
@@ -333,12 +333,12 @@ in"#,
     }
 
     fn emit_submodule(&self, submodule: &Submodule) -> DocBuilder<'a, Arena<'a>> {
-        let mut parts = Vec::new();
-
-        parts.push(self.arena.text("(mkTypedSubmodule {"));
-        parts.push(self.arena.hardline());
-        parts.push(self.arena.text("  options = {"));
-        parts.push(self.arena.hardline());
+        let mut parts = vec![
+            self.arena.text("(mkTypedSubmodule {"),
+            self.arena.hardline(),
+            self.arena.text("  options = {"),
+            self.arena.hardline(),
+        ];
 
         for (name, option) in &submodule.options {
             let option_doc = self.emit_option(name, option);
@@ -377,22 +377,22 @@ in"#,
             parts.push(self.arena.text(format!("      default = {};", default)));
         }
 
-        if self.config.include_descriptions {
-            if let Some(desc) = &option.description {
-                parts.push(self.arena.hardline());
-                if desc.contains('\n') {
-                    let escaped = escape_nix_indented(desc);
-                    parts.push(self.arena.text(format!(
-                        "      description = ''\n        {}\n      '';",
-                        escaped.replace('\n', "\n        ")
-                    )));
-                } else {
-                    let escaped = escape_nix_double_quoted(desc);
-                    parts.push(
-                        self.arena
-                            .text(format!("      description = \"{}\";", escaped)),
-                    );
-                }
+        if self.config.include_descriptions
+            && let Some(desc) = &option.description
+        {
+            parts.push(self.arena.hardline());
+            if desc.contains('\n') {
+                let escaped = escape_nix_indented(desc);
+                parts.push(self.arena.text(format!(
+                    "      description = ''\n        {}\n      '';",
+                    escaped.replace('\n', "\n        ")
+                )));
+            } else {
+                let escaped = escape_nix_double_quoted(desc);
+                parts.push(
+                    self.arena
+                        .text(format!("      description = \"{}\";", escaped)),
+                );
             }
         }
 
@@ -462,7 +462,7 @@ let
         );
 
         for version in k8s_versions {
-            let safe_version = version.replace('.', "_").replace('-', "_");
+            let safe_version = version.replace(['.', '-'], "_");
             output.push_str(&format!(
                 "    \"{}\" = import ./k8s/{}.nix {{ inherit lib; }};\n",
                 safe_version, safe_version
@@ -478,7 +478,7 @@ let
         );
 
         for name in crd_names {
-            let safe_name = name.replace('.', "_").replace('-', "_");
+            let safe_name = name.replace(['.', '-'], "_");
             output.push_str(&format!(
                 "    {} = import ./crds/{}.nix {{ inherit lib k8sTypes; }};\n",
                 safe_name, safe_name

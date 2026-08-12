@@ -37,25 +37,29 @@ pub async fn run(
         let cluster_config = crate::io::nix::get_cluster_config_with_secrets(sctx.lab, target).ok();
         return io::ssa::apply_manifest_root(
             sctx.ctx,
-            &kube_context,
-            &PathBuf::from(&cluster_manifests),
-            "catallaxy-bootstrap",
-            600,
-            sctx.dry_run,
-            cluster_config.as_ref(),
-            sctx.secrets_cache.as_ref(),
+            io::ssa::ApplyManifests {
+                kube_context: &kube_context,
+                manifest_root: &PathBuf::from(&cluster_manifests),
+                field_manager: "catallaxy-bootstrap",
+                wait_timeout_seconds: 600,
+                dry_run: sctx.dry_run,
+                lab_config: cluster_config.as_ref(),
+                secrets_cache: sctx.secrets_cache.as_ref(),
+            },
         );
     }
 
     crate::commands::lab::orchestrate::apply_cluster_components(
         sctx.ctx,
-        target,
-        sctx.dry_run,
-        true,
-        Some(cluster_manifests),
-        sctx.secrets_cache.clone(),
-        Some(sctx.lab),
-        kube_context_override.map(String::from),
+        crate::commands::lab::orchestrate::ClusterComponents {
+            cluster_name: target,
+            dry_run: sctx.dry_run,
+            force: true,
+            manifests_dir: Some(cluster_manifests),
+            secrets_cache: sctx.secrets_cache.clone(),
+            lab_config: Some(sctx.lab),
+            kube_context_override: kube_context_override.map(String::from),
+        },
     )
     .await
 }

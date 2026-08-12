@@ -18,15 +18,14 @@ pub fn parse_crds_from_yaml(
             if let Some(crd) = parse_single_crd(&value, options)? {
                 resources.push(crd);
             }
-        } else if kind == Some("List") {
-            if let Some(items) = value.get("items").and_then(|v| v.as_array()) {
-                for item in items {
-                    if item.get("kind").and_then(|v| v.as_str()) == Some("CustomResourceDefinition")
-                    {
-                        if let Some(crd) = parse_single_crd(item, options)? {
-                            resources.push(crd);
-                        }
-                    }
+        } else if kind == Some("List")
+            && let Some(items) = value.get("items").and_then(|v| v.as_array())
+        {
+            for item in items {
+                if item.get("kind").and_then(|v| v.as_str()) == Some("CustomResourceDefinition")
+                    && let Some(crd) = parse_single_crd(item, options)?
+                {
+                    resources.push(crd);
                 }
             }
         }
@@ -143,10 +142,10 @@ fn convert_crd_string_schema(schema: &Value) -> NixType {
         }
     }
 
-    if let Some(format) = schema.get("format").and_then(|v| v.as_str()) {
-        if format == "int-or-string" {
-            return NixType::Either(Box::new(NixType::Int), Box::new(NixType::Str));
-        }
+    if let Some(format) = schema.get("format").and_then(|v| v.as_str())
+        && format == "int-or-string"
+    {
+        return NixType::Either(Box::new(NixType::Int), Box::new(NixType::Str));
     }
 
     NixType::Str
@@ -192,10 +191,10 @@ fn convert_crd_object_schema(schema: &Value, options: &GeneratorOptions) -> NixT
                 option.default = Some("null".to_string());
             }
 
-            if options.include_descriptions {
-                if let Some(desc) = prop_schema.get("description").and_then(|v| v.as_str()) {
-                    option.description = Some(desc.to_string());
-                }
+            if options.include_descriptions
+                && let Some(desc) = prop_schema.get("description").and_then(|v| v.as_str())
+            {
+                option.description = Some(desc.to_string());
             }
 
             submodule.options.insert(name.clone(), option);

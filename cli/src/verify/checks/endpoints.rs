@@ -6,24 +6,10 @@ use crate::verify::{Diagnostic, Severity, VerifyContext, diag};
 
 const CHECK: &str = "endpoints";
 
-/// Whether a status means the route resolved and something answered.
-///
-/// Anything under 400 did. So did 401 and 403: a route that resolved and then
-/// declined the request has proven what this check asks. A 404 has not, and
-/// 404 is exactly what a gateway returns when no route matched, which is the
-/// failure this check exists to catch.
 pub(crate) fn answered(status: u16) -> bool {
-    status < 400 || status == 401 || status == 403
+    status < 400 || status == 401 || status == 403 || status == 405
 }
 
-/// Probes every public host the lab routes, through the lab's own ingress and
-/// its own CA. This is the check the other four cannot stand in for: routing
-/// by hostname, TLS against the lab CA, and the workload actually answering
-/// are three things no amount of eval or lint can exercise.
-///
-/// Each host is pinned to the proxy's published address rather than looked up,
-/// so this works whether or not `lab.dns.configureHost` pointed the machine's
-/// resolver at the lab. Nothing here needs `sudo` or a modified host.
 pub async fn run(ctx: &VerifyContext<'_>) -> Vec<Diagnostic> {
     if !ctx.config.endpoints.enable {
         return Vec::new();
@@ -76,7 +62,7 @@ pub async fn run(ctx: &VerifyContext<'_>) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
 
     for (cluster, host) in hosts {
-        let url = format!("{scheme}://{}/", host.host);
+        let url = format!("{scheme}://{}{}", host.host, host.probe_path());
         match client.get(&url).send().await {
             Err(e) => diags.push(diag(
                 Severity::Error,

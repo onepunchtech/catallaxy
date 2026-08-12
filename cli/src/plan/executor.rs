@@ -67,35 +67,7 @@ pub async fn execute(
     );
 
     let secrets_cache = load_stores_upfront(ctx, lab_name, &lab)?;
-    let lab_package = if direction == Direction::Deploy {
-        println!();
-        println!("{} Building lab manifests...", style(">>>").cyan());
-        let pkg = crate::io::nix::build_lab_package(ctx, lab_name)?;
-        println!("{} Lab package built", style(">>>").green());
-        pkg
-    } else {
-        println!();
-        println!(
-            "{} Realizing teardown hook binaries...",
-            style(">>>").cyan()
-        );
-        match crate::io::nix::build_lab_package(ctx, lab_name) {
-            Ok(pkg) => {
-                println!("{} Lab package built", style(">>>").green());
-                pkg
-            }
-            Err(e) => {
-                println!(
-                    "{} Could not build the lab package: {e}\n    \
-                     Teardown hooks and external-name discovery will be skipped \
-                     if their binaries are not already in the store; cloud \
-                     resources may leak.",
-                    style("Warning:").yellow(),
-                );
-                String::new()
-            }
-        }
-    };
+    let lab_package = build_lab_package_for(ctx, lab_name, direction)?;
 
     let strategy = lab
         .pointer("/cd/strategy")
@@ -123,33 +95,7 @@ pub async fn execute(
         crate::commands::lab::orchestrate::reconcile_crossplane_state_for_teardown(&steps);
     }
 
-    let stop_after = match up_to {
-        Some(kind) => {
-            let idx = steps.iter().rposition(|s| s.type_tag() == kind);
-            if idx.is_none() {
-                let known = crate::domain::step_kind::StepKind::from_tag(kind).is_some();
-                if known {
-                    bail!(
-                        "--up-to='{}' is a valid kind but the {} plan contains no such step",
-                        kind,
-                        direction.label(),
-                    );
-                }
-                let mut valid: Vec<&str> = crate::domain::step_kind::StepKind::ALL
-                    .iter()
-                    .map(|k| k.tag())
-                    .collect();
-                valid.sort_unstable();
-                bail!(
-                    "--up-to='{}' is not a step kind. Valid kinds:\n  {}",
-                    kind,
-                    valid.join("\n  "),
-                );
-            }
-            idx
-        }
-        None => None,
-    };
+    let stop_after = resolve_stop_after(&steps, up_to, direction)?;
 
     let total = steps.len();
     for (i, step) in steps.iter().enumerate() {
@@ -240,7 +186,39 @@ async fn run_one(
 }
 
 async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Direction) -> Result<()> {
-    match (direction, &step.params) {
+    if let Some(result) = dispatch_deploy(sctx, step, direction).await {
+        return result;
+    }
+    if let Some(result) = dispatch_teardown(sctx, step, direction).await {
+        return result;
+    }
+    bail!(
+        "step '{}' is not valid in {} direction",
+        step.type_tag(),
+        direction.label(),
+    );
+}
+
+async fn dispatch_deploy(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    if let Some(result) = dispatch_host(sctx, step, direction).await {
+        return Some(result);
+    }
+    if let Some(result) = dispatch_cluster(sctx, step, direction).await {
+        return Some(result);
+    }
+    dispatch_gitops(sctx, step, direction).await
+}
+
+async fn dispatch_host(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    Some(match (direction, &step.params) {
         (
             Direction::Deploy,
             StepParams::DockerNetworkCreate {
@@ -285,6 +263,27 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Directi
             steps::setup_services::run(sctx).await
         }
         (Direction::Deploy, StepParams::WarmCache { .. }) => steps::warm_cache::run(sctx).await,
+        _ => return None,
+    })
+}
+
+async fn dispatch_cluster(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    if let Some(result) = dispatch_cluster_lifecycle(sctx, step, direction).await {
+        return Some(result);
+    }
+    dispatch_cluster_workloads(sctx, step, direction).await
+}
+
+async fn dispatch_cluster_lifecycle(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    Some(match (direction, &step.params) {
         (
             Direction::Deploy,
             StepParams::CreateCluster {
@@ -320,18 +319,30 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Directi
         ) => {
             steps::cross_cluster_secret_copy::run(
                 sctx,
-                source_cluster,
-                source_namespace,
-                source_secret,
-                target_cluster,
-                target_namespace,
-                target_secret,
-                secret_type.as_deref(),
-                source_context.as_deref(),
-                target_context.as_deref(),
+                steps::cross_cluster_secret_copy::SecretCopy {
+                    src_cluster: source_cluster,
+                    src_namespace: source_namespace,
+                    src_secret: source_secret,
+                    tgt_cluster: target_cluster,
+                    tgt_namespace: target_namespace,
+                    tgt_secret: target_secret,
+                    override_type: secret_type.as_deref(),
+                    source_context: source_context.as_deref(),
+                    target_context: target_context.as_deref(),
+                },
             )
             .await
         }
+        _ => return None,
+    })
+}
+
+async fn dispatch_cluster_workloads(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    Some(match (direction, &step.params) {
         (
             Direction::Deploy,
             StepParams::PublishImages {
@@ -399,6 +410,27 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Directi
             steps::destroy_cluster::run(sctx, name, provisioner, skip_if_missing.unwrap_or(false))
                 .await
         }
+        _ => return None,
+    })
+}
+
+async fn dispatch_gitops(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    if let Some(result) = dispatch_gitops_repo(sctx, step, direction).await {
+        return Some(result);
+    }
+    dispatch_gitops_argocd(sctx, step, direction).await
+}
+
+async fn dispatch_gitops_repo(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    Some(match (direction, &step.params) {
         (
             Direction::Deploy,
             StepParams::BootstrapForgejoRepos {
@@ -421,6 +453,16 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Directi
         (Direction::Deploy, StepParams::PublishManifests { .. }) => {
             steps::publish_manifests::run(sctx).await
         }
+        _ => return None,
+    })
+}
+
+async fn dispatch_gitops_argocd(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    Some(match (direction, &step.params) {
         (
             Direction::Deploy,
             StepParams::ApplyRootApplication {
@@ -466,18 +508,18 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Directi
                 chart_ref,
                 release_name,
                 namespace,
-                wait_timeout_seconds,
                 ..
             },
         ) => steps::bootstrap_argocd_helm::run(
             sctx,
-            target,
-            kube_context.as_deref(),
-            values_path,
-            chart_ref,
-            release_name,
-            namespace.as_deref(),
-            *wait_timeout_seconds,
+            steps::bootstrap_argocd_helm::ArgocdHelm {
+                target,
+                kube_context: kube_context.as_deref(),
+                values_path,
+                chart_ref,
+                release_name,
+                namespace: namespace.as_deref(),
+            },
         ),
         (
             Direction::Deploy,
@@ -510,6 +552,16 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Directi
             step.continues_on_failure(),
         ),
 
+        _ => return None,
+    })
+}
+
+async fn dispatch_teardown(
+    sctx: &StepContext<'_>,
+    step: &PlannedStep,
+    direction: Direction,
+) -> Option<Result<()>> {
+    Some(match (direction, &step.params) {
         (
             Direction::Teardown,
             StepParams::ReleaseClusterCloudResources {
@@ -581,14 +633,8 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Directi
             steps::remove_network::run(sctx).await
         }
 
-        (dir, _) => {
-            bail!(
-                "step '{}' is not valid in {} direction",
-                step.type_tag(),
-                dir.label(),
-            );
-        }
-    }
+        _ => return None,
+    })
 }
 
 fn should_skip_if_reachable(step: &PlannedStep) -> bool {
@@ -644,6 +690,76 @@ fn load_stores_upfront(
         lab,
         "Loading secret stores now so you're not interrupted later...",
     )
+}
+
+fn build_lab_package_for(
+    ctx: &CataContext,
+    lab_name: &str,
+    direction: Direction,
+) -> Result<String> {
+    if direction == Direction::Deploy {
+        println!();
+        println!("{} Building lab manifests...", style(">>>").cyan());
+        let pkg = crate::io::nix::build_lab_package(ctx, lab_name)?;
+        println!("{} Lab package built", style(">>>").green());
+        Ok(pkg)
+    } else {
+        println!();
+        println!(
+            "{} Realizing teardown hook binaries...",
+            style(">>>").cyan()
+        );
+        match crate::io::nix::build_lab_package(ctx, lab_name) {
+            Ok(pkg) => {
+                println!("{} Lab package built", style(">>>").green());
+                Ok(pkg)
+            }
+            Err(e) => {
+                println!(
+                    "{} Could not build the lab package: {e}\n    \
+                     Teardown hooks and external-name discovery will be skipped \
+                     if their binaries are not already in the store; cloud \
+                     resources may leak.",
+                    style("Warning:").yellow(),
+                );
+                Ok(String::new())
+            }
+        }
+    }
+}
+
+fn resolve_stop_after(
+    steps: &[PlannedStep],
+    up_to: Option<&str>,
+    direction: Direction,
+) -> Result<Option<usize>> {
+    Ok(match up_to {
+        Some(kind) => {
+            let idx = steps.iter().rposition(|s| s.type_tag() == kind);
+            if idx.is_none() {
+                let known = crate::domain::step_kind::StepKind::from_tag(kind).is_some();
+                if known {
+                    bail!(
+                        "--up-to='{}' is a valid kind but the {} plan contains no such step",
+                        kind,
+                        direction.label(),
+                    );
+                }
+                let mut valid: Vec<&str> = crate::domain::step_kind::StepKind::ALL
+                    .iter()
+                    .map(|k| k.tag())
+                    .collect();
+                valid.sort_unstable();
+                bail!(
+                    "--up-to='{}' is not a step kind. Valid kinds:\n  {}",
+                    kind,
+                    valid.join("\n  "),
+                );
+            }
+            idx
+        }
+        None => None,
+    })
 }
 
 #[cfg(test)]

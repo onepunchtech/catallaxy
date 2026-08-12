@@ -11,21 +11,28 @@ use console::style;
 use crate::commands::apply::SecretsCache;
 use crate::commands::apply::{ProjectionConfig, inject_projections_with, parse_projections};
 use crate::config::Context as CataContext;
+use crate::domain::secrets;
 use crate::io;
 
 const BUNDLE_APPLY_ATTEMPTS: u32 = 4;
 const PHASE_APPLY_BACKOFF: Duration = Duration::from_secs(6);
 
-pub fn apply_manifest_root(
-    ctx: &CataContext,
-    kube_context: &str,
-    manifest_root: &Path,
-    field_manager: &str,
-    wait_timeout_seconds: u64,
-    dry_run: bool,
-    lab_config: Option<&serde_json::Value>,
-    secrets_cache: Option<&SecretsCache>,
-) -> Result<()> {
+pub struct ApplyManifests<'a> {
+    pub kube_context: &'a str,
+    pub manifest_root: &'a Path,
+    pub field_manager: &'a str,
+    pub wait_timeout_seconds: u64,
+    pub dry_run: bool,
+    pub lab_config: Option<&'a serde_json::Value>,
+    pub secrets_cache: Option<&'a SecretsCache>,
+}
+
+pub fn apply_manifest_root(ctx: &CataContext, opts: ApplyManifests<'_>) -> Result<()> {
+    let ApplyManifests {
+        manifest_root,
+        wait_timeout_seconds,
+        ..
+    } = opts;
     if !manifest_root.exists() {
         bail!(
             "manifest root not found at {}. Rebuild the lab package.",
@@ -43,17 +50,7 @@ pub fn apply_manifest_root(
             manifest_root.display()
         );
     }
-    apply_wave_ordered(
-        ctx,
-        kube_context,
-        manifest_root,
-        &wave_meta_path,
-        field_manager,
-        &timeout_str,
-        dry_run,
-        lab_config,
-        secrets_cache,
-    )
+    apply_wave_ordered(ctx, &opts, &wave_meta_path, &timeout_str)
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -74,12 +71,6 @@ pub struct WaveBundle {
     pub dir: String,
     #[serde(default)]
     pub ready_probe: Option<ReadyProbe>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    requires: Vec<String>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    provides: Vec<String>,
     pub has_content: bool,
 }
 
@@ -143,15 +134,19 @@ impl ReadyProbe {
 
 fn apply_wave_ordered(
     ctx: &CataContext,
-    kube_context: &str,
-    manifest_root: &Path,
+    opts: &ApplyManifests<'_>,
     wave_meta_path: &Path,
-    field_manager: &str,
     timeout_str: &str,
-    dry_run: bool,
-    lab_config: Option<&serde_json::Value>,
-    secrets_cache: Option<&SecretsCache>,
 ) -> Result<()> {
+    let &ApplyManifests {
+        kube_context,
+        manifest_root,
+        field_manager,
+        dry_run,
+        lab_config,
+        secrets_cache,
+        ..
+    } = opts;
     let raw = fs::read_to_string(wave_meta_path)
         .with_context(|| format!("reading .wave-meta at {}", wave_meta_path.display()))?;
     let meta: WaveMeta = serde_json::from_str(&raw)
@@ -185,73 +180,22 @@ fn apply_wave_ordered(
         );
 
         let wave_projections = projections_for_wave(wave);
-        if !wave_projections.is_empty() {
-            if let Some(cfg) = lab_config {
-                inject_projections_ssa(
-                    ctx,
-                    kube_context,
-                    cfg,
-                    &wave_projections,
-                    field_manager,
-                    secrets_cache.map(|v| &**v),
-                    dry_run,
-                )?;
-            }
-        }
-
-        for bundle in &wave.bundles {
-            if bundle.key.starts_with("projection/") {
-                continue;
-            }
-            let bundle_dir = manifest_root.join(&bundle.dir);
-            if !bundle_dir.exists() {
-                if bundle.has_content {
-                    println!(
-                        "{} bundle '{}' declares content but {} is missing, nothing applied",
-                        style(">>>").yellow(),
-                        bundle.key,
-                        bundle_dir.display(),
-                    );
-                }
-                continue;
-            }
-            apply_bundle_with_retry(
-                kube_context,
-                field_manager,
-                &bundle.key,
-                &bundle_dir,
-                dry_run,
-            )?;
-
-            wait_bundle_crds(
+        if !wave_projections.is_empty()
+            && let Some(cfg) = lab_config
+        {
+            inject_projections_ssa(
                 ctx,
                 kube_context,
-                &bundle.key,
-                &bundle_dir,
-                timeout_str,
+                cfg,
+                &wave_projections,
+                field_manager,
+                secrets_cache.map(|v| &**v),
                 dry_run,
             )?;
         }
 
-        for bundle in &wave.bundles {
-            if !bundle.has_content {
-                continue;
-            }
-            match &bundle.ready_probe {
-                Some(probe) => {
-                    run_ready_probe(ctx, kube_context, &bundle.key, probe, timeout_str, dry_run)?
-                }
-                None => {
-                    if !dry_run {
-                        wait_workloads_ready(
-                            kube_context,
-                            &manifest_root.join(&bundle.dir),
-                            timeout_str,
-                        )?;
-                    }
-                }
-            }
-        }
+        apply_wave_bundles(ctx, opts, wave, manifest_root, timeout_str)?;
+        await_wave_bundles(ctx, opts, wave, manifest_root, timeout_str)?;
     }
 
     println!(
@@ -367,6 +311,33 @@ fn run_ready_probe(
     dry_run: bool,
 ) -> Result<()> {
     match probe {
+        ReadyProbe::Condition { .. } => {
+            probe_condition(kube_context, bundle_key, probe, fallback_timeout, dry_run)
+        }
+        ReadyProbe::Jsonpath { .. } => {
+            probe_jsonpath(kube_context, bundle_key, probe, fallback_timeout, dry_run)
+        }
+        ReadyProbe::Exists { .. } => {
+            probe_exists(kube_context, bundle_key, probe, fallback_timeout, dry_run)
+        }
+        ReadyProbe::Pod { .. } => {
+            probe_pod(kube_context, bundle_key, probe, fallback_timeout, dry_run)
+        }
+        ReadyProbe::KubectlWait { .. } => {
+            probe_kubectl_wait(kube_context, bundle_key, probe, dry_run)
+        }
+        ReadyProbe::Script { .. } => probe_script(ctx, kube_context, bundle_key, probe, dry_run),
+    }
+}
+
+fn probe_condition(
+    kube_context: &str,
+    bundle_key: &str,
+    probe: &ReadyProbe,
+    fallback_timeout: &str,
+    dry_run: bool,
+) -> Result<()> {
+    match probe {
         ReadyProbe::Condition {
             resource,
             namespace,
@@ -436,6 +407,18 @@ fn run_ready_probe(
             }
             Ok(())
         }
+        _ => unreachable!("dispatched on the same variant"),
+    }
+}
+
+fn probe_jsonpath(
+    kube_context: &str,
+    bundle_key: &str,
+    probe: &ReadyProbe,
+    fallback_timeout: &str,
+    dry_run: bool,
+) -> Result<()> {
+    match probe {
         ReadyProbe::Jsonpath {
             resource,
             namespace,
@@ -496,6 +479,18 @@ fn run_ready_probe(
             }
             Ok(())
         }
+        _ => unreachable!("dispatched on the same variant"),
+    }
+}
+
+fn probe_exists(
+    kube_context: &str,
+    bundle_key: &str,
+    probe: &ReadyProbe,
+    fallback_timeout: &str,
+    dry_run: bool,
+) -> Result<()> {
+    match probe {
         ReadyProbe::Exists {
             resource,
             namespace,
@@ -534,6 +529,18 @@ fn run_ready_probe(
             }
             Ok(())
         }
+        _ => unreachable!("dispatched on the same variant"),
+    }
+}
+
+fn probe_pod(
+    kube_context: &str,
+    bundle_key: &str,
+    probe: &ReadyProbe,
+    fallback_timeout: &str,
+    dry_run: bool,
+) -> Result<()> {
+    match probe {
         ReadyProbe::Pod {
             image,
             command,
@@ -594,6 +601,17 @@ fn run_ready_probe(
             }
             Ok(())
         }
+        _ => unreachable!("dispatched on the same variant"),
+    }
+}
+
+fn probe_kubectl_wait(
+    kube_context: &str,
+    bundle_key: &str,
+    probe: &ReadyProbe,
+    dry_run: bool,
+) -> Result<()> {
+    match probe {
         ReadyProbe::KubectlWait { args } => {
             let mut full: Vec<String> =
                 vec!["--context".into(), kube_context.into(), "wait".into()];
@@ -620,6 +638,18 @@ fn run_ready_probe(
             }
             Ok(())
         }
+        _ => unreachable!("dispatched on the same variant"),
+    }
+}
+
+fn probe_script(
+    ctx: &CataContext,
+    kube_context: &str,
+    bundle_key: &str,
+    probe: &ReadyProbe,
+    dry_run: bool,
+) -> Result<()> {
+    match probe {
         ReadyProbe::Script { body } => {
             if dry_run {
                 println!(
@@ -644,6 +674,7 @@ fn run_ready_probe(
             }
             Ok(())
         }
+        _ => unreachable!("dispatched on the same variant"),
     }
 }
 
@@ -653,7 +684,7 @@ fn inject_projections_ssa(
     lab_config: &serde_json::Value,
     projections: &[(String, ProjectionConfig)],
     field_manager: &str,
-    pre_cache: Option<&HashMap<String, HashMap<String, HashMap<String, String>>>>,
+    pre_cache: Option<&secrets::SecretsByStore>,
     dry_run: bool,
 ) -> Result<()> {
     inject_projections_with(
@@ -725,21 +756,25 @@ fn wait_target_in_doc(doc: &str) -> Option<(String, String, String)> {
     let mut in_metadata = false;
     for line in doc.lines() {
         let trimmed = line.trim_start();
-        if line.starts_with("kind:") {
-            kind = Some(line["kind:".len()..].trim().to_string());
+        if let Some(rest) = line.strip_prefix("kind:") {
+            kind = Some(rest.trim().to_string());
         } else if line.starts_with("metadata:") {
             in_metadata = true;
-        } else if in_metadata && trimmed.starts_with("name:") && !line.starts_with(' ') {
-            name = Some(trimmed["name:".len()..].trim().to_string());
-        } else if in_metadata && line.starts_with("  name:") && name.is_none() {
-            name = Some(line["  name:".len()..].trim().trim_matches('"').to_string());
-        } else if in_metadata && line.starts_with("  namespace:") && ns.is_none() {
-            ns = Some(
-                line["  namespace:".len()..]
-                    .trim()
-                    .trim_matches('"')
-                    .to_string(),
-            );
+        } else if in_metadata
+            && let Some(rest) = trimmed.strip_prefix("name:")
+            && !line.starts_with(' ')
+        {
+            name = Some(rest.trim().to_string());
+        } else if in_metadata
+            && name.is_none()
+            && let Some(rest) = line.strip_prefix("  name:")
+        {
+            name = Some(rest.trim().trim_matches('"').to_string());
+        } else if in_metadata
+            && ns.is_none()
+            && let Some(rest) = line.strip_prefix("  namespace:")
+        {
+            ns = Some(rest.trim().trim_matches('"').to_string());
         } else if !line.starts_with(' ')
             && !line.is_empty()
             && !line.starts_with("apiVersion")
@@ -934,6 +969,90 @@ fn collect_yaml_files(root: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+fn apply_wave_bundles(
+    ctx: &CataContext,
+    opts: &ApplyManifests<'_>,
+    wave: &Wave,
+    manifest_root: &Path,
+    timeout_str: &str,
+) -> Result<()> {
+    let &ApplyManifests {
+        kube_context,
+        field_manager,
+        dry_run,
+        ..
+    } = opts;
+    for bundle in &wave.bundles {
+        if bundle.key.starts_with("projection/") {
+            continue;
+        }
+        let bundle_dir = manifest_root.join(&bundle.dir);
+        if !bundle_dir.exists() {
+            if bundle.has_content {
+                println!(
+                    "{} bundle '{}' declares content but {} is missing, nothing applied",
+                    style(">>>").yellow(),
+                    bundle.key,
+                    bundle_dir.display(),
+                );
+            }
+            continue;
+        }
+        apply_bundle_with_retry(
+            kube_context,
+            field_manager,
+            &bundle.key,
+            &bundle_dir,
+            dry_run,
+        )?;
+
+        wait_bundle_crds(
+            ctx,
+            kube_context,
+            &bundle.key,
+            &bundle_dir,
+            timeout_str,
+            dry_run,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn await_wave_bundles(
+    ctx: &CataContext,
+    opts: &ApplyManifests<'_>,
+    wave: &Wave,
+    manifest_root: &Path,
+    timeout_str: &str,
+) -> Result<()> {
+    let &ApplyManifests {
+        kube_context,
+        dry_run,
+        ..
+    } = opts;
+    for bundle in &wave.bundles {
+        if !bundle.has_content {
+            continue;
+        }
+        match &bundle.ready_probe {
+            Some(probe) => {
+                run_ready_probe(ctx, kube_context, &bundle.key, probe, timeout_str, dry_run)?
+            }
+            None => {
+                if !dry_run {
+                    wait_workloads_ready(
+                        kube_context,
+                        &manifest_root.join(&bundle.dir),
+                        timeout_str,
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

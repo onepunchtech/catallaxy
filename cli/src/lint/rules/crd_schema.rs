@@ -72,7 +72,7 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
         };
 
         let spec = match mapping
-            .get(&Value::String("spec".into()))
+            .get(Value::String("spec".into()))
             .and_then(|v| v.as_mapping())
         {
             Some(s) => s,
@@ -80,7 +80,7 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
         };
 
         let group = match spec
-            .get(&Value::String("group".into()))
+            .get(Value::String("group".into()))
             .and_then(|v| v.as_str())
         {
             Some(g) => g,
@@ -88,7 +88,7 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
         };
 
         let names = match spec
-            .get(&Value::String("names".into()))
+            .get(Value::String("names".into()))
             .and_then(|v| v.as_mapping())
         {
             Some(n) => n,
@@ -96,7 +96,7 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
         };
 
         let kind = match names
-            .get(&Value::String("kind".into()))
+            .get(Value::String("kind".into()))
             .and_then(|v| v.as_str())
         {
             Some(k) => k,
@@ -104,7 +104,7 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
         };
 
         let versions = match spec
-            .get(&Value::String("versions".into()))
+            .get(Value::String("versions".into()))
             .and_then(|v| v.as_sequence())
         {
             Some(v) => v,
@@ -118,7 +118,7 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
             };
 
             let version_name = match version_map
-                .get(&Value::String("name".into()))
+                .get(Value::String("name".into()))
                 .and_then(|v| v.as_str())
             {
                 Some(n) => n,
@@ -126,9 +126,9 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
             };
 
             let openapi_schema = match version_map
-                .get(&Value::String("schema".into()))
+                .get(Value::String("schema".into()))
                 .and_then(|v| v.as_mapping())
-                .and_then(|m| m.get(&Value::String("openAPIV3Schema".into())))
+                .and_then(|m| m.get(Value::String("openAPIV3Schema".into())))
             {
                 Some(s) => s,
                 None => continue,
@@ -159,12 +159,12 @@ fn parse_schema_node(value: &Value) -> SchemaNode {
     };
 
     let schema_type = mapping
-        .get(&Value::String("type".into()))
+        .get(Value::String("type".into()))
         .and_then(|v| v.as_str())
         .map(String::from);
 
     let required = mapping
-        .get(&Value::String("required".into()))
+        .get(Value::String("required".into()))
         .and_then(|v| v.as_sequence())
         .map(|seq| {
             seq.iter()
@@ -174,7 +174,7 @@ fn parse_schema_node(value: &Value) -> SchemaNode {
         .unwrap_or_default();
 
     let properties = mapping
-        .get(&Value::String("properties".into()))
+        .get(Value::String("properties".into()))
         .and_then(|v| v.as_mapping())
         .map(|props| {
             props
@@ -185,11 +185,11 @@ fn parse_schema_node(value: &Value) -> SchemaNode {
         .unwrap_or_default();
 
     let items = mapping
-        .get(&Value::String("items".into()))
+        .get(Value::String("items".into()))
         .map(|v| Box::new(parse_schema_node(v)));
 
     let enum_values = mapping
-        .get(&Value::String("enum".into()))
+        .get(Value::String("enum".into()))
         .and_then(|v| v.as_sequence())
         .map(|seq| {
             seq.iter()
@@ -199,7 +199,7 @@ fn parse_schema_node(value: &Value) -> SchemaNode {
         .unwrap_or_default();
 
     let additional_properties = mapping
-        .get(&Value::String("additionalProperties".into()))
+        .get(Value::String("additionalProperties".into()))
         .and_then(|v| {
             if v.is_bool() {
                 None
@@ -255,29 +255,28 @@ fn validate_object(
         }
     }
 
-    if !schema.enum_values.is_empty() {
-        if let Some(s) = value.as_str() {
-            if !schema.enum_values.contains(&s.to_string()) {
-                diags.push(Diagnostic {
-                    severity: Severity::Error,
-                    check: "crd-schema",
-                    cluster: cluster.to_string(),
-                    file: resource.source_file.clone(),
-                    resource: resource.display_id(),
-                    message: format!(
-                        "{}: value '{}' not in allowed values [{}]",
-                        field_path(path),
-                        s,
-                        schema.enum_values.join(", ")
-                    ),
-                });
-            }
-        }
+    if !schema.enum_values.is_empty()
+        && let Some(s) = value.as_str()
+        && !schema.enum_values.contains(&s.to_string())
+    {
+        diags.push(Diagnostic {
+            severity: Severity::Error,
+            check: "crd-schema",
+            cluster: cluster.to_string(),
+            file: resource.source_file.clone(),
+            resource: resource.display_id(),
+            message: format!(
+                "{}: value '{}' not in allowed values [{}]",
+                field_path(path),
+                s,
+                schema.enum_values.join(", ")
+            ),
+        });
     }
 
     if let Some(mapping) = value.as_mapping() {
         for req in &schema.required {
-            if !mapping.contains_key(&Value::String(req.clone().into())) {
+            if !mapping.contains_key(Value::String(req.clone())) {
                 diags.push(Diagnostic {
                     severity: Severity::Error,
                     check: "crd-schema",
@@ -306,12 +305,12 @@ fn validate_object(
         }
     }
 
-    if let Some(seq) = value.as_sequence() {
-        if let Some(ref items_schema) = schema.items {
-            for (i, item) in seq.iter().enumerate() {
-                let child_path = format!("{}[{}]", path, i);
-                validate_object(item, items_schema, &child_path, resource, cluster, diags);
-            }
+    if let Some(seq) = value.as_sequence()
+        && let Some(ref items_schema) = schema.items
+    {
+        for (i, item) in seq.iter().enumerate() {
+            let child_path = format!("{}[{}]", path, i);
+            validate_object(item, items_schema, &child_path, resource, cluster, diags);
         }
     }
 }
@@ -340,26 +339,26 @@ mod tests {
         let mapping = value.as_mapping().unwrap();
         K8sResource {
             api_version: mapping
-                .get(&Value::String("apiVersion".into()))
+                .get(Value::String("apiVersion".into()))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
             kind: mapping
-                .get(&Value::String("kind".into()))
+                .get(Value::String("kind".into()))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
             name: mapping
-                .get(&Value::String("metadata".into()))
+                .get(Value::String("metadata".into()))
                 .and_then(|v| v.as_mapping())
-                .and_then(|m| m.get(&Value::String("name".into())))
+                .and_then(|m| m.get(Value::String("name".into())))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string(),
             namespace: mapping
-                .get(&Value::String("metadata".into()))
+                .get(Value::String("metadata".into()))
                 .and_then(|v| v.as_mapping())
-                .and_then(|m| m.get(&Value::String("namespace".into())))
+                .and_then(|m| m.get(Value::String("namespace".into())))
                 .and_then(|v| v.as_str())
                 .map(String::from),
             selector: None,

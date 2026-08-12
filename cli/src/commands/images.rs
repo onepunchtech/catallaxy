@@ -353,6 +353,13 @@ pub async fn warm_to_target_with(
         });
     }
 
+    report_warm_results(&mut tasks, images.len()).await
+}
+
+async fn report_warm_results(
+    tasks: &mut tokio::task::JoinSet<WarmOutcome>,
+    total: usize,
+) -> Result<()> {
     let mut failed = 0usize;
     let mut skipped = 0usize;
     while let Some(res) = tasks.join_next().await {
@@ -372,7 +379,7 @@ pub async fn warm_to_target_with(
     }
 
     println!();
-    let processed = images.len() - failed - skipped;
+    let processed = total - failed - skipped;
     if failed == 0 {
         println!(
             "{} Cache: {processed} ready, {skipped} skipped",
@@ -434,16 +441,14 @@ async fn warm_one_image(
         None => {
             let tags_url = format!("{base}/v2/{}/tags/list", r.repo);
             let mut tags = std::collections::HashSet::new();
-            if let Ok(resp) = client.get(&tags_url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(body) = resp.json::<serde_json::Value>().await {
-                        if let Some(arr) = body.get("tags").and_then(|t| t.as_array()) {
-                            for v in arr {
-                                if let Some(s) = v.as_str() {
-                                    tags.insert(s.to_owned());
-                                }
-                            }
-                        }
+            if let Ok(resp) = client.get(&tags_url).send().await
+                && resp.status().is_success()
+                && let Ok(body) = resp.json::<serde_json::Value>().await
+                && let Some(arr) = body.get("tags").and_then(|t| t.as_array())
+            {
+                for v in arr {
+                    if let Some(s) = v.as_str() {
+                        tags.insert(s.to_owned());
                     }
                 }
             }

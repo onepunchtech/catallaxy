@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::CataError;
 
 pub type StoreValues = HashMap<String, HashMap<String, String>>;
-pub type SecretsCache = Arc<HashMap<String, StoreValues>>;
+pub type SecretsByStore = HashMap<String, StoreValues>;
+pub type SecretsCache = Arc<SecretsByStore>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -238,8 +239,8 @@ fn describe_env_problems(
 
     match spec.env_file.as_deref() {
         Some(file) => msg.push_str(&format!(
-            "\n{lab_name} names the file that sets them:\n\n  {file}\n\n\
-             Load it into this shell and run again:\n\n  set -a; . {file}; set +a\n",
+            "\n{lab_name} names the file that sets them, relative to the flake root:\n\n  {file}\n\n\
+             Load it into this shell and run again:\n\n  set -a; . ./{file}; set +a\n",
         )),
         None => msg.push_str(&format!(
             "\n{lab_name} names no lab.secrets.envFile, so export them yourself, \

@@ -39,11 +39,6 @@ struct Failure {
     error: String,
 }
 
-/// Runs the Chainsaw tests rendered into the lab package, one per cluster.
-///
-/// The assertions come from the floes a lab enables rather than from the lab
-/// itself, so a lab inherits them by enabling a component. What a failure
-/// says is Chainsaw's message, which names the offending resource.
 pub fn run(ctx: &VerifyContext<'_>, package: &Path) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
 
@@ -71,30 +66,7 @@ pub fn run(ctx: &VerifyContext<'_>, package: &Path) -> Vec<Diagnostic> {
             }
         };
 
-        let kubeconfig = std::env::var("KUBECONFIG").unwrap_or_else(|_| {
-            format!(
-                "{}/.kube/config",
-                std::env::var("HOME").unwrap_or_else(|_| "/root".into())
-            )
-        });
-
-        let output = Command::new("chainsaw")
-            .args([
-                "test",
-                "--test-dir",
-                &test_dir.display().to_string(),
-                "--cluster",
-                &format!("{cluster}={kubeconfig}:{context}"),
-                "--report-format",
-                "JSON",
-                "--report-path",
-                &report_dir.path().display().to_string(),
-                "--report-name",
-                "report",
-            ])
-            .output();
-
-        let output = match output {
+        let output = match run_chainsaw(&test_dir, cluster, context, report_dir.path()) {
             Ok(o) => o,
             Err(e) => {
                 diags.push(diag(
@@ -108,55 +80,101 @@ pub fn run(ctx: &VerifyContext<'_>, package: &Path) -> Vec<Diagnostic> {
             }
         };
 
-        let report_path = report_dir.path().join("report.json");
-        let parsed: Option<Report> = std::fs::read(&report_path)
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok());
+        diags.extend(report_diagnostics(
+            cluster,
+            &test_dir,
+            report_dir.path(),
+            &output,
+        ));
+    }
 
-        let Some(report) = parsed else {
-            if !output.status.success() {
-                diags.push(diag(
-                    Severity::Error,
-                    CHECK,
-                    cluster,
-                    "chainsaw",
-                    format!(
-                        "chainsaw failed and wrote no report: {}",
-                        String::from_utf8_lossy(&output.stderr).trim()
-                    ),
-                ));
-            }
-            continue;
-        };
+    diags
+}
 
-        if report.tests.is_empty() {
+fn run_chainsaw(
+    test_dir: &Path,
+    cluster: &str,
+    context: &str,
+    report_dir: &Path,
+) -> std::io::Result<std::process::Output> {
+    let kubeconfig = std::env::var("KUBECONFIG").unwrap_or_else(|_| {
+        format!(
+            "{}/.kube/config",
+            std::env::var("HOME").unwrap_or_else(|_| "/root".into())
+        )
+    });
+
+    Command::new("chainsaw")
+        .args([
+            "test",
+            "--test-dir",
+            &test_dir.display().to_string(),
+            "--cluster",
+            &format!("{cluster}={kubeconfig}:{context}"),
+            "--report-format",
+            "JSON",
+            "--report-path",
+            &report_dir.display().to_string(),
+            "--report-name",
+            "report",
+        ])
+        .output()
+}
+
+fn report_diagnostics(
+    cluster: &str,
+    test_dir: &Path,
+    report_dir: &Path,
+    output: &std::process::Output,
+) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+    let parsed: Option<Report> = std::fs::read(report_dir.join("report.json"))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok());
+
+    let Some(report) = parsed else {
+        if !output.status.success() {
             diags.push(diag(
                 Severity::Error,
                 CHECK,
                 cluster,
                 "chainsaw",
                 format!(
-                    "{} exists but chainsaw ran no tests from it. It reports that as \
-                     success, so every assertion the floes declared would have been \
-                     silently skipped.",
-                    test_dir.display()
+                    "chainsaw failed and wrote no report: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
                 ),
             ));
-            continue;
         }
+        return diags;
+    };
 
-        for test in &report.tests {
-            for step in &test.steps {
-                for op in &step.operations {
-                    if let Some(failure) = &op.failure {
-                        diags.push(diag(
-                            Severity::Error,
-                            CHECK,
-                            cluster,
-                            &step.name,
-                            failure.error.clone(),
-                        ));
-                    }
+    if report.tests.is_empty() {
+        diags.push(diag(
+            Severity::Error,
+            CHECK,
+            cluster,
+            "chainsaw",
+            format!(
+                "{} exists but chainsaw ran no tests from it. It reports that as \
+                 success, so every assertion the floes declared would have been \
+                 silently skipped.",
+                test_dir.display()
+            ),
+        ));
+        return diags;
+    }
+
+    for test in &report.tests {
+        for step in &test.steps {
+            for op in &step.operations {
+                if let Some(failure) = &op.failure {
+                    diags.push(diag(
+                        Severity::Error,
+                        CHECK,
+                        cluster,
+                        &step.name,
+                        failure.error.clone(),
+                    ));
                 }
             }
         }

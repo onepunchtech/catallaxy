@@ -110,10 +110,10 @@ impl<'a> SchemaConverter<'a> {
                 .map(String::from);
         }
 
-        if let Some(properties) = schema.get("properties") {
-            if let Some(spec_schema) = properties.get("spec") {
-                resource.spec = Some(self.convert_schema(spec_schema));
-            }
+        if let Some(properties) = schema.get("properties")
+            && let Some(spec_schema) = properties.get("spec")
+        {
+            resource.spec = Some(self.convert_schema(spec_schema));
         }
 
         resource.namespaced = true;
@@ -126,10 +126,10 @@ impl<'a> SchemaConverter<'a> {
             return self.convert_ref(ref_path);
         }
 
-        if let Some(all_of) = schema.get("allOf").and_then(|v| v.as_array()) {
-            if let Some(first) = all_of.first() {
-                return self.convert_schema(first);
-            }
+        if let Some(all_of) = schema.get("allOf").and_then(|v| v.as_array())
+            && let Some(first) = all_of.first()
+        {
+            return self.convert_schema(first);
         }
 
         if let Some(one_of) = schema
@@ -236,10 +236,10 @@ impl<'a> SchemaConverter<'a> {
                     option.default = Some("null".to_string());
                 }
 
-                if self.options.include_descriptions {
-                    if let Some(desc) = prop_schema.get("description").and_then(|v| v.as_str()) {
-                        option.description = Some(desc.to_string());
-                    }
+                if self.options.include_descriptions
+                    && let Some(desc) = prop_schema.get("description").and_then(|v| v.as_str())
+                {
+                    option.description = Some(desc.to_string());
                 }
 
                 submodule.options.insert(name.clone(), option);

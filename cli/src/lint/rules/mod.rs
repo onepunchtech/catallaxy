@@ -98,21 +98,21 @@ pub(crate) mod test_util {
         let mapping = value.as_mapping().expect("YAML root must be a mapping");
         let get = |key: &str| {
             mapping
-                .get(&Value::String(key.into()))
+                .get(Value::String(key.into()))
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string()
         };
         let namespace = mapping
-            .get(&Value::String("metadata".into()))
+            .get(Value::String("metadata".into()))
             .and_then(|v| v.as_mapping())
-            .and_then(|m| m.get(&Value::String("namespace".into())))
+            .and_then(|m| m.get(Value::String("namespace".into())))
             .and_then(|v| v.as_str())
             .map(String::from);
         let name = mapping
-            .get(&Value::String("metadata".into()))
+            .get(Value::String("metadata".into()))
             .and_then(|v| v.as_mapping())
-            .and_then(|m| m.get(&Value::String("name".into())))
+            .and_then(|m| m.get(Value::String("name".into())))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();

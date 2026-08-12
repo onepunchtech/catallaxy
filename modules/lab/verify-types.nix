@@ -31,7 +31,6 @@ in
     in
     "(${value} != null && ${value} != '${status}')";
 
-  # The same shape for a plain field, as in `status.health.status`.
   fieldIsNot = { field, value }: "(${field} != null && ${field} != '${value}')";
 
   checkType = types.submodule (

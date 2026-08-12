@@ -33,10 +33,10 @@ fn is_kube_system_service(r: &K8sResource) -> bool {
 }
 
 fn is_operator_managed_workload_service(r: &K8sResource) -> bool {
-    if let Some(selector) = &r.selector {
-        if let Some(app_name) = selector.get("app.kubernetes.io/name") {
-            return matches!(app_name.as_str(), "prometheus" | "alertmanager");
-        }
+    if let Some(selector) = &r.selector
+        && let Some(app_name) = selector.get("app.kubernetes.io/name")
+    {
+        return matches!(app_name.as_str(), "prometheus" | "alertmanager");
     }
     false
 }
@@ -44,13 +44,13 @@ fn is_operator_managed_workload_service(r: &K8sResource) -> bool {
 fn check(resources: &[K8sResource], cluster: &str) -> Vec<Diagnostic> {
     let mut workloads_by_ns: HashMap<Option<&str>, Vec<&BTreeMap<String, String>>> = HashMap::new();
     for r in resources {
-        if r.is_workload() {
-            if let Some(labels) = &r.pod_labels {
-                workloads_by_ns
-                    .entry(r.namespace.as_deref())
-                    .or_default()
-                    .push(labels);
-            }
+        if r.is_workload()
+            && let Some(labels) = &r.pod_labels
+        {
+            workloads_by_ns
+                .entry(r.namespace.as_deref())
+                .or_default()
+                .push(labels);
         }
     }
 
@@ -77,11 +77,9 @@ fn check(resources: &[K8sResource], cluster: &str) -> Vec<Diagnostic> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        let has_match = workloads.iter().any(|labels| {
-            selector
-                .iter()
-                .all(|(k, v)| labels.get(k).map_or(false, |lv| lv == v))
-        });
+        let has_match = workloads
+            .iter()
+            .any(|labels| selector.iter().all(|(k, v)| labels.get(k) == Some(v)));
 
         if !has_match {
             diags.push(Diagnostic {

@@ -51,7 +51,6 @@ jobs:
           nix build .#cata --out-link cata
           nix build .#legacyPackages.x86_64-linux.labPackages.\"${{ matrix.lab }}\" --out-link lab
           echo "$PWD/cata/bin" >> "$GITHUB_PATH"
-          # hashFiles does not follow the symlink into the store.
           echo "IMAGES_KEY=$(sha256sum lab/images.txt | cut -c1-32)" >> "$GITHUB_ENV"
           echo "IMAGE_COUNT=$(wc -l < lab/images.txt)" >> "$GITHUB_ENV"
       - name: Restore image cache

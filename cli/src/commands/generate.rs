@@ -120,7 +120,7 @@ fn generate(config: GenerateConfig) -> Result<()> {
 
         let nix_code = emit_crd_types(name, &resources, emitter_config.clone());
 
-        let file_name = format!("{}.nix", name.replace('.', "_").replace('-', "_"));
+        let file_name = format!("{}.nix", name.replace(['.', '-'], "_"));
         let file_path = output_dir.join("crds").join(&file_name);
         fs::write(&file_path, &nix_code)
             .with_context(|| format!("Failed to write {:?}", file_path))?;

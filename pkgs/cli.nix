@@ -33,5 +33,13 @@ craneLib.buildPackage (
   commonArgs
   // {
     inherit cargoArtifacts;
+
+    passthru.clippy = craneLib.cargoClippy (
+      commonArgs
+      // {
+        inherit cargoArtifacts;
+        cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+      }
+    );
   }
 )

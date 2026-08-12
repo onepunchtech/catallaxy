@@ -14,9 +14,11 @@
 
 {
   cli = packages.cataWrapped;
+  cli-clippy = packages.cata.passthru.clippy;
   docs = packages.docs;
   formatting = treefmtEval.config.build.check self;
 }
+// import ./cli-lints.nix { inherit pkgs self; }
 // import ./lib-tests.nix { inherit lib pkgs e2eLabs; }
 // import ./step-kinds.nix { inherit lib pkgs system; }
 // import ./docs.nix {

@@ -118,7 +118,6 @@ pub enum SecretsCommands {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 struct Projection {
     source: String,
     namespace: String,
@@ -127,11 +126,9 @@ struct Projection {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 struct ProjectionKeyDef {
     from: String,
     transform: Option<String>,
-    json_key: Option<String>,
 }
 
 #[derive(Debug)]
@@ -277,13 +274,12 @@ fn parse_lab_secrets(lab_name: &str, lab: &serde_json::Value) -> Result<LabSecre
     let mut projections = Vec::new();
     if let Some(clusters) = lab.pointer("/clusters").and_then(|v| v.as_object()) {
         for (cname, cconfig) in clusters {
-            if let Some(projs) = cconfig.get("projections") {
-                if let Ok(cluster_projs) =
+            if let Some(projs) = cconfig.get("projections")
+                && let Ok(cluster_projs) =
                     serde_json::from_value::<HashMap<String, Projection>>(projs.clone())
-                {
-                    for (pname, proj) in cluster_projs {
-                        projections.push((cname.clone(), pname, proj));
-                    }
+            {
+                for (pname, proj) in cluster_projs {
+                    projections.push((cname.clone(), pname, proj));
                 }
             }
         }

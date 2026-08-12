@@ -82,10 +82,10 @@ fn pem_blocks(pem: &str) -> Vec<String> {
                 block.push(trimmed);
                 out.push(block.join("\n"));
             }
-        } else if let Some(block) = current.as_mut() {
-            if !trimmed.is_empty() {
-                block.push(trimmed);
-            }
+        } else if let Some(block) = current.as_mut()
+            && !trimmed.is_empty()
+        {
+            block.push(trimmed);
         }
     }
     out

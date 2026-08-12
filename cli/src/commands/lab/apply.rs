@@ -1,18 +1,7 @@
-#![allow(unused_imports)]
-
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use console::style;
 
-use crate::commands::kubeconfig;
 use crate::config::Context as CataContext;
-use crate::io;
-
-use super::{dns, orchestrate, pki, publish, services, state};
 
 pub async fn run(
     ctx: &CataContext,

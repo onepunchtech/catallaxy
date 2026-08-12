@@ -4,15 +4,6 @@ let
   yamlUtil = import ./yaml.nix { inherit lib pkgs; };
 in
 {
-  /*
-    One Chainsaw Test per cluster, holding every check that cluster's floes
-    and the lab declare. `cata lab verify` runs it against that cluster's
-    runtime context.
-
-    `namespace` is pinned and `skipDelete` set because a Test that neither
-    pins nor skips creates an ephemeral namespace and tidies up after
-    itself, and verifying a lab must not touch it.
-  */
   mkVerifyTest =
     {
       labName,

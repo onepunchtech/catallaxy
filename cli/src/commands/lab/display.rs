@@ -35,7 +35,7 @@ pub async fn topology_cmd(ctx: &CataContext, name: &str, format: &str, live: boo
         crate::topology::extract::enrich_live(ctx, &mut topo)?;
     }
 
-    let fmt = crate::topology::TopologyFormat::from_str(format);
+    let fmt = format.parse::<crate::topology::TopologyFormat>()?;
     crate::topology::render::render(&topo, fmt)
 }
 
@@ -60,9 +60,6 @@ struct LabState {
     clusters: Vec<ClusterState>,
 }
 
-/// The same state the table shows, in a shape something can assert on. CI
-/// uses it after `lab destroy` to say that nothing survived, which reading a
-/// table would make a grep against colour codes.
 pub async fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
     let lab = crate::io::nix::get_lab_config(ctx, name)?;
 
@@ -142,54 +139,63 @@ pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
     );
     println!();
 
-    if let Some(services) = lab["services"].as_object() {
-        if !services.is_empty() {
-            println!("{}", style("Services:").bold());
-            for (svc_name, svc) in services {
-                let container = svc["container"].as_str().unwrap_or("");
-                let description = svc["description"].as_str().unwrap_or("");
-                let running = if !container.is_empty() {
-                    io::docker::container_running(container)
-                } else {
-                    false
-                };
-                let status_str = if running {
-                    style("running").green()
-                } else {
-                    style("stopped").red()
-                };
+    print_service_status(&lab);
+    print_cluster_status(&lab)?;
 
-                let ports_str = svc["ports"]
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    })
-                    .unwrap_or_default();
+    Ok(())
+}
 
-                if ports_str.is_empty() {
-                    println!(
-                        "  {} ({}) [{}]",
-                        style(svc_name).cyan(),
-                        description,
-                        status_str
-                    );
-                } else {
-                    println!(
-                        "  {} ({}) [{}] {}",
-                        style(svc_name).cyan(),
-                        description,
-                        status_str,
-                        style(format!("[{ports_str}]")).dim()
-                    );
-                }
+fn print_service_status(lab: &serde_json::Value) {
+    if let Some(services) = lab["services"].as_object()
+        && !services.is_empty()
+    {
+        println!("{}", style("Services:").bold());
+        for (svc_name, svc) in services {
+            let container = svc["container"].as_str().unwrap_or("");
+            let description = svc["description"].as_str().unwrap_or("");
+            let running = if !container.is_empty() {
+                io::docker::container_running(container)
+            } else {
+                false
+            };
+            let status_str = if running {
+                style("running").green()
+            } else {
+                style("stopped").red()
+            };
+
+            let ports_str = svc["ports"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+
+            if ports_str.is_empty() {
+                println!(
+                    "  {} ({}) [{}]",
+                    style(svc_name).cyan(),
+                    description,
+                    status_str
+                );
+            } else {
+                println!(
+                    "  {} ({}) [{}] {}",
+                    style(svc_name).cyan(),
+                    description,
+                    status_str,
+                    style(format!("[{ports_str}]")).dim()
+                );
             }
-            println!();
         }
+        println!();
     }
+}
 
+fn print_cluster_status(lab: &serde_json::Value) -> Result<()> {
     let cluster_names: Vec<String> = lab["clusterNames"]
         .as_array()
         .map(|arr| {
@@ -201,7 +207,7 @@ pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
 
     println!("{}", style("Clusters:").bold());
     for cluster_name in &cluster_names {
-        let context_name = super::state::resolve_cluster_context(&lab, cluster_name);
+        let context_name = super::state::resolve_cluster_context(lab, cluster_name);
         let reachable = io::kubectl::api_reachable(&context_name);
 
         let status_str = if reachable {
@@ -223,7 +229,7 @@ pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
     let reachable_count = cluster_names
         .iter()
         .filter(|name| {
-            let ctx = super::state::resolve_cluster_context(&lab, name);
+            let ctx = super::state::resolve_cluster_context(lab, name);
             io::kubectl::api_reachable(&ctx)
         })
         .count();

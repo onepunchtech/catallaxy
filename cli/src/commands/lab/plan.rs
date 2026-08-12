@@ -94,10 +94,8 @@ fn extract_plan_array(v: &Value, plan_key: &str) -> Result<Vec<Value>> {
                 }
             }
         }
-        if ok {
-            if let Some(arr) = cur.as_array() {
-                return Ok(arr.clone());
-            }
+        if ok && let Some(arr) = cur.as_array() {
+            return Ok(arr.clone());
         }
     }
     bail!("no plan array found");

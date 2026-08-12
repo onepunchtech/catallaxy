@@ -17,6 +17,17 @@ let
 
   internalHostnames = config.floes.gateway.internalHostnames or [ ];
 
+  routePaths =
+    resource:
+    lib.unique (
+      lib.concatMap (
+        rule:
+        lib.concatMap (match: lib.optional ((match.path.value or "") != "") match.path.value) (
+          rule.matches or [ ]
+        )
+      ) (resource.spec.rules or [ ])
+    );
+
   routeEntries = lib.concatLists (
     lib.mapAttrsToList (
       bundleName: bundle:
@@ -29,6 +40,7 @@ let
               tier = if builtins.elem host internalHostnames then "internal" else "public";
               namespace = resource.metadata.namespace or "default";
               bundle = bundleName;
+              paths = routePaths resource;
             }) (lib.filter (h: !(lib.hasInfix "*" h)) (resource.spec.hostnames or [ ]))
           )
         ) (bundle.resources or { })
@@ -41,6 +53,7 @@ let
     (lib.head entries)
     // {
       tier = if lib.all (e: e.tier == "internal") entries then "internal" else "public";
+      paths = lib.unique (lib.concatMap (e: e.paths) entries);
     }
   ) (lib.attrValues (lib.groupBy (e: e.host) routeEntries));
 
@@ -232,6 +245,21 @@ in
             bundle = mkOption {
               type = types.str;
               description = "Bundle that declares it, for pointing at when a probe fails.";
+            };
+            paths = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              description = ''
+                Path prefixes the route matches, in declaration order.
+                Empty when the route matches every path, which is the
+                common case.
+
+                A probe of `/` on a host whose route only matches
+                `/api/v1/write` proves nothing: the gateway is right to
+                refuse it. `cata lab verify` probes the first of these
+                instead, so the request goes where the route says it
+                should.
+              '';
             };
           };
         }

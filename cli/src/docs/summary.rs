@@ -10,16 +10,16 @@ pub fn parse(summary: &str) -> Vec<NavEntry> {
 
     for line in summary.lines() {
         let trimmed = line.trim();
-        if let Some(heading) = trimmed.strip_prefix("# ") {
-            if !trimmed.contains("](") {
-                let heading = heading.trim();
-                section = if heading == "Summary" {
-                    None
-                } else {
-                    Some(heading.to_string())
-                };
-                continue;
-            }
+        if let Some(heading) = trimmed.strip_prefix("# ")
+            && !trimmed.contains("](")
+        {
+            let heading = heading.trim();
+            section = if heading == "Summary" {
+                None
+            } else {
+                Some(heading.to_string())
+            };
+            continue;
         }
         if let Some((title, path)) = parse_link(line) {
             out.push(NavEntry {

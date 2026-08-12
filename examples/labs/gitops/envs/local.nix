@@ -11,7 +11,7 @@
   lab.proxy.enable = true;
 
   lab.secrets.stores.app.backend = "env";
-  lab.secrets.envFile = ./ci.env;
+  lab.secrets.envFile = "examples/labs/gitops/envs/ci.env";
   lab.secrets.managed.session-key = {
     store = "app";
     keys.secret = {

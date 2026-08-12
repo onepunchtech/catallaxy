@@ -125,13 +125,15 @@ pub enum TopologyFormat {
     Dot,
 }
 
-impl TopologyFormat {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl std::str::FromStr for TopologyFormat {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "json" => Self::Json,
             "mermaid" => Self::Mermaid,
             "dot" => Self::Dot,
             _ => Self::Table,
-        }
+        })
     }
 }

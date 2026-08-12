@@ -6,16 +6,24 @@ use console::style;
 
 use crate::plan::StepContext;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    kube_context: Option<&str>,
-    values_path: &str,
-    chart_ref: &str,
-    release_name: &str,
-    namespace: Option<&str>,
-    _wait_timeout_seconds: Option<u64>,
-) -> Result<()> {
+pub struct ArgocdHelm<'a> {
+    pub target: &'a str,
+    pub kube_context: Option<&'a str>,
+    pub values_path: &'a str,
+    pub chart_ref: &'a str,
+    pub release_name: &'a str,
+    pub namespace: Option<&'a str>,
+}
+
+pub fn run(sctx: &StepContext<'_>, install: ArgocdHelm<'_>) -> Result<()> {
+    let ArgocdHelm {
+        target,
+        kube_context,
+        values_path,
+        chart_ref,
+        release_name,
+        namespace,
+    } = install;
     let kube_context = kube_context.ok_or_else(|| {
         anyhow::anyhow!(
             "bootstrap-argocd-helm: missing kubeContext for target '{target}'. \

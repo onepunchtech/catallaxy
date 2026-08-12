@@ -25,7 +25,7 @@ pub fn container_exists(name: &str) -> bool {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .map_or(false, |s| s.success())
+        .is_ok_and(|s| s.success())
 }
 
 pub fn run_container(
@@ -77,21 +77,34 @@ pub fn get_container_ip(container: &str) -> Option<String> {
     None
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn run_container_extended(
-    ctx: &CataContext,
-    name: &str,
-    image: &str,
-    ports: &[&str],
-    volume_mounts: &[(&str, &str)],
-    link: Option<&str>,
-    networks: &[&str],
-    dns_ips: &[String],
-    command: &[&str],
-    network_mode: Option<&str>,
-    cap_add: &[&str],
-    network_ips: &HashMap<String, String>,
-) -> Result<()> {
+pub struct RunContainer<'a> {
+    pub name: &'a str,
+    pub image: &'a str,
+    pub ports: &'a [&'a str],
+    pub volume_mounts: &'a [(&'a str, &'a str)],
+    pub link: Option<&'a str>,
+    pub networks: &'a [&'a str],
+    pub dns_ips: &'a [String],
+    pub command: &'a [&'a str],
+    pub network_mode: Option<&'a str>,
+    pub cap_add: &'a [&'a str],
+    pub network_ips: &'a HashMap<String, String>,
+}
+
+pub fn run_container_extended(ctx: &CataContext, opts: RunContainer<'_>) -> Result<()> {
+    let RunContainer {
+        name,
+        image,
+        ports,
+        volume_mounts,
+        link,
+        networks,
+        dns_ips,
+        command,
+        network_mode,
+        cap_add,
+        network_ips,
+    } = opts;
     if container_exists(name) && !container_running(name) {
         let _ = Command::new("docker")
             .args(["rm", name])

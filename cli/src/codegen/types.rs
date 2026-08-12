@@ -153,7 +153,7 @@ impl K8sResourceType {
         let group = if self.group.is_empty() || self.group == "core" {
             "core".to_string()
         } else {
-            self.group.replace('.', "_").replace('-', "_")
+            self.group.replace(['.', '-'], "_")
         };
         format!("{}.{}.{}", group, self.version, self.kind)
     }

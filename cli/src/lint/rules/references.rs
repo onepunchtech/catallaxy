@@ -29,15 +29,15 @@ impl CheckRule for References {
 fn promised_by_custom_resources(resources: &[K8sResource]) -> HashSet<(Option<&str>, String)> {
     let mut promised = HashSet::new();
     for r in resources {
-        if r.kind == "Certificate" && r.api_version.starts_with("cert-manager.io/") {
-            if let Some(name) = r
+        if r.kind == "Certificate"
+            && r.api_version.starts_with("cert-manager.io/")
+            && let Some(name) = r
                 .raw
                 .get("spec")
                 .and_then(|s| s.get("secretName"))
                 .and_then(|v| v.as_str())
-            {
-                promised.insert((r.namespace.as_deref(), name.to_string()));
-            }
+        {
+            promised.insert((r.namespace.as_deref(), name.to_string()));
         }
         if r.kind == "Cluster" && r.api_version.starts_with("postgresql.cnpg.io/") {
             promised.insert((r.namespace.as_deref(), format!("{}-app", r.name)));

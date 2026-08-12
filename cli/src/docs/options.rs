@@ -324,6 +324,28 @@ pub fn render_all(all: BTreeMap<String, OptionDoc>) -> Result<Rendered, RenderEr
         + cluster.len()
         + bundles.len()
         + floes.values().map(|f| f.len()).sum::<usize>();
+    assemble_pages(
+        lab,
+        lab_steps,
+        cluster,
+        bundles,
+        floes,
+        option_count,
+        undescribed,
+    )
+}
+
+type OptionMap = BTreeMap<String, OptionDoc>;
+
+fn assemble_pages(
+    lab: OptionMap,
+    lab_steps: OptionMap,
+    cluster: OptionMap,
+    bundles: OptionMap,
+    floes: BTreeMap<String, OptionMap>,
+    option_count: usize,
+    mut undescribed: Vec<String>,
+) -> Result<Rendered, RenderError> {
     let mut pages = vec![
         Page {
             path: "options/lab.md".into(),

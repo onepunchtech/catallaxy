@@ -7,9 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::domain::LabSpec;
 pub use crate::domain::diagnostic::{Diagnostic, Severity};
 
-/// The checks `cata lab verify` runs, in the order it runs them. Each later
-/// one is only meaningful when the earlier ones passed, so the order is the
-/// order a failure is most usefully reported in.
 pub const CHECK_NAMES: [&str; 5] = ["clusters", "services", "rollouts", "endpoints", "chainsaw"];
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -54,6 +51,14 @@ pub struct ExposedHost {
     pub tier: String,
     pub namespace: String,
     pub bundle: String,
+    #[serde(default)]
+    pub paths: Vec<String>,
+}
+
+impl ExposedHost {
+    pub fn probe_path(&self) -> &str {
+        self.paths.first().map_or("/", |p| p.as_str())
+    }
 }
 
 pub struct VerifyContext<'a> {
@@ -86,8 +91,6 @@ impl VerifyContext<'_> {
             .unwrap_or_default()
     }
 
-    /// Every host the lab's routes answer to, one entry per host even when
-    /// two clusters route the same name.
     pub fn exposed_hosts(&self) -> Vec<(String, ExposedHost)> {
         let mut out = Vec::new();
         for (cluster, spec) in &self.lab.clusters {
@@ -105,9 +108,6 @@ impl VerifyContext<'_> {
         out
     }
 
-    /// Where the lab's ingress answers, read off the proxy service's published
-    /// ports rather than stated a second time. `None` when the lab runs no
-    /// proxy, in which case there is nothing to probe through.
     pub fn ingress(&self) -> Option<(&'static str, u16)> {
         let published: Vec<u16> = self.lab.services["proxy"]["ports"]
             .as_array()?
@@ -335,6 +335,40 @@ mod tests {
 }
 
 #[cfg(test)]
+mod probe_path_tests {
+    use crate::verify::ExposedHost;
+
+    fn host_with(paths: Vec<&str>) -> ExposedHost {
+        ExposedHost {
+            host: "h.test".to_string(),
+            tier: "public".to_string(),
+            namespace: "n".to_string(),
+            bundle: "b".to_string(),
+            paths: paths.into_iter().map(String::from).collect(),
+        }
+    }
+
+    #[test]
+    fn a_route_that_matches_everything_is_probed_at_the_root() {
+        assert_eq!(host_with(vec![]).probe_path(), "/");
+    }
+
+    #[test]
+    fn a_path_scoped_route_is_probed_where_it_routes() {
+        assert_eq!(
+            host_with(vec!["/api/v1/write"]).probe_path(),
+            "/api/v1/write",
+            "probing / would ask for a path the route is right to refuse"
+        );
+    }
+
+    #[test]
+    fn the_first_path_is_the_one_probed() {
+        assert_eq!(host_with(vec!["/a", "/b"]).probe_path(), "/a");
+    }
+}
+
+#[cfg(test)]
 mod endpoint_status_tests {
     use crate::verify::checks::endpoints::answered;
 
@@ -349,6 +383,14 @@ mod endpoint_status_tests {
     fn declining_the_request_still_proves_the_route() {
         assert!(answered(401));
         assert!(answered(403));
+    }
+
+    #[test]
+    fn declining_the_method_still_proves_the_route() {
+        assert!(
+            answered(405),
+            "a write-only endpoint answers GET with 405, and only the workload can"
+        );
     }
 
     #[test]

@@ -28,12 +28,14 @@ pub fn run(
 
     io::ssa::apply_manifest_root(
         sctx.ctx,
-        kube_context,
-        &root,
-        field_manager,
-        wait_timeout_seconds.unwrap_or(600),
-        sctx.dry_run,
-        cluster_config.as_ref(),
-        sctx.secrets_cache.as_ref(),
+        io::ssa::ApplyManifests {
+            kube_context,
+            manifest_root: &root,
+            field_manager,
+            wait_timeout_seconds: wait_timeout_seconds.unwrap_or(600),
+            dry_run: sctx.dry_run,
+            lab_config: cluster_config.as_ref(),
+            secrets_cache: sctx.secrets_cache.as_ref(),
+        },
     )
 }

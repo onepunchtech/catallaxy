@@ -187,33 +187,32 @@ fn load_cluster_config(
 
         if let Some(root) = pkg_root {
             let metadata_path = root.join("metadata.json");
-            if let Ok(content) = fs::read_to_string(&metadata_path) {
-                if let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(cluster_meta) = metadata.pointer(&format!("/clusters/{cluster}")) {
-                        let mut config = serde_json::json!({});
-                        if let Some(projs) = cluster_meta.get("projections") {
-                            config["projections"] = projs.clone();
-                        }
-                        if let Some(secrets) = metadata.get("secrets") {
-                            config["secrets"] = secrets.clone();
-                        }
-                        config["labName"] = serde_json::Value::String(
-                            metadata
-                                .get("name")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("default")
-                                .to_string(),
-                        );
-                        if let Ok(nix_config) = load_cluster_config_from_nix(ctx, cluster) {
-                            let mut merged = nix_config;
-                            if let Some(projs) = cluster_meta.get("projections") {
-                                merged["projections"] = projs.clone();
-                            }
-                            return Ok(merged);
-                        }
-                        return Ok(config);
-                    }
+            if let Ok(content) = fs::read_to_string(&metadata_path)
+                && let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&content)
+                && let Some(cluster_meta) = metadata.pointer(&format!("/clusters/{cluster}"))
+            {
+                let mut config = serde_json::json!({});
+                if let Some(projs) = cluster_meta.get("projections") {
+                    config["projections"] = projs.clone();
                 }
+                if let Some(secrets) = metadata.get("secrets") {
+                    config["secrets"] = secrets.clone();
+                }
+                config["labName"] = serde_json::Value::String(
+                    metadata
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("default")
+                        .to_string(),
+                );
+                if let Ok(nix_config) = load_cluster_config_from_nix(ctx, cluster) {
+                    let mut merged = nix_config;
+                    if let Some(projs) = cluster_meta.get("projections") {
+                        merged["projections"] = projs.clone();
+                    }
+                    return Ok(merged);
+                }
+                return Ok(config);
             }
         }
     }
@@ -366,12 +365,12 @@ async fn apply_kapp(
         );
 
         let crd_wait_file = bundle.dir.join(".crd-wait");
-        if crd_wait_file.exists() {
-            if let Ok(content) = fs::read_to_string(&crd_wait_file) {
-                for crd in content.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
-                    println!("{} Waiting for CRD: {crd}...", style(">>>").cyan());
-                    io::kubectl::wait_crd_established(ctx, kube_context, crd, &timeout)?;
-                }
+        if crd_wait_file.exists()
+            && let Ok(content) = fs::read_to_string(&crd_wait_file)
+        {
+            for crd in content.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
+                println!("{} Waiting for CRD: {crd}...", style(">>>").cyan());
+                io::kubectl::wait_crd_established(ctx, kube_context, crd, &timeout)?;
             }
         }
 
@@ -409,7 +408,7 @@ fn inject_projections(
     config: &serde_json::Value,
     projections: &[(String, ProjectionConfig)],
     timeout: &str,
-    pre_cache: Option<&HashMap<String, HashMap<String, HashMap<String, String>>>>,
+    pre_cache: Option<&secrets::SecretsByStore>,
 ) -> Result<()> {
     inject_projections_with(
         ctx,
@@ -434,7 +433,7 @@ pub fn inject_projections_with<F>(
     _kube_context: &str,
     config: &serde_json::Value,
     projections: &[(String, ProjectionConfig)],
-    pre_cache: Option<&HashMap<String, HashMap<String, HashMap<String, String>>>>,
+    pre_cache: Option<&secrets::SecretsByStore>,
     mut apply_fn: F,
 ) -> Result<()>
 where
@@ -548,7 +547,7 @@ fn cleanup_bootstrap_resources(kube_context: &str, config: &serde_json::Value) {
         .pointer("/provisionerConfig/k3d/autoDeployManifests")
         .and_then(|v| v.as_array());
 
-    if auto_deploy.map_or(true, |a| a.is_empty()) {
+    if auto_deploy.is_none_or(|a| a.is_empty()) {
         return;
     }
 
@@ -575,7 +574,9 @@ fn cleanup_bootstrap_resources(kube_context: &str, config: &serde_json::Value) {
             .lines()
             .filter(|line| {
                 let parts: Vec<&str> = line.split(',').collect();
-                parts.len() >= 1 && !parts[0].is_empty() && (parts.len() < 2 || parts[1].is_empty())
+                !parts.is_empty()
+                    && !parts[0].is_empty()
+                    && (parts.len() < 2 || parts[1].is_empty())
             })
             .filter_map(|line| line.split(',').next())
             .filter(|name| name.starts_with("cilium"))

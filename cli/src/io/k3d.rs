@@ -6,24 +6,42 @@ use console::style;
 use crate::config::Context as CataContext;
 use crate::io::process::run_streaming;
 
-pub fn cluster_create(
-    ctx: &CataContext,
-    name: &str,
-    workers: u32,
-    no_traefik: bool,
-    no_service_lb: bool,
-    no_flannel: bool,
-    image: Option<&str>,
-    docker_host: Option<&str>,
-    registries_yaml: Option<&str>,
-    certs_d: Option<&str>,
-    resolv_conf: Option<&str>,
-    service_cidr: Option<&str>,
-    pod_cidr: Option<&str>,
-    auto_deploy_manifests: &[(String, String)],
-    ports: &[&str],
-    network: Option<&str>,
-) -> Result<()> {
+pub struct ClusterCreate<'a> {
+    pub name: &'a str,
+    pub workers: u32,
+    pub no_traefik: bool,
+    pub no_service_lb: bool,
+    pub no_flannel: bool,
+    pub image: Option<&'a str>,
+    pub docker_host: Option<&'a str>,
+    pub registries_yaml: Option<&'a str>,
+    pub certs_d: Option<&'a str>,
+    pub resolv_conf: Option<&'a str>,
+    pub service_cidr: Option<&'a str>,
+    pub pod_cidr: Option<&'a str>,
+    pub auto_deploy_manifests: &'a [(String, String)],
+    pub ports: &'a [&'a str],
+    pub network: Option<&'a str>,
+}
+
+pub fn cluster_create(ctx: &CataContext, opts: ClusterCreate<'_>) -> Result<()> {
+    let ClusterCreate {
+        name,
+        workers,
+        no_traefik,
+        no_service_lb,
+        no_flannel,
+        image,
+        docker_host,
+        registries_yaml,
+        certs_d,
+        resolv_conf,
+        service_cidr,
+        pod_cidr,
+        auto_deploy_manifests,
+        ports,
+        network,
+    } = opts;
     println!("{} Creating k3d cluster '{name}'...", style(">>>").cyan());
 
     let mut cmd = Command::new("k3d");
@@ -33,48 +51,15 @@ pub fn cluster_create(
         cmd.args(["--network", net]);
     }
 
-    if no_traefik {
-        cmd.args(["--k3s-arg", "--disable=traefik@server:*"]);
-    }
-    if no_service_lb {
-        cmd.args(["--k3s-arg", "--disable=servicelb@server:*"]);
-    }
-    if no_flannel {
-        cmd.args(["--k3s-arg", "--flannel-backend=none@server:*"]);
-        cmd.args(["--k3s-arg", "--disable-network-policy@server:*"]);
-    }
-
-    if let Some(cidr) = service_cidr {
-        cmd.args(["--k3s-arg", &format!("--service-cidr={cidr}@server:*")]);
-    }
-    if let Some(cidr) = pod_cidr {
-        cmd.args(["--k3s-arg", &format!("--cluster-cidr={cidr}@server:*")]);
-    }
-
-    let auto_deploy_dir = if !auto_deploy_manifests.is_empty() {
-        let dir = std::env::temp_dir().join(format!("cata-autodeploy-{name}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir)?;
-        Some(dir)
-    } else {
-        None
-    };
-    for (manifest_name, manifest_path) in auto_deploy_manifests {
-        let host_path = if let Some(ref dir) = auto_deploy_dir {
-            let dest = dir.join(format!("{manifest_name}.yaml"));
-            std::fs::copy(manifest_path, &dest)
-                .with_context(|| format!("Failed to copy auto-deploy manifest {manifest_path}"))?;
-            dest.display().to_string()
-        } else {
-            manifest_path.clone()
-        };
-        cmd.args([
-            "--volume",
-            &format!(
-                "{host_path}:/var/lib/rancher/k3s/server/manifests/{manifest_name}.yaml@server:*"
-            ),
-        ]);
-    }
+    k3s_server_args(
+        &mut cmd,
+        no_traefik,
+        no_service_lb,
+        no_flannel,
+        service_cidr,
+        pod_cidr,
+    );
+    mount_auto_deploy_manifests(&mut cmd, name, auto_deploy_manifests)?;
 
     for port in ports {
         cmd.args(["-p", port]);
@@ -200,4 +185,64 @@ pub fn cluster_show(ctx: &CataContext, name: &str, docker_host: Option<&str>) ->
     }
 
     run_streaming(&mut cmd, ctx)
+}
+
+fn k3s_server_args(
+    cmd: &mut Command,
+    no_traefik: bool,
+    no_service_lb: bool,
+    no_flannel: bool,
+    service_cidr: Option<&str>,
+    pod_cidr: Option<&str>,
+) {
+    if no_traefik {
+        cmd.args(["--k3s-arg", "--disable=traefik@server:*"]);
+    }
+    if no_service_lb {
+        cmd.args(["--k3s-arg", "--disable=servicelb@server:*"]);
+    }
+    if no_flannel {
+        cmd.args(["--k3s-arg", "--flannel-backend=none@server:*"]);
+        cmd.args(["--k3s-arg", "--disable-network-policy@server:*"]);
+    }
+
+    if let Some(cidr) = service_cidr {
+        cmd.args(["--k3s-arg", &format!("--service-cidr={cidr}@server:*")]);
+    }
+    if let Some(cidr) = pod_cidr {
+        cmd.args(["--k3s-arg", &format!("--cluster-cidr={cidr}@server:*")]);
+    }
+}
+
+fn mount_auto_deploy_manifests(
+    cmd: &mut Command,
+    name: &str,
+    auto_deploy_manifests: &[(String, String)],
+) -> Result<()> {
+    let auto_deploy_dir = if !auto_deploy_manifests.is_empty() {
+        let dir = std::env::temp_dir().join(format!("cata-autodeploy-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        Some(dir)
+    } else {
+        None
+    };
+    for (manifest_name, manifest_path) in auto_deploy_manifests {
+        let host_path = if let Some(ref dir) = auto_deploy_dir {
+            let dest = dir.join(format!("{manifest_name}.yaml"));
+            std::fs::copy(manifest_path, &dest)
+                .with_context(|| format!("Failed to copy auto-deploy manifest {manifest_path}"))?;
+            dest.display().to_string()
+        } else {
+            manifest_path.clone()
+        };
+        cmd.args([
+            "--volume",
+            &format!(
+                "{host_path}:/var/lib/rancher/k3s/server/manifests/{manifest_name}.yaml@server:*"
+            ),
+        ]);
+    }
+
+    Ok(())
 }

@@ -95,7 +95,6 @@ pub struct ClusterMetadata {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub struct ProjectionMetadata {
     pub namespace: String,
     #[serde(default)]

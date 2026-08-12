@@ -8,19 +8,30 @@ use serde_json::Value;
 use crate::commands::lab::state::resolve_cluster_context;
 use crate::plan::StepContext;
 
-#[allow(clippy::too_many_arguments)]
-pub async fn run(
-    sctx: &StepContext<'_>,
-    src_cluster: &str,
-    src_namespace: &str,
-    src_secret: &str,
-    tgt_cluster: &str,
-    tgt_namespace: &str,
-    tgt_secret: &str,
-    override_type: Option<&str>,
-    source_context: Option<&str>,
-    target_context: Option<&str>,
-) -> Result<()> {
+pub struct SecretCopy<'a> {
+    pub src_cluster: &'a str,
+    pub src_namespace: &'a str,
+    pub src_secret: &'a str,
+    pub tgt_cluster: &'a str,
+    pub tgt_namespace: &'a str,
+    pub tgt_secret: &'a str,
+    pub override_type: Option<&'a str>,
+    pub source_context: Option<&'a str>,
+    pub target_context: Option<&'a str>,
+}
+
+pub async fn run(sctx: &StepContext<'_>, copy: SecretCopy<'_>) -> Result<()> {
+    let SecretCopy {
+        src_cluster,
+        src_namespace,
+        src_secret,
+        tgt_cluster,
+        tgt_namespace,
+        tgt_secret,
+        override_type,
+        source_context,
+        target_context,
+    } = copy;
     let src_ctx = source_context
         .map(String::from)
         .unwrap_or_else(|| resolve_cluster_context(sctx.lab, src_cluster));
@@ -67,10 +78,49 @@ pub async fn run(
         );
     }
 
+    let secret_json = read_source_secret(
+        &src_ctx,
+        src_cluster,
+        src_namespace,
+        src_secret,
+        tgt_namespace,
+        tgt_secret,
+        override_type,
+    )?;
+    write_target_secret(
+        &tgt_ctx,
+        tgt_namespace,
+        tgt_secret,
+        tgt_cluster,
+        &secret_json,
+    )?;
+
+    println!(
+        "{} Copied '{}/{}' from '{}' to '{}/{}' on '{}'",
+        style(">>>").green(),
+        src_namespace,
+        src_secret,
+        src_cluster,
+        tgt_namespace,
+        tgt_secret,
+        tgt_cluster,
+    );
+    Ok(())
+}
+
+fn read_source_secret(
+    src_ctx: &str,
+    src_cluster: &str,
+    src_namespace: &str,
+    src_secret: &str,
+    tgt_namespace: &str,
+    tgt_secret: &str,
+    override_type: Option<&str>,
+) -> Result<Value> {
     let get_out = Command::new("kubectl")
         .args([
             "--context",
-            &src_ctx,
+            src_ctx,
             "-n",
             src_namespace,
             "get",
@@ -121,10 +171,20 @@ pub async fn run(
         obj.remove("status");
     }
 
+    Ok(secret_json)
+}
+
+fn write_target_secret(
+    tgt_ctx: &str,
+    tgt_namespace: &str,
+    tgt_secret: &str,
+    tgt_cluster: &str,
+    secret_json: &Value,
+) -> Result<()> {
     let _ = Command::new("kubectl")
         .args([
             "--context",
-            &tgt_ctx,
+            tgt_ctx,
             "create",
             "namespace",
             tgt_namespace,
@@ -135,7 +195,7 @@ pub async fn run(
         .output()
         .and_then(|out| {
             let mut child = Command::new("kubectl")
-                .args(["--context", &tgt_ctx, "apply", "-f", "-"])
+                .args(["--context", tgt_ctx, "apply", "-f", "-"])
                 .stdin(Stdio::piped())
                 .spawn()?;
             if let Some(stdin) = child.stdin.as_mut() {
@@ -146,7 +206,7 @@ pub async fn run(
         });
 
     let mut apply = Command::new("kubectl")
-        .args(["--context", &tgt_ctx, "apply", "-f", "-"])
+        .args(["--context", tgt_ctx, "apply", "-f", "-"])
         .stdin(Stdio::piped())
         .spawn()?;
     apply
@@ -157,15 +217,5 @@ pub async fn run(
     if !apply.wait()?.success() {
         bail!("kubectl apply of '{tgt_namespace}/{tgt_secret}' on '{tgt_cluster}' failed",);
     }
-    println!(
-        "{} Copied '{}/{}' from '{}' to '{}/{}' on '{}'",
-        style(">>>").green(),
-        src_namespace,
-        src_secret,
-        src_cluster,
-        tgt_namespace,
-        tgt_secret,
-        tgt_cluster,
-    );
     Ok(())
 }
