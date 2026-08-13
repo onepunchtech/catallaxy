@@ -131,7 +131,7 @@
             toString (
               pkgs.writeShellScript "generate-k8s-types" ''
                 set -euo pipefail
-                exec ${packages'.cataWrapped}/bin/cata generate ${configFile}
+                exec ${packages'.cata}/bin/cata-build generate ${configFile}
               ''
             )
           );

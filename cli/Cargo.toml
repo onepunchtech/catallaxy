@@ -58,3 +58,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "cata"
 path = "src/bin/cata.rs"
+
+[[bin]]
+name = "cata-build"
+path = "src/bin/cata-build.rs"

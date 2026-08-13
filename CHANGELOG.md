@@ -250,6 +250,20 @@ The format is based on
   `"deployment"` and every caller that passed `"deploy"` had been agreeing
   by accident: both fell through to the same arm, and so would a typo.
 
+- **`cata docs` and `cata generate` moved to a `cata-build` binary.** They
+  render the book and regenerate Kubernetes types from OpenAPI specs: build
+  steps for this repository, invoked from `pkgs/default.nix` and the
+  `generate-k8s-types` app, and of no use to anyone running a lab. They were
+  two of the ten subcommands an operator saw in `cata --help`, which now
+  lists eight, all of them things you do to a lab.
+
+  The operator CLI's clap definition moved into the library as
+  `commands::cli`, because `docs render` generates the command reference
+  from the parser and would otherwise have documented itself: the first
+  version of this change quietly replaced the CLI reference in the book with
+  `cata-build`'s three commands. The docs check still passed, since it only
+  builds the book rather than reading it.
+
 - **`lab.services` is typed.** It was the last part of `cliConfig` the CLI
   read by indexing a `Value`, across five places that each re-supplied their
   own defaults for the same fields.

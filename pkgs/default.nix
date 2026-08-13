@@ -82,7 +82,7 @@ let
         };
       in
       pkgs.runCommand "catallaxy-option-docs" { nativeBuildInputs = [ cata ]; } ''
-        cata docs render ${raw.json}/share/doc/nixos/options.json \
+        cata-build docs render ${raw.json}/share/doc/nixos/options.json \
           ${../docs/book/src/SUMMARY.md} $out
       ''
     else
@@ -115,7 +115,7 @@ let
           mdbook-mermaid install src
           mdbook build src -d $out
 
-          cata docs llms src/src ${siteUrl} $out
+          cata-build docs llms src/src ${siteUrl} $out
         ''
     else
       null;

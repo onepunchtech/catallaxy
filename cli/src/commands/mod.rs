@@ -1,4 +1,5 @@
 pub mod apply;
+pub mod cli;
 pub mod cluster;
 pub mod diagnose;
 pub mod docs;
