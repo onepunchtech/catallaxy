@@ -5,7 +5,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use console::style;
 
-use crate::commands::lab::services;
+use crate::host::services;
 use crate::host::state;
 use crate::plan::StepContext;
 

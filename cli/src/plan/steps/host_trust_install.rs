@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use console::style;
 
-use crate::commands::lab::pki;
+use crate::host::pki;
 use crate::host::state;
 use crate::plan::StepContext;
 

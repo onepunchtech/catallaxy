@@ -54,6 +54,21 @@ pub fn run_streaming(cmd: &mut Command, ctx: &CataContext) -> Result<()> {
     Ok(())
 }
 
+pub fn run_interactive(cmd: &mut Command, ctx: &CataContext) -> Result<()> {
+    super::trust::apply(cmd);
+    if ctx.verbose {
+        eprintln!("{} {:?}", style("Running:").dim(), cmd);
+    }
+
+    let status = cmd.status().context("Failed to execute command")?;
+
+    if !status.success() {
+        bail!("Command failed with status: {status}");
+    }
+
+    Ok(())
+}
+
 pub fn run_capture(cmd: &mut Command, ctx: &CataContext) -> Result<String> {
     super::trust::apply(cmd);
     if ctx.verbose {

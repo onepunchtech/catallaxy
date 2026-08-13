@@ -103,3 +103,12 @@ fn flake_flag_parses_before_subcommand_dispatch() {
 fn verbose_flag_is_accepted() {
     cata().args(["-v", "--help"]).assert().success();
 }
+
+#[test]
+fn dns_refuses_to_set_up_and_tear_down_at_once() {
+    cata()
+        .args(["lab", "dns", "--setup", "--teardown", "some-lab"])
+        .assert()
+        .failure()
+        .stderr(contains("opposite things"));
+}

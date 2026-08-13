@@ -163,6 +163,34 @@ The format is based on
 
 ### Changed
 
+- **The host-side modules moved out of `commands/` into `host/`.**
+  `services.rs`, `pki.rs`, `state.rs` and `dns.rs` sat under
+  `commands/lab/`, but their callers were plan steps and the verifier, not
+  commands: only `dns` had a CLI surface at all, and that is now a thin
+  `lab dns` over `host::dns`. `dns.rs` also split, because half of it was
+  not DNS: `host/network.rs` takes the macOS routing and Colima VM
+  firewalling, which had been living under a name about resolvers.
+
+- **Privileged writes stage a file and `install` it, rather than piping into
+  a shell.** Configuring the resolver built a shell script by interpolating
+  the drop-in path into `set -e; mkdir -p …; cat > …; rm -f …`, ran it as
+  `sudo sh -c`, and piped the content in on stdin. It now writes the content
+  to a temporary file and runs `sudo install -m 0644`, `sudo mkdir`,
+  `sudo rm` and `sudo systemctl` as separate argument vectors, so no shell
+  parses a path. The zone check stays as a check that a zone looks like a
+  hostname, which is what it was really asserting.
+
+  Those calls go through a new `io::process::run_interactive`, which applies
+  the lab CA and honours `--verbose` like the other helpers but leaves stdin
+  attached. `run_streaming` and `run_capture` both null stdin, so neither
+  could carry a `sudo` password prompt, and neither can serve a step that
+  declares `policy.interactive`. That gap is why two call sites had been
+  hand-calling `io::trust::apply` before spawning.
+
+- **`cata lab dns --setup --teardown` is an error** instead of silently
+  tearing down. The two flags asked for opposite things and the first branch
+  won.
+
 - **`commands/lab/orchestrate.rs` is gone, split by what its parts were
   for.** Nothing under `commands/` ever called it: every caller was a plan
   step or the executor, so it was plan infrastructure filed under the

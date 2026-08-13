@@ -13,11 +13,9 @@ pub mod down;
 pub mod env;
 mod lint_cmd;
 mod ops;
-pub mod pki;
 pub mod plan;
 pub mod plan_manifests;
 pub mod publish;
-pub mod services;
 pub mod up;
 pub mod verify;
 

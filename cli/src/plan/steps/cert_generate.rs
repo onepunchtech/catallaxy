@@ -1,7 +1,7 @@
 use anyhow::Result;
 use console::style;
 
-use crate::commands::lab::pki;
+use crate::host::pki;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>, zone: &str) -> Result<()> {

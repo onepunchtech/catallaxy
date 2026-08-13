@@ -1,7 +1,7 @@
 use anyhow::Result;
 use console::style;
 
-use crate::commands::lab::dns;
+use crate::host::network;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>, subnet: &str, profile: &str) -> Result<()> {
@@ -19,8 +19,8 @@ pub async fn run(sctx: &StepContext<'_>, subnet: &str, profile: &str) -> Result<
         return Ok(());
     }
 
-    let Some(vm_ip) = dns::get_colima_vm_ip() else {
+    let Some(vm_ip) = network::get_colima_vm_ip() else {
         return Ok(());
     };
-    dns::setup_host_networking_macos(subnet, &vm_ip, profile)
+    network::setup_host_networking_macos(subnet, &vm_ip, profile)
 }

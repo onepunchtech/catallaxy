@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::commands::lab::services;
+use crate::host::services;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>) -> Result<()> {

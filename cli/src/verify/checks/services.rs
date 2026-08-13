@@ -1,4 +1,4 @@
-use crate::commands::lab::services::probe_once;
+use crate::host::services::probe_once;
 use crate::io;
 use crate::verify::{Diagnostic, Severity, VerifyContext, diag};
 

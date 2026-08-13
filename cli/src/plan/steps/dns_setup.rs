@@ -1,7 +1,7 @@
 use anyhow::Result;
 use console::style;
 
-use crate::commands::lab::dns;
+use crate::host::dns;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>, host: &str, port: u64, zone: &str) -> Result<()> {
@@ -15,5 +15,5 @@ pub async fn run(sctx: &StepContext<'_>, host: &str, port: u64, zone: &str) -> R
         );
         return Ok(());
     }
-    dns::dns_setup(host, port, zone).await
+    dns::dns_setup(sctx.ctx, host, port, zone).await
 }

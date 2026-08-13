@@ -154,7 +154,7 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
         }
 
         for (svc_name, svc) in &lab.services {
-            if let Err(e) = super::lab::services::start_service(ctx, lab_name, svc_name, svc) {
+            if let Err(e) = crate::host::services::start_service(ctx, lab_name, svc_name, svc) {
                 let description = svc["description"].as_str().unwrap_or(svc_name);
                 println!(
                     "{} Failed to start {}: {}",
@@ -170,13 +170,13 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
             if fs::create_dir_all(&state_dir).is_ok() {
                 let path = state_dir.join("registries.yaml");
                 let registry_yaml =
-                    super::lab::services::generate_registries_yaml(port, &lab.registry_upstreams);
+                    crate::host::services::generate_registries_yaml(port, &lab.registry_upstreams);
                 if let Some(zone) = lab.dns_info.as_ref().map(|d| d.zone.as_str()) {
                     let host_dir = state_dir.join("certs.d").join(format!("registry.{zone}"));
                     if fs::create_dir_all(&host_dir).is_ok() {
                         let _ = fs::write(
                             host_dir.join("hosts.toml"),
-                            super::lab::services::generate_registry_hosts_toml(zone),
+                            crate::host::services::generate_registry_hosts_toml(zone),
                         );
                         let ca_src =
                             crate::host::state::service_state_dir(lab_name, "proxy").join("ca.crt");
