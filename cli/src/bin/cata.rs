@@ -97,6 +97,8 @@ async fn main() -> ExitCode {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<()> {
+    cata::io::process::set_verbose(cli.verbose);
+
     let ctx = config::Context::new(cli.flake, cli.verbose)?;
 
     match cli.command {

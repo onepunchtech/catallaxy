@@ -53,21 +53,21 @@ pub fn run(sctx: &StepContext<'_>, install: ArgocdHelm<'_>) -> Result<()> {
         "{} Installing argocd on '{kube_context}' via helm (chart={chart_ref}, release={release_name})...",
         style(">>>").cyan(),
     );
-    let status = Command::new("helm")
-        .args([
-            "upgrade",
-            "--install",
-            release_name,
-            chart_ref,
-            "--namespace",
-            namespace,
-            "--create-namespace",
-            "--values",
-            &full_values,
-            "--kube-context",
-            kube_context,
-        ])
-        .status()
+    let mut cmd = Command::new("helm");
+    cmd.args([
+        "upgrade",
+        "--install",
+        release_name,
+        chart_ref,
+        "--namespace",
+        namespace,
+        "--create-namespace",
+        "--values",
+        &full_values,
+        "--kube-context",
+        kube_context,
+    ]);
+    let status = crate::io::process::run_status(&mut cmd)
         .context("running helm upgrade --install for argocd")?;
     if !status.success() {
         bail!("helm install of argocd failed");

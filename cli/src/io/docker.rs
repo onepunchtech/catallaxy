@@ -3,7 +3,6 @@ use std::process::{Command, Stdio};
 
 use anyhow::Result;
 
-use crate::config::Context as CataContext;
 use crate::io::process::run_streaming;
 
 pub fn container_running(name: &str) -> bool {
@@ -29,7 +28,6 @@ pub fn container_exists(name: &str) -> bool {
 }
 
 pub fn run_container(
-    ctx: &CataContext,
     name: &str,
     image: &str,
     ports: &[&str],
@@ -57,7 +55,7 @@ pub fn run_container(
 
     cmd.arg(image);
     cmd.args(command);
-    run_streaming(&mut cmd, ctx)
+    run_streaming(&mut cmd)
 }
 
 pub fn get_container_ip(container: &str) -> Option<String> {
@@ -91,7 +89,7 @@ pub struct RunContainer<'a> {
     pub network_ips: &'a HashMap<String, String>,
 }
 
-pub fn run_container_extended(ctx: &CataContext, opts: RunContainer<'_>) -> Result<()> {
+pub fn run_container_extended(opts: RunContainer<'_>) -> Result<()> {
     let RunContainer {
         name,
         image,
@@ -144,7 +142,7 @@ pub fn run_container_extended(ctx: &CataContext, opts: RunContainer<'_>) -> Resu
 
     cmd.arg(image);
     cmd.args(command);
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     for network in networks {
         if let Some(ip) = network_ips.get(*network) {
@@ -165,17 +163,17 @@ pub fn run_container_extended(ctx: &CataContext, opts: RunContainer<'_>) -> Resu
     Ok(())
 }
 
-pub fn stop_container(ctx: &CataContext, name: &str) -> Result<()> {
+pub fn stop_container(name: &str) -> Result<()> {
     if container_running(name) {
         let mut cmd = Command::new("docker");
         cmd.args(["stop", name]);
-        run_streaming(&mut cmd, ctx)?;
+        run_streaming(&mut cmd)?;
     }
 
     if container_exists(name) {
         let mut cmd = Command::new("docker");
         cmd.args(["rm", name]);
-        run_streaming(&mut cmd, ctx)?;
+        run_streaming(&mut cmd)?;
     }
 
     Ok(())

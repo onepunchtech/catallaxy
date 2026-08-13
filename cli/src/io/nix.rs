@@ -85,10 +85,12 @@ fn refresh_path_inputs(flake_uri: &str) {
 }
 
 fn run_nix(args: &[&str]) -> CataResult<String> {
-    let child = Command::new("nix")
-        .args(args)
+    let mut cmd = Command::new("nix");
+    cmd.args(args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    crate::io::process::prepare_env(&mut cmd);
+    let child = cmd
         .spawn()
         .map_err(|e| CataError::NixEval(format!("failed to spawn nix: {e}")))?;
 

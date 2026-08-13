@@ -153,10 +153,8 @@ async fn mirror(
         );
 
         let mut cmd = std::process::Command::new("crane");
-        crate::io::trust::apply(&mut cmd);
-        let status = cmd
-            .args(["copy", image, &target])
-            .status()
+        cmd.args(["copy", image, &target]);
+        let status = crate::io::process::run_status(&mut cmd)
             .with_context(|| format!("Failed to copy {image}"))?;
 
         if !status.success() {

@@ -1,10 +1,16 @@
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::error::{CataError, CataResult};
+
+static VERBOSE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_verbose(verbose: bool) {
+    VERBOSE.store(verbose, Ordering::Relaxed);
+}
 
 pub fn check_tool(name: &str) -> CataResult<()> {
     which::which(name).map_err(|_| CataError::ToolMissing {
@@ -36,11 +42,19 @@ pub fn check_all_tools() -> Vec<(String, bool, String)> {
         .collect()
 }
 
-pub fn run_streaming(cmd: &mut Command, ctx: &CataContext) -> Result<()> {
+pub fn prepare_env(cmd: &mut Command) {
     super::trust::apply(cmd);
-    if ctx.verbose {
+}
+
+fn prepare(cmd: &mut Command) {
+    super::trust::apply(cmd);
+    if VERBOSE.load(Ordering::Relaxed) {
         eprintln!("{} {:?}", style("Running:").dim(), cmd);
     }
+}
+
+pub fn run_streaming(cmd: &mut Command) -> Result<()> {
+    prepare(cmd);
 
     let status = cmd
         .stdin(Stdio::null())
@@ -54,11 +68,8 @@ pub fn run_streaming(cmd: &mut Command, ctx: &CataContext) -> Result<()> {
     Ok(())
 }
 
-pub fn run_interactive(cmd: &mut Command, ctx: &CataContext) -> Result<()> {
-    super::trust::apply(cmd);
-    if ctx.verbose {
-        eprintln!("{} {:?}", style("Running:").dim(), cmd);
-    }
+pub fn run_interactive(cmd: &mut Command) -> Result<()> {
+    prepare(cmd);
 
     let status = cmd.status().context("Failed to execute command")?;
 
@@ -69,16 +80,8 @@ pub fn run_interactive(cmd: &mut Command, ctx: &CataContext) -> Result<()> {
     Ok(())
 }
 
-pub fn run_capture(cmd: &mut Command, ctx: &CataContext) -> Result<String> {
-    super::trust::apply(cmd);
-    if ctx.verbose {
-        eprintln!("{} {:?}", style("Running:").dim(), cmd);
-    }
-
-    let output = cmd
-        .stdin(Stdio::null())
-        .output()
-        .context("Failed to execute command")?;
+pub fn run_capture(cmd: &mut Command) -> Result<String> {
+    let output = run_output(cmd)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -86,4 +89,18 @@ pub fn run_capture(cmd: &mut Command, ctx: &CataContext) -> Result<String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+pub fn run_output(cmd: &mut Command) -> Result<Output> {
+    prepare(cmd);
+
+    cmd.stdin(Stdio::null())
+        .output()
+        .context("Failed to execute command")
+}
+
+pub fn run_status(cmd: &mut Command) -> Result<ExitStatus> {
+    prepare(cmd);
+
+    cmd.status().context("Failed to execute command")
 }

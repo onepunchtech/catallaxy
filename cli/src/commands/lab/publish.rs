@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::io::process::run_status;
 
 const COMMIT_IDENTITY_NAME: &str = "catallaxy";
 const COMMIT_IDENTITY_EMAIL: &str = "catallaxy@invalid";
@@ -71,7 +72,7 @@ fn maybe_embed_publish_auth(repo: &str, lab: &serde_json::Value) -> String {
 
 fn git() -> Command {
     let mut cmd = Command::new("git");
-    crate::io::trust::apply(&mut cmd);
+    crate::io::process::prepare_env(&mut cmd);
     cmd.env("GIT_AUTHOR_NAME", COMMIT_IDENTITY_NAME)
         .env("GIT_AUTHOR_EMAIL", COMMIT_IDENTITY_EMAIL)
         .env("GIT_COMMITTER_NAME", COMMIT_IDENTITY_NAME)
@@ -336,38 +337,30 @@ fn open_pull_request(
     let pr_body = format!("Automated manifest update from `cata lab publish`.\n\nLab: {name}");
 
     let pr_result = match provider {
-        "github" => Command::new("gh")
-            .args(["-C"])
-            .arg(clone_dir)
-            .args([
-                "pr",
-                "create",
-                "--title",
-                &pr_title,
-                "--body",
-                &pr_body,
-                "--base",
-                pr_base,
-                "--head",
-                work_branch,
-            ])
-            .status(),
-        "gitlab" => Command::new("glab")
-            .args(["-C"])
-            .arg(clone_dir)
-            .args([
-                "mr",
-                "create",
-                "--title",
-                &pr_title,
-                "--description",
-                &pr_body,
-                "--target-branch",
-                pr_base,
-                "--source-branch",
-                work_branch,
-            ])
-            .status(),
+        "github" => run_status(Command::new("gh").args(["-C"]).arg(clone_dir).args([
+            "pr",
+            "create",
+            "--title",
+            &pr_title,
+            "--body",
+            &pr_body,
+            "--base",
+            pr_base,
+            "--head",
+            work_branch,
+        ])),
+        "gitlab" => run_status(Command::new("glab").args(["-C"]).arg(clone_dir).args([
+            "mr",
+            "create",
+            "--title",
+            &pr_title,
+            "--description",
+            &pr_body,
+            "--target-branch",
+            pr_base,
+            "--source-branch",
+            work_branch,
+        ])),
         _ => {
             println!(
                 "{} PR creation not yet supported for provider '{}'. Push succeeded, create PR manually.",

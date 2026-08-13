@@ -89,7 +89,7 @@ fn prepare_volumes(
 }
 
 pub fn start_service(
-    ctx: &CataContext,
+    _ctx: &CataContext,
     lab_name: &str,
     svc_name: &str,
     svc: &serde_json::Value,
@@ -120,7 +120,7 @@ pub fn start_service(
                 style(">>>").yellow(),
                 description,
             );
-            io::docker::stop_container(ctx, container)?;
+            io::docker::stop_container(container)?;
         } else {
             println!("{} {} already running", style(">>>").green(), description);
             return Ok(());
@@ -155,24 +155,21 @@ pub fn start_service(
         || network_mode.is_some()
         || !cap_add.is_empty()
     {
-        io::docker::run_container_extended(
-            ctx,
-            io::docker::RunContainer {
-                name: container,
-                image,
-                ports: &ports,
-                volume_mounts: &mount_refs,
-                link,
-                networks: &networks,
-                dns_ips: &dns_ips,
-                command: &command,
-                network_mode,
-                cap_add: &cap_add,
-                network_ips: &network_ips,
-            },
-        )?;
+        io::docker::run_container_extended(io::docker::RunContainer {
+            name: container,
+            image,
+            ports: &ports,
+            volume_mounts: &mount_refs,
+            link,
+            networks: &networks,
+            dns_ips: &dns_ips,
+            command: &command,
+            network_mode,
+            cap_add: &cap_add,
+            network_ips: &network_ips,
+        })?;
     } else {
-        io::docker::run_container(ctx, container, image, &ports, &mount_refs, &command)?;
+        io::docker::run_container(container, image, &ports, &mount_refs, &command)?;
     }
 
     wait_for_service_ready(svc, description)?;

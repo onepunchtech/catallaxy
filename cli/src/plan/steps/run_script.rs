@@ -41,15 +41,13 @@ pub fn run(
     let resolved = resolve_env(sctx, hook_name, env)?;
 
     let mut cmd = Command::new(bin);
-    crate::io::trust::apply(&mut cmd);
     for (name, value) in &resolved {
         cmd.env(name, value);
     }
     if let Some(ctx) = kube_context {
         cmd.env("KUBECONTEXT", ctx);
     }
-    let status = cmd
-        .status()
+    let status = crate::io::process::run_status(&mut cmd)
         .with_context(|| format!("executing lifecycle hook '{hook_name}' ({bin})"))?;
     if !status.success() {
         let code = status.code().unwrap_or(-1);

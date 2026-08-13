@@ -3,7 +3,6 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::io::process::run_streaming;
 
 pub struct ClusterCreate<'a> {
@@ -24,7 +23,7 @@ pub struct ClusterCreate<'a> {
     pub network: Option<&'a str>,
 }
 
-pub fn cluster_create(ctx: &CataContext, opts: ClusterCreate<'_>) -> Result<()> {
+pub fn cluster_create(opts: ClusterCreate<'_>) -> Result<()> {
     let ClusterCreate {
         name,
         workers,
@@ -99,7 +98,7 @@ pub fn cluster_create(ctx: &CataContext, opts: ClusterCreate<'_>) -> Result<()> 
         cmd.env("DOCKER_HOST", host);
     }
 
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     println!(
         "{} Cluster ready (context: k3d-{name})",
@@ -108,7 +107,7 @@ pub fn cluster_create(ctx: &CataContext, opts: ClusterCreate<'_>) -> Result<()> 
     Ok(())
 }
 
-pub fn cluster_destroy(ctx: &CataContext, name: &str, docker_host: Option<&str>) -> Result<()> {
+pub fn cluster_destroy(name: &str, docker_host: Option<&str>) -> Result<()> {
     println!("{} Destroying k3d cluster '{name}'...", style(">>>").cyan());
 
     let mut cmd = Command::new("k3d");
@@ -118,13 +117,13 @@ pub fn cluster_destroy(ctx: &CataContext, name: &str, docker_host: Option<&str>)
         cmd.env("DOCKER_HOST", host);
     }
 
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     println!("{} Cluster destroyed", style(">>>").green());
     Ok(())
 }
 
-pub fn cluster_stop(ctx: &CataContext, name: &str, docker_host: Option<&str>) -> Result<()> {
+pub fn cluster_stop(name: &str, docker_host: Option<&str>) -> Result<()> {
     println!("{} Stopping k3d cluster '{name}'...", style(">>>").cyan());
 
     let mut cmd = Command::new("k3d");
@@ -134,7 +133,7 @@ pub fn cluster_stop(ctx: &CataContext, name: &str, docker_host: Option<&str>) ->
         cmd.env("DOCKER_HOST", host);
     }
 
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     println!("{} Cluster stopped", style(">>>").green());
     Ok(())
@@ -176,7 +175,7 @@ pub fn kubeconfig_merge(name: &str, docker_host: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub fn cluster_show(ctx: &CataContext, name: &str, docker_host: Option<&str>) -> Result<()> {
+pub fn cluster_show(name: &str, docker_host: Option<&str>) -> Result<()> {
     let mut cmd = Command::new("k3d");
     cmd.args(["cluster", "get", name]);
 
@@ -184,7 +183,7 @@ pub fn cluster_show(ctx: &CataContext, name: &str, docker_host: Option<&str>) ->
         cmd.env("DOCKER_HOST", host);
     }
 
-    run_streaming(&mut cmd, ctx)
+    run_streaming(&mut cmd)
 }
 
 fn k3s_server_args(

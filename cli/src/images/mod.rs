@@ -4,11 +4,10 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::domain::LabSpec;
 use crate::io::process::{run_capture, run_streaming};
 
-pub fn publish_one(ctx: &CataContext, lab: &LabSpec, img: &serde_json::Value) -> Result<()> {
+pub fn publish_one(lab: &LabSpec, img: &serde_json::Value) -> Result<()> {
     let name = img["name"].as_str().unwrap_or("?");
     let raw_source = img["source"]
         .as_str()
@@ -41,7 +40,7 @@ pub fn publish_one(ctx: &CataContext, lab: &LabSpec, img: &serde_json::Value) ->
         );
         let mut build = Command::new("nix");
         build.args(["build", "--no-link", "--print-out-paths", &versions_attr]);
-        let versions_path = run_capture(&mut build, ctx)
+        let versions_path = run_capture(&mut build)
             .with_context(|| format!("image '{name}': nix build {versions_attr}"))?
             .trim()
             .to_string();
@@ -57,8 +56,8 @@ pub fn publish_one(ctx: &CataContext, lab: &LabSpec, img: &serde_json::Value) ->
             .to_string()
     };
 
-    let (tarball_path, _decompressed) = build_image_archive(ctx, &source, attr, name)?;
-    let docker_config_dir = image_credentials(ctx, img, name, dest_registry, lab)?;
+    let (tarball_path, _decompressed) = build_image_archive(&source, attr, name)?;
+    let docker_config_dir = image_credentials(img, name, dest_registry, lab)?;
 
     let mut tags = vec![tag.clone()];
     if also_latest {
@@ -72,8 +71,7 @@ pub fn publish_one(ctx: &CataContext, lab: &LabSpec, img: &serde_json::Value) ->
         if let Some(d) = &docker_config_dir {
             cmd.env("DOCKER_CONFIG", d.path());
         }
-        run_streaming(&mut cmd, ctx)
-            .with_context(|| format!("image '{name}': crane push to {dest}"))?;
+        run_streaming(&mut cmd).with_context(|| format!("image '{name}': crane push to {dest}"))?;
     }
     println!(
         "{} Published '{}' ({} tag(s))",
@@ -85,7 +83,6 @@ pub fn publish_one(ctx: &CataContext, lab: &LabSpec, img: &serde_json::Value) ->
 }
 
 fn build_image_archive(
-    ctx: &CataContext,
     source: &str,
     attr: &str,
     name: &str,
@@ -94,7 +91,7 @@ fn build_image_archive(
     println!("{} Building image: {}", style(">>>").cyan(), image_attr);
     let mut build = Command::new("nix");
     build.args(["build", "--no-link", "--print-out-paths", &image_attr]);
-    let archive_path = run_capture(&mut build, ctx)
+    let archive_path = run_capture(&mut build)
         .with_context(|| format!("image '{name}': nix build {image_attr}"))?
         .trim()
         .to_string();
@@ -139,7 +136,6 @@ fn build_image_archive(
 }
 
 fn image_credentials(
-    ctx: &CataContext,
     img: &serde_json::Value,
     name: &str,
     dest_registry: &str,
@@ -171,7 +167,7 @@ fn image_credentials(
                 &format!("secret/{cred_secret}"),
                 "--timeout=2m",
             ]);
-            let _ = run_capture(&mut wait, ctx);
+            let _ = run_capture(&mut wait);
 
             let mut get = Command::new("kubectl");
             get.args([
@@ -185,7 +181,7 @@ fn image_credentials(
                 "-o",
                 "jsonpath={.data.\\.dockerconfigjson}",
             ]);
-            let b64 = run_capture(&mut get, ctx)
+            let b64 = run_capture(&mut get)
                 .with_context(|| format!("image '{name}': reading secret '{cred_secret}'"))?
                 .trim()
                 .to_string();

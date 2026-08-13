@@ -4,7 +4,6 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::io::process::{run_capture, run_interactive};
 
 use super::network::get_colima_vm_ip;
@@ -48,7 +47,7 @@ fn zone_is_well_formed(zone: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
 }
 
-pub async fn dns_setup(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Result<()> {
+pub async fn dns_setup(host: &str, port: u64, zone: &str) -> Result<()> {
     println!(
         "{} Setting up DNS resolution for *.{}",
         style(">>>").cyan(),
@@ -56,18 +55,13 @@ pub async fn dns_setup(ctx: &CataContext, host: &str, port: u64, zone: &str) -> 
     );
 
     if cfg!(target_os = "macos") {
-        dns_setup_macos(ctx, host, port, zone)
+        dns_setup_macos(host, port, zone)
     } else {
-        dns_setup_linux(ctx, host, port, zone)
+        dns_setup_linux(host, port, zone)
     }
 }
 
-fn install_resolver_file(
-    ctx: &CataContext,
-    dns_host: &str,
-    port: u64,
-    resolver_file: &str,
-) -> Result<()> {
+fn install_resolver_file(dns_host: &str, port: u64, resolver_file: &str) -> Result<()> {
     let staged = tempfile::Builder::new()
         .prefix("cata-resolver-")
         .tempfile()
@@ -83,10 +77,10 @@ fn install_resolver_file(
         .args(["install", "-m", "0644"])
         .arg(staged.path())
         .arg(resolver_file);
-    run_interactive(&mut install, ctx).with_context(|| format!("installing {resolver_file}"))
+    run_interactive(&mut install).with_context(|| format!("installing {resolver_file}"))
 }
 
-fn dns_setup_macos(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Result<()> {
+fn dns_setup_macos(host: &str, port: u64, zone: &str) -> Result<()> {
     let dns_host = get_colima_vm_ip().unwrap_or_else(|| host.to_string());
 
     let resolver_dir = "/etc/resolver";
@@ -109,7 +103,7 @@ fn dns_setup_macos(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Resu
                 resolver_file,
                 dns_host
             );
-            install_resolver_file(ctx, &dns_host, port, &resolver_file)?;
+            install_resolver_file(&dns_host, port, &resolver_file)?;
             println!(
                 "{} DNS resolver updated at {}",
                 style(">>>").green(),
@@ -121,9 +115,9 @@ fn dns_setup_macos(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Resu
 
         let mut mkdir = Command::new("sudo");
         mkdir.args(["mkdir", "-p", resolver_dir]);
-        run_interactive(&mut mkdir, ctx).with_context(|| format!("creating {resolver_dir}"))?;
+        run_interactive(&mut mkdir).with_context(|| format!("creating {resolver_dir}"))?;
 
-        install_resolver_file(ctx, &dns_host, port, &resolver_file)?;
+        install_resolver_file(&dns_host, port, &resolver_file)?;
 
         println!(
             "{} DNS resolver configured at {}",
@@ -138,15 +132,15 @@ fn dns_setup_macos(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Resu
     Ok(())
 }
 
-fn dns_setup_linux(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Result<()> {
+fn dns_setup_linux(host: &str, port: u64, zone: &str) -> Result<()> {
     let mut is_active = Command::new("systemctl");
     is_active.args(["is-active", "systemd-resolved"]);
-    let resolved_running = run_capture(&mut is_active, ctx)
+    let resolved_running = run_capture(&mut is_active)
         .map(|o| o.trim() == "active")
         .unwrap_or(false);
 
     if resolved_running {
-        dns_setup_systemd_resolved(ctx, host, port, zone)
+        dns_setup_systemd_resolved(host, port, zone)
     } else {
         println!("{} systemd-resolved is not running", style(">>>").yellow());
         println!();
@@ -156,7 +150,7 @@ fn dns_setup_linux(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Resu
     }
 }
 
-fn dns_setup_systemd_resolved(ctx: &CataContext, host: &str, port: u64, zone: &str) -> Result<()> {
+fn dns_setup_systemd_resolved(host: &str, port: u64, zone: &str) -> Result<()> {
     if !zone_is_well_formed(zone) {
         bail!("Refusing to configure DNS: zone '{zone}' contains unexpected characters");
     }
@@ -197,14 +191,14 @@ fn dns_setup_systemd_resolved(ctx: &CataContext, host: &str, port: u64, zone: &s
 
     let mut mkdir = Command::new("sudo");
     mkdir.args(["mkdir", "-p", RESOLVED_CONF_DIR]);
-    run_interactive(&mut mkdir, ctx).with_context(|| format!("creating {RESOLVED_CONF_DIR}"))?;
+    run_interactive(&mut mkdir).with_context(|| format!("creating {RESOLVED_CONF_DIR}"))?;
 
     let mut install = Command::new("sudo");
     install
         .args(["install", "-m", "0644"])
         .arg(staged.path())
         .arg(&target.path);
-    run_interactive(&mut install, ctx).with_context(|| format!("installing {}", target.path))?;
+    run_interactive(&mut install).with_context(|| format!("installing {}", target.path))?;
 
     if let Some(ref stale) = superseded {
         println!(
@@ -214,12 +208,12 @@ fn dns_setup_systemd_resolved(ctx: &CataContext, host: &str, port: u64, zone: &s
         );
         let mut rm = Command::new("sudo");
         rm.args(["rm", "-f", stale]);
-        run_interactive(&mut rm, ctx).with_context(|| format!("removing {stale}"))?;
+        run_interactive(&mut rm).with_context(|| format!("removing {stale}"))?;
     }
 
     let mut restart = Command::new("sudo");
     restart.args(["systemctl", "restart", "systemd-resolved"]);
-    run_interactive(&mut restart, ctx).context("restarting systemd-resolved")?;
+    run_interactive(&mut restart).context("restarting systemd-resolved")?;
 
     println!(
         "{} DNS resolver configured at {}",
@@ -235,7 +229,7 @@ fn dns_setup_systemd_resolved(ctx: &CataContext, host: &str, port: u64, zone: &s
     Ok(())
 }
 
-pub async fn dns_teardown(ctx: &CataContext, zone: &str) -> Result<()> {
+pub async fn dns_teardown(zone: &str) -> Result<()> {
     println!(
         "{} Removing DNS configuration for *.{}",
         style(">>>").cyan(),
@@ -243,13 +237,13 @@ pub async fn dns_teardown(ctx: &CataContext, zone: &str) -> Result<()> {
     );
 
     if cfg!(target_os = "macos") {
-        dns_teardown_macos(ctx, zone)
+        dns_teardown_macos(zone)
     } else {
-        dns_teardown_linux(ctx, zone)
+        dns_teardown_linux(zone)
     }
 }
 
-fn dns_teardown_macos(ctx: &CataContext, zone: &str) -> Result<()> {
+fn dns_teardown_macos(zone: &str) -> Result<()> {
     let resolver_file = format!("/etc/resolver/{}", zone);
 
     if std::path::Path::new(&resolver_file).exists() {
@@ -257,7 +251,7 @@ fn dns_teardown_macos(ctx: &CataContext, zone: &str) -> Result<()> {
 
         let mut rm = Command::new("sudo");
         rm.args(["rm", "-f", &resolver_file]);
-        run_interactive(&mut rm, ctx).with_context(|| format!("removing {resolver_file}"))?;
+        run_interactive(&mut rm).with_context(|| format!("removing {resolver_file}"))?;
     }
 
     println!("{} DNS configuration removed", style(">>>").green());
@@ -265,7 +259,7 @@ fn dns_teardown_macos(ctx: &CataContext, zone: &str) -> Result<()> {
     Ok(())
 }
 
-fn dns_teardown_linux(ctx: &CataContext, zone: &str) -> Result<()> {
+fn dns_teardown_linux(zone: &str) -> Result<()> {
     if !zone_is_well_formed(zone) {
         bail!("Refusing to touch DNS config: zone '{zone}' contains unexpected characters");
     }
@@ -294,13 +288,13 @@ fn dns_teardown_linux(ctx: &CataContext, zone: &str) -> Result<()> {
 
     let mut rm = Command::new("sudo");
     rm.args(["rm", "-f", &conf_file]);
-    run_interactive(&mut rm, ctx).with_context(|| format!("removing {conf_file}"))?;
+    run_interactive(&mut rm).with_context(|| format!("removing {conf_file}"))?;
 
     println!("{} Restarting systemd-resolved...", style(">>>").cyan());
 
     let mut restart = Command::new("sudo");
     restart.args(["systemctl", "restart", "systemd-resolved"]);
-    if run_interactive(&mut restart, ctx).is_err() {
+    if run_interactive(&mut restart).is_err() {
         println!(
             "{} Failed to restart systemd-resolved (may need manual restart)",
             style("Warning:").yellow()

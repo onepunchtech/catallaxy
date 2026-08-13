@@ -55,7 +55,7 @@ async fn show(ctx: &CataContext) -> Result<()> {
     Ok(())
 }
 
-pub fn cleanup_kubeconfig(ctx: &CataContext, cluster_name: &str) -> Result<()> {
+pub fn cleanup_kubeconfig(_ctx: &CataContext, cluster_name: &str) -> Result<()> {
     let kubeconfig_path = dirs::home_dir()
         .context("Could not find home directory")?
         .join(".kube")
@@ -71,14 +71,11 @@ pub fn cleanup_kubeconfig(ctx: &CataContext, cluster_name: &str) -> Result<()> {
         );
     }
 
-    io::kubectl::delete_kubeconfig_context(
-        ctx,
-        &format!("{}-admin@{}", cluster_name, cluster_name),
-    )?;
-    io::kubectl::delete_kubeconfig_context(ctx, cluster_name)?;
+    io::kubectl::delete_kubeconfig_context(&format!("{}-admin@{}", cluster_name, cluster_name))?;
+    io::kubectl::delete_kubeconfig_context(cluster_name)?;
 
-    io::kubectl::delete_kubeconfig_cluster(ctx, cluster_name)?;
-    io::kubectl::delete_kubeconfig_user(ctx, &format!("{}-admin", cluster_name))?;
+    io::kubectl::delete_kubeconfig_cluster(cluster_name)?;
+    io::kubectl::delete_kubeconfig_user(&format!("{}-admin", cluster_name))?;
 
     Ok(())
 }

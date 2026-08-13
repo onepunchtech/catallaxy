@@ -11,10 +11,8 @@ pub async fn ops(ctx: &CataContext, name: &str, args: &[String]) -> Result<()> {
 
     if std::path::Path::new(&ops_bin).exists() {
         let mut cmd = Command::new(&ops_bin);
-        crate::io::trust::apply(&mut cmd);
-        let status = cmd
-            .args(args)
-            .status()
+        cmd.args(args);
+        let status = crate::io::process::run_status(&mut cmd)
             .with_context(|| format!("Failed to run ops tool: {}", ops_bin))?;
 
         if !status.success() {

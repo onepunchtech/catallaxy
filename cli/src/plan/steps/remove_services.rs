@@ -13,7 +13,7 @@ pub fn run(sctx: &StepContext<'_>) -> Result<()> {
             continue;
         }
         println!("{} Removing {}...", style(">>>").cyan(), svc_desc);
-        io::docker::stop_container(sctx.ctx, container)?;
+        io::docker::stop_container(container)?;
         println!("{} {} removed", style(">>>").green(), svc_desc);
     }
     Ok(())

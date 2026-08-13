@@ -23,11 +23,11 @@ pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> 
     let zone = dns_info.zone.as_str();
 
     if teardown {
-        return host::dns::dns_teardown(ctx, zone).await;
+        return host::dns::dns_teardown(zone).await;
     }
 
     if setup {
-        return host::dns::dns_setup(ctx, host, port, zone).await;
+        return host::dns::dns_setup(host, port, zone).await;
     }
 
     println!("{} Lab DNS Configuration", style("catallaxy").cyan().bold());

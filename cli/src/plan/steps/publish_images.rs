@@ -29,7 +29,7 @@ pub fn run(sctx: &StepContext<'_>, src_cluster: &str, images: &[Value]) -> Resul
     }
 
     for img in images {
-        crate::images::publish_one(sctx.ctx, sctx.lab, img)?;
+        crate::images::publish_one(sctx.lab, img)?;
     }
     Ok(())
 }

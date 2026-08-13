@@ -22,4 +22,26 @@
 
         touch $out
       '';
+
+  cli-trust-goes-through-the-process-seam =
+    pkgs.runCommand "cli-trust-goes-through-the-process-seam"
+      {
+        nativeBuildInputs = [ pkgs.ripgrep ];
+      }
+      ''
+        found=$(rg --line-number 'trust::apply' ${self}/cli/src \
+          --glob '!process.rs' || true)
+
+        if [ -n "$found" ]; then
+          echo "the lab CA is applied outside io/process.rs:" >&2
+          echo "$found" >&2
+          echo "" >&2
+          echo "io::process::{run_capture,run_streaming,run_interactive,run_output,run_status}" >&2
+          echo "apply the CA and honour --verbose. A call to trust::apply anywhere else is a" >&2
+          echo "subprocess that went around them, and the next one like it will forget." >&2
+          exit 1
+        fi
+
+        touch $out
+      '';
 }

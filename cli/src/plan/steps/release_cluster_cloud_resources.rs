@@ -143,7 +143,7 @@ fn delete_user_namespaces(kube_ctx: &str) -> Vec<String> {
 }
 
 fn poll_until_released(
-    ctx: &CataContext,
+    _ctx: &CataContext,
     kube_ctx: &str,
     target_namespaces: &[String],
     timeout_secs: u64,
@@ -223,7 +223,6 @@ fn poll_until_released(
                     remaining_ns.join(", "),
                 );
                 crate::io::kubectl::strip_finalizers_in_terminating_namespaces(
-                    ctx,
                     kube_ctx,
                     &remaining_ns,
                 );

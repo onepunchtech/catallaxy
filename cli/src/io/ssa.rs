@@ -270,7 +270,7 @@ fn apply_bundle_with_retry(
 }
 
 fn wait_bundle_crds(
-    ctx: &CataContext,
+    _ctx: &CataContext,
     kube_context: &str,
     bundle_key: &str,
     bundle_dir: &Path,
@@ -305,7 +305,7 @@ fn wait_bundle_crds(
         crds.len(),
     );
     for crd in crds {
-        io::kubectl::wait_crd_established(ctx, kube_context, crd, timeout)?;
+        io::kubectl::wait_crd_established(kube_context, crd, timeout)?;
     }
     Ok(())
 }

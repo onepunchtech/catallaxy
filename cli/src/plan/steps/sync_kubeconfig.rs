@@ -18,7 +18,7 @@ pub fn run(
             "{} Syncing kubeconfig for '{cluster_name}'...",
             style(">>>").cyan()
         );
-        match crate::crossplane::sync_kubeconfig(sctx.ctx, &context, cluster_name) {
+        match crate::crossplane::sync_kubeconfig(&context, cluster_name) {
             Ok(()) => println!(
                 "{} Kubeconfig synced for '{cluster_name}'",
                 style(">>>").green(),

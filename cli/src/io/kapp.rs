@@ -5,7 +5,6 @@ use std::time::Duration;
 use anyhow::{Result, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::io::process::run_streaming;
 
 const MAX_ATTEMPTS: u32 = 6;
@@ -13,7 +12,6 @@ const MAX_ATTEMPTS: u32 = 6;
 const BACKOFF: Duration = Duration::from_secs(8);
 
 pub fn deploy(
-    ctx: &CataContext,
     kube_context: &str,
     app_name: &str,
     manifests_dir: &str,
@@ -42,7 +40,7 @@ pub fn deploy(
             timeout,
         ]);
 
-        match run_streaming(&mut cmd, ctx) {
+        match run_streaming(&mut cmd) {
             Ok(()) => return Ok(()),
             Err(e) => {
                 if attempt == MAX_ATTEMPTS {

@@ -294,7 +294,7 @@ async fn apply_kapp(
         {
             for crd in content.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
                 println!("{} Waiting for CRD: {crd}...", style(">>>").cyan());
-                io::kubectl::wait_crd_established(ctx, kube_context, crd, &timeout)?;
+                io::kubectl::wait_crd_established(kube_context, crd, &timeout)?;
             }
         }
 
@@ -311,7 +311,6 @@ async fn apply_kapp(
         }
 
         io::kapp::deploy(
-            ctx,
             kube_context,
             &kapp_app_name(&bundle.key),
             &bundle.dir.display().to_string(),
@@ -334,7 +333,6 @@ fn inject_projections(
 ) -> Result<()> {
     inject_projections_with(ctx, source, projections, |secret_dir, secret_name| {
         io::kapp::deploy(
-            ctx,
             kube_context,
             &format!("secrets-{secret_name}"),
             &secret_dir.display().to_string(),

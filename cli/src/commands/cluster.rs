@@ -88,7 +88,7 @@ fn provisioner_cluster_name(spec: &ClusterSpec) -> &str {
     }
 }
 
-pub fn resolve_docker_host(ctx: &CataContext, spec: &ClusterSpec) -> Result<Option<String>> {
+pub fn resolve_docker_host(_ctx: &CataContext, spec: &ClusterSpec) -> Result<Option<String>> {
     if !io::colima::is_macos() {
         return Ok(None);
     }
@@ -105,7 +105,7 @@ pub fn resolve_docker_host(ctx: &CataContext, spec: &ClusterSpec) -> Result<Opti
             colima.profile
         );
     } else {
-        io::colima::start(ctx, &colima.profile, colima.cpu, colima.memory, colima.disk)?;
+        io::colima::start(&colima.profile, colima.cpu, colima.memory, colima.disk)?;
     }
 
     Ok(Some(io::colima::docker_socket(&colima.profile)))
@@ -281,7 +281,6 @@ pub fn provision_cluster_with_registry(
             }
 
             io::talos::cluster_create(
-                ctx,
                 &cluster_name,
                 spec.kubernetes.control_planes,
                 spec.kubernetes.workers,
@@ -360,7 +359,7 @@ pub fn stop_cluster(ctx: &CataContext, name: &str, spec: &ClusterSpec) -> Result
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
-            io::k3d::cluster_stop(ctx, &cluster_name, docker_host.as_deref())?;
+            io::k3d::cluster_stop(&cluster_name, docker_host.as_deref())?;
         }
         ProvisionerKind::External | ProvisionerKind::Crossplane => {
             println!(
@@ -386,7 +385,7 @@ pub fn deprovision_cluster(ctx: &CataContext, name: &str, spec: &ClusterSpec) ->
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
-            io::k3d::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
+            io::k3d::cluster_destroy(&cluster_name, docker_host.as_deref())?;
         }
         ProvisionerKind::Talos => {
             let docker_host = resolve_docker_host(ctx, spec)?;
@@ -394,7 +393,7 @@ pub fn deprovision_cluster(ctx: &CataContext, name: &str, spec: &ClusterSpec) ->
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
-            io::talos::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
+            io::talos::cluster_destroy(&cluster_name, docker_host.as_deref())?;
         }
         ProvisionerKind::Crossplane => {
             println!(
@@ -441,7 +440,7 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
         ProvisionerKind::K3d => {
             let docker_host = resolve_docker_host(ctx, &spec)?;
             if io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
-                let _ = io::k3d::cluster_show(ctx, &cluster_name, docker_host.as_deref());
+                let _ = io::k3d::cluster_show(&cluster_name, docker_host.as_deref());
             } else {
                 println!("  (not running)");
             }
@@ -449,7 +448,7 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
         ProvisionerKind::Talos => {
             let docker_host = resolve_docker_host(ctx, &spec)?;
             if io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
-                let _ = io::talos::cluster_show(ctx, &cluster_name, docker_host.as_deref());
+                let _ = io::talos::cluster_show(&cluster_name, docker_host.as_deref());
             } else {
                 println!("  (not running)");
             }
@@ -506,26 +505,23 @@ fn provision_k3d(
         .filter(|p| p.exists())
         .map(|p| p.to_string_lossy().to_string());
 
-    io::k3d::cluster_create(
-        ctx,
-        io::k3d::ClusterCreate {
-            name: cluster_name,
-            workers: spec.kubernetes.workers,
-            no_traefik: k3d.no_traefik,
-            no_service_lb: k3d.no_service_lb,
-            no_flannel: k3d.no_flannel,
-            image: k3d.image.as_deref(),
-            docker_host: docker_host.as_deref(),
-            registries_yaml: registries_yaml_str.as_deref(),
-            certs_d: certs_d_str.as_deref(),
-            resolv_conf: resolv_conf_str.as_deref(),
-            service_cidr: Some(spec.network.service_subnet.as_str()),
-            pod_cidr: Some(spec.network.pod_subnet.as_str()),
-            auto_deploy_manifests: &auto_deploy,
-            ports: &port_refs,
-            network: k3d.network.as_deref(),
-        },
-    )?;
+    io::k3d::cluster_create(io::k3d::ClusterCreate {
+        name: cluster_name,
+        workers: spec.kubernetes.workers,
+        no_traefik: k3d.no_traefik,
+        no_service_lb: k3d.no_service_lb,
+        no_flannel: k3d.no_flannel,
+        image: k3d.image.as_deref(),
+        docker_host: docker_host.as_deref(),
+        registries_yaml: registries_yaml_str.as_deref(),
+        certs_d: certs_d_str.as_deref(),
+        resolv_conf: resolv_conf_str.as_deref(),
+        service_cidr: Some(spec.network.service_subnet.as_str()),
+        pod_cidr: Some(spec.network.pod_subnet.as_str()),
+        auto_deploy_manifests: &auto_deploy,
+        ports: &port_refs,
+        network: k3d.network.as_deref(),
+    })?;
 
     Ok(())
 }

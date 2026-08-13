@@ -3,7 +3,6 @@ use std::process::Command;
 use anyhow::Result;
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::io::process::{run_capture, run_streaming};
 
 pub struct ProviderSpec {
@@ -12,7 +11,7 @@ pub struct ProviderSpec {
     pub infrastructure: Vec<String>,
 }
 
-pub fn init(ctx: &CataContext, kube_context: &str, providers: &ProviderSpec) -> Result<()> {
+pub fn init(kube_context: &str, providers: &ProviderSpec) -> Result<()> {
     println!("{} Initializing Cluster API...", style(">>>").cyan());
 
     let mut cmd = Command::new("clusterctl");
@@ -29,18 +28,13 @@ pub fn init(ctx: &CataContext, kube_context: &str, providers: &ProviderSpec) -> 
         cmd.args(["--infrastructure", ip]);
     }
 
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     println!("{} Cluster API initialized", style(">>>").green());
     Ok(())
 }
 
-pub fn move_resources(
-    ctx: &CataContext,
-    from_context: &str,
-    to_context: &str,
-    namespace: &str,
-) -> Result<()> {
+pub fn move_resources(from_context: &str, to_context: &str, namespace: &str) -> Result<()> {
     println!(
         "{} Moving CAPI resources from {} to {}...",
         style(">>>").cyan(),
@@ -59,18 +53,13 @@ pub fn move_resources(
         namespace,
     ]);
 
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     println!("{} CAPI resources moved successfully", style(">>>").green());
     Ok(())
 }
 
-pub fn get_kubeconfig(
-    ctx: &CataContext,
-    kube_context: &str,
-    cluster_name: &str,
-    namespace: &str,
-) -> Result<String> {
+pub fn get_kubeconfig(kube_context: &str, cluster_name: &str, namespace: &str) -> Result<String> {
     println!(
         "{} Getting kubeconfig for cluster '{cluster_name}'...",
         style(">>>").cyan()
@@ -87,11 +76,10 @@ pub fn get_kubeconfig(
         namespace,
     ]);
 
-    run_capture(&mut cmd, ctx)
+    run_capture(&mut cmd)
 }
 
 pub fn wait_control_plane_initialized(
-    ctx: &CataContext,
     kube_context: &str,
     cluster_name: &str,
     namespace: &str,
@@ -114,7 +102,7 @@ pub fn wait_control_plane_initialized(
         &format!("--timeout={timeout}"),
     ]);
 
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     println!("{} Control plane initialized", style(">>>").green());
     Ok(())

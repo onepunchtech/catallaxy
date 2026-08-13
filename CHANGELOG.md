@@ -186,6 +186,32 @@ The format is based on
 
 ### Changed
 
+- **The lab CA reaches every subprocess that needs it, from one place.**
+  `io::process` applies the CA and honours `--verbose`, but using it was
+  optional, so five call sites had reached for `io::trust::apply` by hand:
+  `git` in publish, `crane push`, `crane copy`, a lifecycle hook, and the
+  ops tool. Each was someone noticing the gap locally and patching it
+  locally. The ones nobody noticed went without: `gh` and `glab` creating a
+  pull request against a lab-hosted forge, `helm` installing argocd from a
+  lab chart repo, `nix` fetching over lab TLS, and the external-name
+  discovery binary.
+
+  Those go through the seam now, and
+  `cli-trust-goes-through-the-process-seam` fails the build if
+  `trust::apply` appears anywhere but `io/process.rs`, because the pattern
+  here was not one mistake but the same mistake five times.
+
+  `run_output` and `run_status` join the helpers, for callers that judge a
+  failure themselves rather than having it turned into an error. That was
+  the reason two of the five had gone around: `run_capture` bails on a
+  non-zero exit and swallows the code, and a lifecycle hook needs the code
+  to decide whether to continue.
+
+  Verbosity became process state, next to the trust state that was already
+  there. It is set once from `--verbose` and never changes, so threading a
+  `Context` through to carry it bought nothing: 40 functions took one only
+  for that, and no longer take anything.
+
 - **The teardown reconcile is a step in the plan, not something the executor
   did on the way past.** `cata lab destroy` called into Crossplane before
   running the plan, annotating live managed resources and toggling

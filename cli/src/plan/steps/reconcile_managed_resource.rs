@@ -15,7 +15,6 @@ pub fn run(
         None => sctx.lab.kube_context(target)?,
     };
     crate::crossplane::reconcile_managed_resource(
-        sctx.ctx,
         kube_ctx,
         resource_kind,
         resource_name,

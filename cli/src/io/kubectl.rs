@@ -4,27 +4,26 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::io::process::run_capture;
 
-pub fn delete_kubeconfig_context(ctx: &CataContext, context_name: &str) -> Result<()> {
+pub fn delete_kubeconfig_context(context_name: &str) -> Result<()> {
     let mut cmd = Command::new("kubectl");
     cmd.args(["config", "delete-context", context_name]);
-    let _ = run_capture(&mut cmd, ctx);
+    let _ = run_capture(&mut cmd);
     Ok(())
 }
 
-pub fn delete_kubeconfig_cluster(ctx: &CataContext, cluster_name: &str) -> Result<()> {
+pub fn delete_kubeconfig_cluster(cluster_name: &str) -> Result<()> {
     let mut cmd = Command::new("kubectl");
     cmd.args(["config", "delete-cluster", cluster_name]);
-    let _ = run_capture(&mut cmd, ctx);
+    let _ = run_capture(&mut cmd);
     Ok(())
 }
 
-pub fn delete_kubeconfig_user(ctx: &CataContext, user_name: &str) -> Result<()> {
+pub fn delete_kubeconfig_user(user_name: &str) -> Result<()> {
     let mut cmd = Command::new("kubectl");
     cmd.args(["config", "delete-user", user_name]);
-    let _ = run_capture(&mut cmd, ctx);
+    let _ = run_capture(&mut cmd);
     Ok(())
 }
 
@@ -36,12 +35,7 @@ pub fn api_reachable(context: &str) -> bool {
     matches!(output, Ok(o) if o.status.success())
 }
 
-pub fn wait_crd_established(
-    _ctx: &CataContext,
-    context: &str,
-    crd_name: &str,
-    timeout: &str,
-) -> Result<()> {
+pub fn wait_crd_established(context: &str, crd_name: &str, timeout: &str) -> Result<()> {
     use std::time::{Duration, Instant};
 
     let timeout_duration = parse_timeout(timeout);
@@ -638,11 +632,7 @@ pub fn namespace_exists(context: &str, namespace: &str) -> bool {
     matches!(output, Ok(s) if s.success())
 }
 
-pub fn strip_finalizers_in_terminating_namespaces(
-    ctx: &CataContext,
-    kube_ctx: &str,
-    namespaces: &[String],
-) {
+pub fn strip_finalizers_in_terminating_namespaces(kube_ctx: &str, namespaces: &[String]) {
     let mut list = Command::new("kubectl");
     list.args([
         "--context",
@@ -652,7 +642,7 @@ pub fn strip_finalizers_in_terminating_namespaces(
         "-o",
         r#"jsonpath={range .items[?(@.spec.scope=="Namespaced")]}{.spec.names.plural}.{.spec.group}{"\n"}{end}"#,
     ]);
-    let crd_names: Vec<String> = run_capture(&mut list, ctx)
+    let crd_names: Vec<String> = run_capture(&mut list)
         .unwrap_or_default()
         .lines()
         .filter(|l| !l.is_empty())
@@ -672,7 +662,7 @@ pub fn strip_finalizers_in_terminating_namespaces(
                 "-o",
                 "jsonpath={.items[*].metadata.name}",
             ]);
-            let names: Vec<String> = run_capture(&mut get, ctx)
+            let names: Vec<String> = run_capture(&mut get)
                 .unwrap_or_default()
                 .split_whitespace()
                 .map(String::from)
@@ -693,7 +683,7 @@ pub fn strip_finalizers_in_terminating_namespaces(
                     "-p",
                     r#"{"metadata":{"finalizers":[]}}"#,
                 ]);
-                if run_capture(&mut patch, ctx).is_ok() {
+                if run_capture(&mut patch).is_ok() {
                     println!(
                         "{}   stripped finalizers: {}/{}/{}",
                         style(">>>").dim(),

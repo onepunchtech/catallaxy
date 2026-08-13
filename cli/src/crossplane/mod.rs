@@ -3,13 +3,12 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::io;
 use crate::io::process::run_capture;
 
-pub fn sync_kubeconfig(ctx: &CataContext, mgmt_context: &str, cluster_name: &str) -> Result<()> {
-    let (secret_name, secret_ns) = connection_secret_ref(ctx, mgmt_context, cluster_name)?;
-    let kubeconfig = read_connection_kubeconfig(ctx, mgmt_context, &secret_name, &secret_ns)?;
+pub fn sync_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<()> {
+    let (secret_name, secret_ns) = connection_secret_ref(mgmt_context, cluster_name)?;
+    let kubeconfig = read_connection_kubeconfig(mgmt_context, &secret_name, &secret_ns)?;
     let kube_dir = dirs::home_dir().unwrap_or_default().join(".kube");
     std::fs::create_dir_all(&kube_dir)?;
     let kube_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
@@ -19,9 +18,7 @@ pub fn sync_kubeconfig(ctx: &CataContext, mgmt_context: &str, cluster_name: &str
     current
         .env("KUBECONFIG", kube_path.display().to_string())
         .args(["config", "current-context"]);
-    let orig_ctx = run_capture(&mut current, ctx)
-        .ok()
-        .map(|o| o.trim().to_string());
+    let orig_ctx = run_capture(&mut current).ok().map(|o| o.trim().to_string());
 
     if let Some(ref orig) = orig_ctx
         && orig != cluster_name
@@ -30,7 +27,7 @@ pub fn sync_kubeconfig(ctx: &CataContext, mgmt_context: &str, cluster_name: &str
         rename
             .env("KUBECONFIG", kube_path.display().to_string())
             .args(["config", "rename-context", orig, cluster_name]);
-        let _ = run_capture(&mut rename, ctx);
+        let _ = run_capture(&mut rename);
     }
 
     io::kubectl::merge_kubeconfig(&kube_path, cluster_name)?;
@@ -38,11 +35,7 @@ pub fn sync_kubeconfig(ctx: &CataContext, mgmt_context: &str, cluster_name: &str
     Ok(())
 }
 
-fn connection_secret_ref(
-    ctx: &CataContext,
-    mgmt_context: &str,
-    cluster_name: &str,
-) -> Result<(String, String)> {
+fn connection_secret_ref(mgmt_context: &str, cluster_name: &str) -> Result<(String, String)> {
     let cluster_kinds = [
         "clusters.kubernetes.digitalocean.crossplane.io",
         "clusters.eks.aws.upbound.io",
@@ -61,7 +54,7 @@ fn connection_secret_ref(
             "-o",
             "json",
         ]);
-        if let Ok(out) = run_capture(&mut cmd, ctx)
+        if let Ok(out) = run_capture(&mut cmd)
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&out)
         {
             cr_json = Some(v);
@@ -96,7 +89,6 @@ fn connection_secret_ref(
 }
 
 fn read_connection_kubeconfig(
-    ctx: &CataContext,
     mgmt_context: &str,
     secret_name: &str,
     secret_ns: &str,
@@ -113,7 +105,7 @@ fn read_connection_kubeconfig(
         "-o",
         "json",
     ]);
-    let secret_output = run_capture(&mut cmd, ctx).with_context(|| {
+    let secret_output = run_capture(&mut cmd).with_context(|| {
         format!(
             "reading connection secret {secret_ns}/{secret_name}; \
              is the Crossplane resource Synced+Ready?"
@@ -164,7 +156,6 @@ struct Target {
 }
 
 pub fn reconcile_managed_resource(
-    ctx: &CataContext,
     kube_ctx: &str,
     resource_kind: &str,
     resource_name: &str,
@@ -182,17 +173,11 @@ pub fn reconcile_managed_resource(
         name: resource_name.to_string(),
         discovery_bin: discovery_bin.map(String::from),
     };
-    reconcile_context(ctx, kube_ctx, std::slice::from_ref(&target));
+    reconcile_context(kube_ctx, std::slice::from_ref(&target));
     Ok(())
 }
 
-fn try_discover_and_annotate(
-    cata: &CataContext,
-    kube_ctx: &str,
-    kind: &str,
-    name: &str,
-    bin: &str,
-) -> bool {
+fn try_discover_and_annotate(kube_ctx: &str, kind: &str, name: &str, bin: &str) -> bool {
     println!(
         "{} Reconcile: {}/{} missing external-name; running discovery {}",
         style(">>>").yellow(),
@@ -202,8 +187,7 @@ fn try_discover_and_annotate(
     );
     let mut discovery = Command::new(bin);
     discovery.env("KUBECONTEXT", kube_ctx).env("MR_NAME", name);
-    crate::io::trust::apply(&mut discovery);
-    let out = match discovery.output() {
+    let out = match crate::io::process::run_output(&mut discovery) {
         Ok(o) => o,
         Err(e) => {
             println!(
@@ -246,7 +230,7 @@ fn try_discover_and_annotate(
         &format!("crossplane.io/external-name={discovered}"),
         "--overwrite",
     ]);
-    match run_capture(&mut annotate, cata) {
+    match run_capture(&mut annotate) {
         Ok(_) => {
             println!(
                 "{} Reconcile: {}/{} adopted (external-name={})",
@@ -270,7 +254,7 @@ fn try_discover_and_annotate(
     }
 }
 
-fn reconcile_context(cata: &CataContext, ctx: &str, targets: &[Target]) {
+fn reconcile_context(ctx: &str, targets: &[Target]) {
     if !io::kubectl::api_reachable(ctx) {
         println!(
             "{} Reconcile: context '{}' unreachable, leaving CRs to the plan's preflight",
@@ -294,7 +278,7 @@ fn reconcile_context(cata: &CataContext, ctx: &str, targets: &[Target]) {
             "-o",
             "json",
         ]);
-        let cr = run_capture(&mut get, cata)
+        let cr = run_capture(&mut get)
             .ok()
             .and_then(|o| serde_json::from_str::<serde_json::Value>(&o).ok());
         let cr = match cr {
@@ -325,7 +309,7 @@ fn reconcile_context(cata: &CataContext, ctx: &str, targets: &[Target]) {
 
         if !external_name_ok
             && let Some(bin) = discovery_bin.as_deref()
-            && try_discover_and_annotate(cata, ctx, kind, name, bin)
+            && try_discover_and_annotate(ctx, kind, name, bin)
         {
             continue;
         }
@@ -347,7 +331,7 @@ fn reconcile_context(cata: &CataContext, ctx: &str, targets: &[Target]) {
             "crossplane.io/paused=true",
             "--overwrite",
         ]);
-        let _ = run_capture(&mut pause, cata);
+        let _ = run_capture(&mut pause);
         std::thread::sleep(std::time::Duration::from_secs(3));
         let mut unpause = Command::new("kubectl");
         unpause.args([
@@ -357,7 +341,7 @@ fn reconcile_context(cata: &CataContext, ctx: &str, targets: &[Target]) {
             &format!("{kind}/{name}"),
             "crossplane.io/paused-",
         ]);
-        let _ = run_capture(&mut unpause, cata);
+        let _ = run_capture(&mut unpause);
         let _ = io::kubectl::wait_managed_ready(ctx, 60);
     }
 }

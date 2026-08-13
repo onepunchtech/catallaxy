@@ -5,7 +5,6 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::domain::LabSpec;
 use crate::host::state::service_state_dir;
 use crate::io::process::run_capture;
@@ -339,12 +338,7 @@ fn sign_server_cert(
     Ok(())
 }
 
-pub fn import_lab_ca(
-    ctx: &CataContext,
-    lab_name: &str,
-    lab: &LabSpec,
-    cluster_name: &str,
-) -> Result<()> {
+pub fn import_lab_ca(lab_name: &str, lab: &LabSpec, cluster_name: &str) -> Result<()> {
     let ingress_dir = crate::host::state::service_state_dir(lab_name, "proxy");
     let ca_crt = ingress_dir.join("ca.crt");
     let ca_key = ingress_dir.join("ca.key");
@@ -357,7 +351,7 @@ pub fn import_lab_ca(
 
     let mut namespace = Command::new("kubectl");
     namespace.args(["--context", context, "create", "namespace", "cert-manager"]);
-    let _ = run_capture(&mut namespace, ctx);
+    let _ = run_capture(&mut namespace);
 
     let mut delete = Command::new("kubectl");
     delete.args([
@@ -369,7 +363,7 @@ pub fn import_lab_ca(
         "-n",
         "cert-manager",
     ]);
-    let _ = run_capture(&mut delete, ctx);
+    let _ = run_capture(&mut delete);
 
     let mut create = Command::new("kubectl");
     create
@@ -388,7 +382,7 @@ pub fn import_lab_ca(
         .args(["--key"])
         .arg(&ca_key);
 
-    match run_capture(&mut create, ctx) {
+    match run_capture(&mut create) {
         Ok(_) => {
             println!(
                 "{} Lab CA imported into '{cluster_name}'",

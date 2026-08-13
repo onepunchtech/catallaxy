@@ -3,7 +3,6 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result};
 use console::style;
 
-use crate::config::Context as CataContext;
 use crate::io::process::run_streaming;
 
 pub fn is_macos() -> bool {
@@ -42,7 +41,7 @@ pub fn profile_running(profile: &str) -> bool {
     std::path::Path::new(&sock).exists()
 }
 
-pub fn start(ctx: &CataContext, profile: &str, cpu: u64, memory: u64, disk: u64) -> Result<()> {
+pub fn start(profile: &str, cpu: u64, memory: u64, disk: u64) -> Result<()> {
     if profile_running(profile) {
         println!(
             "{} Colima VM already running (profile: {profile})",
@@ -73,7 +72,7 @@ pub fn start(ctx: &CataContext, profile: &str, cpu: u64, memory: u64, disk: u64)
         "--network-address",
     ]);
 
-    run_streaming(&mut cmd, ctx)?;
+    run_streaming(&mut cmd)?;
 
     let _ = ssh_exec(
         profile,

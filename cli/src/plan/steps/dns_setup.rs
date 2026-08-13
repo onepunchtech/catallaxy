@@ -15,5 +15,5 @@ pub async fn run(sctx: &StepContext<'_>, host: &str, port: u64, zone: &str) -> R
         );
         return Ok(());
     }
-    dns::dns_setup(sctx.ctx, host, port, zone).await
+    dns::dns_setup(host, port, zone).await
 }
