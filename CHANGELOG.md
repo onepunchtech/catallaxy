@@ -130,6 +130,20 @@ The format is based on
 
 ### Changed
 
+- **`nix develop` no longer builds the CLI to open.** The default shell
+  listed `packages.cataWrapped`, so entering it built `cata` first. When the
+  CLI did not compile you could not get into the shell that carries the
+  cargo you need to fix it, which is the one moment you need it. The shell
+  also shipped a `cata` built from the last good tree next to the source you
+  were editing, so running `cata` after a change silently ran the old
+  binary.
+
+  The dev shell now offers `cata-dev` only, which is `cargo run` against the
+  working tree, and `nix run .#cata` remains for the released one. Lab
+  shells are unchanged and still carry `cata`: `nix develop .#<lab>` runs
+  `cata lab env` in its `shellHook` to trust the lab CA, so the binary has
+  to be there.
+
 - **A lab whose managed secrets live outside an `env` store is no longer
   e2e-eligible**, and `nix eval .#e2eLabs` says so in a sentence naming the
   secret, its store and the backend. A machine with no credentials cannot

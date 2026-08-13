@@ -6,7 +6,6 @@
 
 pkgs.mkShell {
   packages = packages.tools ++ [
-    packages.cataWrapped
     rustToolchain
     pkgs.bacon
     pkgs.rust-analyzer
@@ -20,11 +19,11 @@ pkgs.mkShell {
 
   shellHook = ''
     echo "catallaxy dev shell"
-    echo "  cata                 # released CLI"
-    echo "  cata-dev             # run CLI from source (cargo build + run)"
+    echo "  cata-dev             # run the CLI you are editing"
     echo "  cargo build          # build CLI"
     echo "  bacon                # watch + rebuild on change"
     echo "  nix build .#docs     # build the book"
-    echo "  nix develop .#<lab>  # a lab's tools + its CA trust"
+    echo "  nix run .#cata       # the released CLI, built from a clean tree"
+    echo "  nix develop .#<lab>  # a lab's tools, its CA trust, and cata"
   '';
 }
