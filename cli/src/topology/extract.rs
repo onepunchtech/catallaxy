@@ -105,33 +105,26 @@ fn extract_edges_from_plan(lab: &LabSpec) -> Vec<TopologyEdge> {
 
     for step in &lab.deployment_plan {
         match &step.params {
-            StepParams::CrossClusterSecretCopy {
-                source_cluster,
-                target_cluster,
-                source_secret,
-                ..
-            } => edges.push(TopologyEdge {
+            StepParams::CrossClusterSecretCopy(p) => edges.push(TopologyEdge {
                 kind: EdgeKind::SecretCopy,
-                source: source_cluster.clone(),
-                target: target_cluster.clone(),
-                label: Some(source_secret.clone()),
+                source: p.source_cluster.clone(),
+                target: p.target_cluster.clone(),
+                label: Some(p.source_secret.clone()),
             }),
-            StepParams::SyncKubeconfig {
-                target, clusters, ..
-            } => {
-                for provisioned in clusters {
+            StepParams::SyncKubeconfig(p) => {
+                for provisioned in &p.clusters {
                     edges.push(TopologyEdge {
                         kind: EdgeKind::Provisions,
-                        source: target.clone(),
+                        source: p.target.clone(),
                         target: provisioned.clone(),
                         label: None,
                     });
                 }
             }
-            StepParams::Pivot { cluster, .. } => edges.push(TopologyEdge {
+            StepParams::Pivot(p) => edges.push(TopologyEdge {
                 kind: EdgeKind::DeployDependency,
-                source: format!("{cluster} (bootstrap)"),
-                target: cluster.clone(),
+                source: format!("{} (bootstrap)", p.cluster),
+                target: p.cluster.clone(),
                 label: Some("pivot".to_string()),
             }),
             _ => {}

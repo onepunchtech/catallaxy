@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::domain::diagnostic::{Diagnostic, Severity};
-use crate::domain::plan::StepParams;
+use crate::domain::plan::{CrossClusterSecretCopyParams, StepParams};
 
 use super::{LabCheckContext, LabCheckRule};
 
@@ -14,17 +14,17 @@ impl LabCheckRule for CrossClusterSecret {
     fn check(&self, ctx: &LabCheckContext<'_>) -> Vec<Diagnostic> {
         let mut diags = Vec::new();
         for step in ctx.deployment_plan {
-            let StepParams::CrossClusterSecretCopy {
+            let StepParams::CrossClusterSecretCopy(p) = &step.params else {
+                continue;
+            };
+            let CrossClusterSecretCopyParams {
                 name,
                 source_cluster,
                 source_namespace,
                 source_secret,
                 target_cluster,
                 ..
-            } = &step.params
-            else {
-                continue;
-            };
+            } = p;
 
             let cluster_names: &[String] = &ctx.metadata.cluster_names;
             let has_source = cluster_names.iter().any(|c| c == source_cluster);

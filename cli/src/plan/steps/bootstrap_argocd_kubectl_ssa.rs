@@ -2,18 +2,23 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
+use crate::domain::plan::BootstrapArgocdKubectlSsaParams;
 use crate::io;
 use crate::plan::StepContext;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    kube_context: Option<&str>,
-    manifest_root: &str,
-    field_manager: Option<&str>,
-    _namespace: Option<&str>,
-    wait_timeout_seconds: Option<u64>,
-) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &BootstrapArgocdKubectlSsaParams) -> Result<()> {
+    let BootstrapArgocdKubectlSsaParams {
+        target,
+        manifest_root,
+        kube_context,
+        field_manager,
+        namespace,
+        wait_timeout_seconds,
+    } = p;
+    let kube_context = kube_context.as_deref();
+    let field_manager = field_manager.as_deref();
+    let _namespace = namespace.as_deref();
+
     let kube_context = kube_context.ok_or_else(|| {
         anyhow::anyhow!(
             "bootstrap-argocd-kubectl-ssa: missing kubeContext for target '{target}'. \

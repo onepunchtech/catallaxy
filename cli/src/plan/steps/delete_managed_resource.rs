@@ -5,18 +5,24 @@ use anyhow::Result;
 use console::style;
 use serde_json::Value;
 
+use crate::domain::plan::DeleteManagedResourceParams;
 use crate::io;
 use crate::plan::StepContext;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    kind: &str,
-    resource_name: &str,
-    wait: bool,
-    timeout_secs: u64,
-    kube_context: Option<&str>,
-) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &DeleteManagedResourceParams) -> Result<()> {
+    let DeleteManagedResourceParams {
+        target,
+        resource_kind: kind,
+        resource_name,
+        wait,
+        wait_timeout_seconds: timeout_secs,
+        kube_context,
+        external_name_discovery_bin: _,
+    } = p;
+    let wait = wait.unwrap_or(true);
+    let timeout_secs = timeout_secs.unwrap_or(1200);
+    let kube_context = kube_context.as_deref();
+
     let kube_ctx = kube_context
         .map(String::from)
         .unwrap_or_else(|| target.to_string());

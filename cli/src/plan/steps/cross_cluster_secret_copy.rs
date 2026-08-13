@@ -5,32 +5,26 @@ use anyhow::{Result, bail};
 use console::style;
 use serde_json::Value;
 
+use crate::domain::plan::CrossClusterSecretCopyParams;
 use crate::plan::StepContext;
 
-pub struct SecretCopy<'a> {
-    pub src_cluster: &'a str,
-    pub src_namespace: &'a str,
-    pub src_secret: &'a str,
-    pub tgt_cluster: &'a str,
-    pub tgt_namespace: &'a str,
-    pub tgt_secret: &'a str,
-    pub override_type: Option<&'a str>,
-    pub source_context: Option<&'a str>,
-    pub target_context: Option<&'a str>,
-}
-
-pub async fn run(sctx: &StepContext<'_>, copy: SecretCopy<'_>) -> Result<()> {
-    let SecretCopy {
-        src_cluster,
-        src_namespace,
-        src_secret,
-        tgt_cluster,
-        tgt_namespace,
-        tgt_secret,
-        override_type,
+pub async fn run(sctx: &StepContext<'_>, p: &CrossClusterSecretCopyParams) -> Result<()> {
+    let CrossClusterSecretCopyParams {
+        name: _,
+        source_cluster: src_cluster,
+        source_namespace: src_namespace,
+        source_secret: src_secret,
+        target_cluster: tgt_cluster,
+        target_namespace: tgt_namespace,
+        target_secret: tgt_secret,
+        secret_type: override_type,
         source_context,
         target_context,
-    } = copy;
+    } = p;
+    let override_type = override_type.as_deref();
+    let source_context = source_context.as_deref();
+    let target_context = target_context.as_deref();
+
     let src_ctx = source_context
         .map(String::from)
         .map(Ok)

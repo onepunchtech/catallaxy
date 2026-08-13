@@ -5,16 +5,18 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use console::style;
 
+use crate::domain::plan::RegistrySetupParams;
 use crate::host::services;
 use crate::host::state;
 use crate::plan::StepContext;
 
-pub async fn run(
-    sctx: &StepContext<'_>,
-    port: u64,
-    upstreams: &[String],
-    zone: &str,
-) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &RegistrySetupParams) -> Result<()> {
+    let RegistrySetupParams {
+        port,
+        upstreams,
+        zone,
+    } = p;
+
     if sctx.dry_run {
         println!(
             "{} [dry-run] would write registries.yaml, certs.d/, and lab-resolv.conf",
@@ -27,7 +29,7 @@ pub async fn run(
 
     let state_dir = state::service_state_dir(lab_name, "registry");
     fs::create_dir_all(&state_dir).with_context(|| format!("creating {}", state_dir.display()))?;
-    let registries_yaml = services::generate_registries_yaml(port as u16, upstreams);
+    let registries_yaml = services::generate_registries_yaml(*port as u16, upstreams);
     fs::write(state_dir.join("registries.yaml"), registries_yaml)
         .context("writing registries.yaml")?;
 

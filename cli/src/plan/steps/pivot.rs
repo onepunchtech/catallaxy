@@ -4,16 +4,18 @@ use anyhow::{Result, bail};
 use console::style;
 
 use crate::domain::BootstrapTool;
+use crate::domain::plan::PivotParams;
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(
-    sctx: &StepContext<'_>,
-    cluster: &str,
-    bootstrap_ctx: &str,
-    target_ctx: &str,
-    provisioner: &str,
-) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &PivotParams) -> Result<()> {
+    let PivotParams {
+        cluster,
+        bootstrap_context: bootstrap_ctx,
+        target_context: target_ctx,
+        provisioner,
+    } = p;
+
     let cluster_manifests = format!("{}/stage1/{cluster}", sctx.lab_package);
 
     if !sctx.dry_run && io::kubectl::api_reachable(target_ctx) {

@@ -3,19 +3,22 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::plan::PlannedStep;
+use crate::domain::plan::RunScriptParams;
 use crate::domain::plan::ScriptEnv;
 use crate::domain::secrets::describe_missing_value;
 use crate::plan::StepContext;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    bin: &str,
-    lifecycle_name: Option<&str>,
-    env: &[ScriptEnv],
-    kube_context: Option<&str>,
-    continue_on_failure: bool,
-) -> Result<()> {
-    let hook_name = lifecycle_name.unwrap_or("<unnamed>");
+pub fn run(sctx: &StepContext<'_>, step: &PlannedStep, p: &RunScriptParams) -> Result<()> {
+    let RunScriptParams {
+        bin,
+        env,
+        kube_context,
+    } = p;
+    let kube_context = kube_context.as_deref();
+
+    let hook_name = step.name.as_str();
+    let continue_on_failure = step.continues_on_failure();
     if bin.is_empty() {
         bail!("run-script step '{hook_name}' has no `bin` field");
     }

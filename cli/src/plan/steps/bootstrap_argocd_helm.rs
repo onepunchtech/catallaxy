@@ -4,26 +4,22 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::plan::BootstrapArgocdHelmParams;
 use crate::plan::StepContext;
 
-pub struct ArgocdHelm<'a> {
-    pub target: &'a str,
-    pub kube_context: Option<&'a str>,
-    pub values_path: &'a str,
-    pub chart_ref: &'a str,
-    pub release_name: &'a str,
-    pub namespace: Option<&'a str>,
-}
-
-pub fn run(sctx: &StepContext<'_>, install: ArgocdHelm<'_>) -> Result<()> {
-    let ArgocdHelm {
+pub fn run(sctx: &StepContext<'_>, p: &BootstrapArgocdHelmParams) -> Result<()> {
+    let BootstrapArgocdHelmParams {
         target,
-        kube_context,
         values_path,
         chart_ref,
         release_name,
+        kube_context,
         namespace,
-    } = install;
+        wait_timeout_seconds: _,
+    } = p;
+    let kube_context = kube_context.as_deref();
+    let namespace = namespace.as_deref();
+
     let kube_context = kube_context.ok_or_else(|| {
         anyhow::anyhow!(
             "bootstrap-argocd-helm: missing kubeContext for target '{target}'. \

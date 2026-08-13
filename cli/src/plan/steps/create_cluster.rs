@@ -1,9 +1,15 @@
 use anyhow::Result;
 
+use crate::domain::plan::CreateClusterParams;
 use crate::host::state;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, name: &str, _provisioner: &str) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &CreateClusterParams) -> Result<()> {
+    let CreateClusterParams {
+        name,
+        provisioner: _,
+    } = p;
+
     let spec = sctx.lab.cluster(name)?;
 
     let registry_dir = state::service_state_dir(sctx.lab_name, "registry");

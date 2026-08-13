@@ -1,10 +1,13 @@
 use anyhow::{Result, bail};
 use console::style;
 
+use crate::domain::plan::EnsureSecretsParams;
 use crate::domain::secrets::{Backend, describe_store_problems, validate_store};
 use crate::plan::StepContext;
 
-pub fn run(sctx: &StepContext<'_>, stores: &[String]) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &EnsureSecretsParams) -> Result<()> {
+    let EnsureSecretsParams { stores } = p;
+
     let spec = &sctx.lab.secrets;
 
     for store_name in stores {

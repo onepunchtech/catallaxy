@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use console::style;
 
+use crate::domain::plan::WaitForClusterGoneParams;
 use crate::plan::StepContext;
 
 const UNREACHABLE_SIGNALS: &[&str] = &[
@@ -18,14 +19,20 @@ const UNREACHABLE_SIGNALS: &[&str] = &[
     "the server could not find the requested resource",
 ];
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: Option<&str>,
-    kube_context: Option<&str>,
-    kind: Option<&str>,
-    resource_name: Option<&str>,
-    timeout_secs: u64,
-) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &WaitForClusterGoneParams) -> Result<()> {
+    let WaitForClusterGoneParams {
+        target,
+        kube_context,
+        resource_kind: kind,
+        resource_name,
+        wait_timeout_seconds: timeout_secs,
+    } = p;
+    let timeout_secs = timeout_secs.unwrap_or(600);
+    let target = target.as_deref();
+    let kube_context = kube_context.as_deref();
+    let kind = kind.as_deref();
+    let resource_name = resource_name.as_deref();
+
     let target = target.unwrap_or("unknown");
     let kube_ctx = kube_context
         .map(String::from)

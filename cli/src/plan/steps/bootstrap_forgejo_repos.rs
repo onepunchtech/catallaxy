@@ -4,19 +4,24 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::plan::BootstrapForgejoReposParams;
 use crate::plan::StepContext;
 
 const DEFAULT_NAMESPACE: &str = "forgejo";
 const DEFAULT_SELECTOR: &str = "app.kubernetes.io/component=forgejo-bootstrap";
 const WAIT_TIMEOUT_SECS: u64 = 600;
 
-pub async fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    namespace: Option<&str>,
-    selector: Option<&str>,
-    kube_context: Option<&str>,
-) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &BootstrapForgejoReposParams) -> Result<()> {
+    let BootstrapForgejoReposParams {
+        target,
+        namespace,
+        job_label_selector: selector,
+        kube_context,
+    } = p;
+    let namespace = namespace.as_deref();
+    let selector = selector.as_deref();
+    let kube_context = kube_context.as_deref();
+
     let namespace = namespace.unwrap_or(DEFAULT_NAMESPACE);
     let selector = selector.unwrap_or(DEFAULT_SELECTOR);
     let kube_context = kube_context.ok_or_else(|| {

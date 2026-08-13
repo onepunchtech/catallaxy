@@ -279,9 +279,9 @@ The format is based on
 - **A step kind the executor cannot run is a compile error.** Dispatch was
   six functions chained through `Option`, each ending in `_ => return None`,
   so a new `StepParams` variant compiled cleanly and failed at run time with
-  "not valid in direction" once the plan was already part-way through. The
-  six collapse into one exhaustive match, which is the shape the typed step
-  params were for.
+  "not valid in direction" once the plan was already part-way through. It is
+  one exhaustive match now, which is the shape the typed step params were
+  for.
 
   Dispatch no longer takes a direction. It never needed one: `load_steps`
   refuses a step that cannot run in the direction it was found in, for the
@@ -292,12 +292,23 @@ The format is based on
   It caught something immediately: `cross-cluster-secret-copy` has a `name`
   param that the old `..` was discarding without anyone deciding to.
 
-  `too-many-lines-threshold` goes to 300 in a new `cli/clippy.toml`, because
-  the table is 252 lines and the lint would otherwise force it back into
-  pieces that cannot be checked. This is a real loosening and worth saying
-  plainly: nothing else in the crate exceeds 120 lines, so the band between
-  is now unguarded. Giving each variant a named params struct would let the
-  arms be one line each and the threshold go back down.
+- **Each step kind has a named params struct.** `StepParams` variants are
+  newtypes over `DnsSetupParams`, `PivotParams` and so on, rather than
+  struct variants, so every dispatch arm is one line and the whole table
+  is 42. The dispatch that made this necessary was 252 lines and would have
+  needed the crate's line limit raised; it now fits the clippy default with
+  room to spare, and there is no `clippy.toml`.
+
+  The steps take one typed parameter instead of up to seven positional ones,
+  which retires the two hand-rolled parameter structs, `SecretCopy` and
+  `ArgocdHelm`, that existed only to get under `clippy::too_many_arguments`.
+  They were the same idea, applied twice, where the plan already had the
+  type.
+
+  The wire format is untouched: serde's internally tagged representation
+  handles a newtype variant over a struct exactly as it handled the struct
+  variant. All twelve plan snapshots and the step-kind conformance fixture
+  pass unchanged, which is what says so.
 
 - **`cata docs` and `cata generate` moved to a `cata-build` binary.** They
   render the book and regenerate Kubernetes types from OpenAPI specs: build

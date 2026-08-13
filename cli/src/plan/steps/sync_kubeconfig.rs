@@ -1,14 +1,17 @@
 use anyhow::Result;
 use console::style;
 
+use crate::domain::plan::SyncKubeconfigParams;
 use crate::plan::StepContext;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    clusters: &[String],
-    kube_context_override: Option<&str>,
-) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &SyncKubeconfigParams) -> Result<()> {
+    let SyncKubeconfigParams {
+        target,
+        clusters,
+        kube_context: kube_context_override,
+    } = p;
+    let kube_context_override = kube_context_override.as_deref();
+
     let context = kube_context_override
         .map(String::from)
         .map(Ok)

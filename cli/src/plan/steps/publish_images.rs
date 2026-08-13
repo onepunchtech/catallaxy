@@ -1,10 +1,15 @@
 use anyhow::Result;
 use console::style;
-use serde_json::Value;
 
+use crate::domain::plan::PublishImagesParams;
 use crate::plan::StepContext;
 
-pub fn run(sctx: &StepContext<'_>, src_cluster: &str, images: &[Value]) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &PublishImagesParams) -> Result<()> {
+    let PublishImagesParams {
+        source_cluster: src_cluster,
+        images,
+    } = p;
+
     if images.is_empty() {
         println!(
             "{} No images to publish for '{}', skipping",

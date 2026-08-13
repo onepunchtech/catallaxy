@@ -346,48 +346,40 @@ fn icon(kind: &str) -> &'static str {
 
 fn detail(params: &StepParams) -> Option<String> {
     match params {
-        StepParams::CreateCluster { name, provisioner } => {
-            Some(format!("cluster={name}, provisioner={provisioner}"))
+        StepParams::CreateCluster(p) => {
+            Some(format!("cluster={}, provisioner={}", p.name, p.provisioner))
         }
-        StepParams::DeployManifests {
-            target, bootstrap, ..
-        } => Some(if *bootstrap {
-            format!("target={target} (bootstrap stage)")
+        StepParams::DeployManifests(p) => Some(if p.bootstrap {
+            format!("target={} (bootstrap stage)", p.target)
         } else {
-            format!("target={target}")
+            format!("target={}", p.target)
         }),
-        StepParams::CrossClusterSecretCopy {
-            source_cluster,
-            source_namespace,
-            source_secret,
-            target_cluster,
-            target_namespace,
-            target_secret,
-            ..
-        } => Some(format!(
-            "{source_cluster}:{source_namespace}/{source_secret} → \
-             {target_cluster}:{target_namespace}/{target_secret}"
+        StepParams::CrossClusterSecretCopy(p) => Some(format!(
+            "{}:{}/{} → {}:{}/{}",
+            p.source_cluster,
+            p.source_namespace,
+            p.source_secret,
+            p.target_cluster,
+            p.target_namespace,
+            p.target_secret,
         )),
-        StepParams::WaitForResources {
-            target, resources, ..
-        } => Some(format!(
-            "on={target}, waiting for: {}",
-            resources
+        StepParams::WaitForResources(p) => Some(format!(
+            "on={}, waiting for: {}",
+            p.target,
+            p.resources
                 .iter()
                 .map(resource_label)
                 .collect::<Vec<_>>()
                 .join(", ")
         )),
-        StepParams::SyncKubeconfig {
-            target, clusters, ..
-        } => Some(format!("via={target}, clusters: {}", clusters.join(", "))),
-        StepParams::Pivot {
-            bootstrap_context,
-            target_context,
-            ..
-        } => Some(format!("{bootstrap_context} → {target_context}")),
-        StepParams::RunScript { bin, .. } => Some(format!("bin={bin}")),
-        StepParams::DestroyCluster { name, .. } => Some(format!("cluster={name}")),
+        StepParams::SyncKubeconfig(p) => Some(format!(
+            "via={}, clusters: {}",
+            p.target,
+            p.clusters.join(", ")
+        )),
+        StepParams::Pivot(p) => Some(format!("{} → {}", p.bootstrap_context, p.target_context)),
+        StepParams::RunScript(p) => Some(format!("bin={}", p.bin)),
+        StepParams::DestroyCluster(p) => Some(format!("cluster={}", p.name)),
         _ => None,
     }
 }

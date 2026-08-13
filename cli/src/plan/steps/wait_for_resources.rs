@@ -5,15 +5,18 @@ use anyhow::{Context, Result, bail};
 use console::style;
 use serde_json::Value;
 
+use crate::domain::plan::WaitForResourcesParams;
 use crate::plan::StepContext;
 
-pub async fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    resources: &[Value],
-    wait_timeout_seconds: Option<u64>,
-    kube_context_override: Option<&str>,
-) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &WaitForResourcesParams) -> Result<()> {
+    let WaitForResourcesParams {
+        target,
+        resources,
+        wait_timeout_seconds,
+        kube_context: kube_context_override,
+    } = p;
+    let kube_context_override = kube_context_override.as_deref();
+
     let context = kube_context_override
         .map(String::from)
         .map(Ok)

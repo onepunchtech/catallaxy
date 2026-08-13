@@ -150,254 +150,44 @@ async fn run_one(
 
 async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep) -> Result<()> {
     match &step.params {
-        StepParams::SetupServices {} => steps::setup_services::run(sctx).await,
-        StepParams::DockerNetworkCreate {
-            name,
-            subnet,
-            gateway,
-        } => steps::docker_network_create::run(sctx, name, subnet, gateway).await,
-        StepParams::CertGenerate { zone } => steps::cert_generate::run(sctx, zone).await,
-        StepParams::TrustBundle {} => steps::trust_bundle::run(sctx),
-        StepParams::HostTrustInstall {} => steps::host_trust_install::run(sctx).await,
-        StepParams::DnsSetup { host, port, zone } => {
-            steps::dns_setup::run(sctx, host, *port, zone).await
+        StepParams::SetupServices(_) => steps::setup_services::run(sctx).await,
+        StepParams::DockerNetworkCreate(p) => steps::docker_network_create::run(sctx, p).await,
+        StepParams::CertGenerate(p) => steps::cert_generate::run(sctx, p).await,
+        StepParams::TrustBundle(_) => steps::trust_bundle::run(sctx),
+        StepParams::HostTrustInstall(_) => steps::host_trust_install::run(sctx).await,
+        StepParams::DnsSetup(p) => steps::dns_setup::run(sctx, p).await,
+        StepParams::DnsTeardown(p) => steps::dns_teardown::run(sctx, p).await,
+        StepParams::ColimaNetworkRoute(p) => steps::colima_network_route::run(sctx, p).await,
+        StepParams::RegistrySetup(p) => steps::registry_setup::run(sctx, p).await,
+        StepParams::WarmCache(_) => steps::warm_cache::run(sctx).await,
+        StepParams::CreateCluster(p) => steps::create_cluster::run(sctx, p).await,
+        StepParams::EnsureSecrets(p) => steps::ensure_secrets::run(sctx, p),
+        StepParams::DeployManifests(p) => steps::deploy_manifests::run(sctx, p).await,
+        StepParams::CrossClusterSecretCopy(p) => {
+            steps::cross_cluster_secret_copy::run(sctx, p).await
         }
-        StepParams::DnsTeardown { zone } => steps::dns_teardown::run(sctx, zone).await,
-        StepParams::ColimaNetworkRoute { subnet, profile } => {
-            steps::colima_network_route::run(sctx, subnet, profile).await
+        StepParams::WaitForResources(p) => steps::wait_for_resources::run(sctx, p).await,
+        StepParams::SyncKubeconfig(p) => steps::sync_kubeconfig::run(sctx, p),
+        StepParams::Pivot(p) => steps::pivot::run(sctx, p).await,
+        StepParams::PublishImages(p) => steps::publish_images::run(sctx, p),
+        StepParams::PublishManifests(_) => steps::publish_manifests::run(sctx).await,
+        StepParams::ApplyRootApplication(p) => steps::apply_root_application::run(sctx, p),
+        StepParams::BootstrapForgejoRepos(p) => steps::bootstrap_forgejo_repos::run(sctx, p).await,
+        StepParams::BootstrapArgocdKubectlSsa(p) => {
+            steps::bootstrap_argocd_kubectl_ssa::run(sctx, p)
         }
-        StepParams::RegistrySetup {
-            port,
-            upstreams,
-            zone,
-        } => steps::registry_setup::run(sctx, *port, upstreams, zone).await,
-        StepParams::WarmCache {} => steps::warm_cache::run(sctx).await,
-        StepParams::CreateCluster { name, provisioner } => {
-            steps::create_cluster::run(sctx, name, provisioner).await
+        StepParams::BootstrapArgocdHelm(p) => steps::bootstrap_argocd_helm::run(sctx, p),
+        StepParams::VerifyArgocdReachable(p) => steps::verify_argocd_reachable::run(sctx, p),
+        StepParams::RunScript(p) => steps::run_script::run(sctx, step, p),
+        StepParams::DestroyCluster(p) => steps::destroy_cluster::run(sctx, p).await,
+        StepParams::ReconcileManagedResource(p) => steps::reconcile_managed_resource::run(sctx, p),
+        StepParams::DeleteManagedResource(p) => steps::delete_managed_resource::run(sctx, p),
+        StepParams::WaitForClusterGone(p) => steps::wait_for_cluster_gone::run(sctx, p),
+        StepParams::ReleaseClusterCloudResources(p) => {
+            steps::release_cluster_cloud_resources::run(sctx, p)
         }
-        StepParams::EnsureSecrets { stores } => steps::ensure_secrets::run(sctx, stores),
-        StepParams::DeployManifests {
-            target,
-            bootstrap,
-            kube_context,
-        } => steps::deploy_manifests::run(sctx, target, *bootstrap, kube_context.as_deref()).await,
-        StepParams::CrossClusterSecretCopy {
-            name: _,
-            source_cluster,
-            source_namespace,
-            source_secret,
-            target_cluster,
-            target_namespace,
-            target_secret,
-            secret_type,
-            source_context,
-            target_context,
-        } => {
-            steps::cross_cluster_secret_copy::run(
-                sctx,
-                steps::cross_cluster_secret_copy::SecretCopy {
-                    src_cluster: source_cluster,
-                    src_namespace: source_namespace,
-                    src_secret: source_secret,
-                    tgt_cluster: target_cluster,
-                    tgt_namespace: target_namespace,
-                    tgt_secret: target_secret,
-                    override_type: secret_type.as_deref(),
-                    source_context: source_context.as_deref(),
-                    target_context: target_context.as_deref(),
-                },
-            )
-            .await
-        }
-        StepParams::WaitForResources {
-            target,
-            resources,
-            wait_timeout_seconds,
-            kube_context,
-        } => {
-            steps::wait_for_resources::run(
-                sctx,
-                target,
-                resources,
-                *wait_timeout_seconds,
-                kube_context.as_deref(),
-            )
-            .await
-        }
-        StepParams::SyncKubeconfig {
-            target,
-            clusters,
-            kube_context,
-        } => steps::sync_kubeconfig::run(sctx, target, clusters, kube_context.as_deref()),
-        StepParams::Pivot {
-            cluster,
-            bootstrap_context,
-            target_context,
-            provisioner,
-        } => {
-            steps::pivot::run(
-                sctx,
-                cluster,
-                bootstrap_context,
-                target_context,
-                provisioner,
-            )
-            .await
-        }
-        StepParams::PublishImages {
-            source_cluster,
-            images,
-        } => steps::publish_images::run(sctx, source_cluster, images),
-        StepParams::PublishManifests {} => steps::publish_manifests::run(sctx).await,
-        StepParams::ApplyRootApplication {
-            target,
-            namespace,
-            manifest_path,
-            kube_context,
-        } => steps::apply_root_application::run(
-            sctx,
-            target,
-            namespace.as_deref(),
-            manifest_path.as_deref(),
-            kube_context.as_deref(),
-        ),
-        StepParams::BootstrapForgejoRepos {
-            target,
-            namespace,
-            job_label_selector,
-            kube_context,
-        } => {
-            steps::bootstrap_forgejo_repos::run(
-                sctx,
-                target,
-                namespace.as_deref(),
-                job_label_selector.as_deref(),
-                kube_context.as_deref(),
-            )
-            .await
-        }
-        StepParams::BootstrapArgocdKubectlSsa {
-            target,
-            manifest_root,
-            kube_context,
-            field_manager,
-            namespace,
-            wait_timeout_seconds,
-        } => steps::bootstrap_argocd_kubectl_ssa::run(
-            sctx,
-            target,
-            kube_context.as_deref(),
-            manifest_root,
-            field_manager.as_deref(),
-            namespace.as_deref(),
-            *wait_timeout_seconds,
-        ),
-        StepParams::BootstrapArgocdHelm {
-            target,
-            values_path,
-            chart_ref,
-            release_name,
-            kube_context,
-            namespace,
-            wait_timeout_seconds: _,
-        } => steps::bootstrap_argocd_helm::run(
-            sctx,
-            steps::bootstrap_argocd_helm::ArgocdHelm {
-                target,
-                kube_context: kube_context.as_deref(),
-                values_path,
-                chart_ref,
-                release_name,
-                namespace: namespace.as_deref(),
-            },
-        ),
-        StepParams::VerifyArgocdReachable {
-            target,
-            kube_context,
-            namespace,
-        } => steps::verify_argocd_reachable::run(
-            sctx,
-            target,
-            kube_context.as_deref(),
-            namespace.as_deref(),
-        ),
-        StepParams::RunScript {
-            bin,
-            env,
-            kube_context,
-        } => steps::run_script::run(
-            sctx,
-            bin,
-            Some(step.name.as_str()),
-            env,
-            kube_context.as_deref(),
-            step.continues_on_failure(),
-        ),
-        StepParams::DestroyCluster {
-            name,
-            provisioner,
-            skip_if_missing,
-        } => {
-            steps::destroy_cluster::run(sctx, name, provisioner, skip_if_missing.unwrap_or(false))
-                .await
-        }
-        StepParams::ReconcileManagedResource {
-            target,
-            resource_kind,
-            resource_name,
-            kube_context,
-            external_name_discovery_bin,
-        } => steps::reconcile_managed_resource::run(
-            sctx,
-            target,
-            resource_kind,
-            resource_name,
-            kube_context.as_deref(),
-            external_name_discovery_bin.as_deref(),
-        ),
-        StepParams::DeleteManagedResource {
-            target,
-            resource_kind,
-            resource_name,
-            wait,
-            wait_timeout_seconds,
-            kube_context,
-            external_name_discovery_bin: _,
-        } => steps::delete_managed_resource::run(
-            sctx,
-            target,
-            resource_kind,
-            resource_name,
-            wait.unwrap_or(true),
-            wait_timeout_seconds.unwrap_or(1200),
-            kube_context.as_deref(),
-        ),
-        StepParams::WaitForClusterGone {
-            target,
-            kube_context,
-            resource_kind,
-            resource_name,
-            wait_timeout_seconds,
-        } => steps::wait_for_cluster_gone::run(
-            sctx,
-            target.as_deref(),
-            kube_context.as_deref(),
-            resource_kind.as_deref(),
-            resource_name.as_deref(),
-            wait_timeout_seconds.unwrap_or(600),
-        ),
-        StepParams::ReleaseClusterCloudResources {
-            target,
-            kube_context,
-            wait_timeout_seconds,
-        } => steps::release_cluster_cloud_resources::run(
-            sctx,
-            target,
-            kube_context.as_deref(),
-            wait_timeout_seconds.unwrap_or(600),
-        ),
-        StepParams::RemoveNetwork {} => steps::remove_network::run(sctx).await,
-        StepParams::RemoveServices {} => steps::remove_services::run(sctx),
+        StepParams::RemoveNetwork(_) => steps::remove_network::run(sctx).await,
+        StepParams::RemoveServices(_) => steps::remove_services::run(sctx),
     }
 }
 

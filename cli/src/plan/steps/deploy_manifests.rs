@@ -3,17 +3,20 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use console::style;
 
+use crate::domain::plan::DeployManifestsParams;
 use crate::domain::{BootstrapTool, DeployStrategy};
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    bootstrap: bool,
-    kube_context_override: Option<&str>,
-) -> Result<()> {
-    let subdir = if bootstrap {
+pub async fn run(sctx: &StepContext<'_>, p: &DeployManifestsParams) -> Result<()> {
+    let DeployManifestsParams {
+        target,
+        bootstrap,
+        kube_context: kube_context_override,
+    } = p;
+    let kube_context_override = kube_context_override.as_deref();
+
+    let subdir = if *bootstrap {
         "stage1"
     } else if sctx.strategy == DeployStrategy::Kapp {
         "manifests"

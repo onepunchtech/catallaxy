@@ -164,343 +164,402 @@ pub struct ScriptEnv {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum StepParams {
-    SetupServices {},
-
-    #[serde(rename_all = "camelCase")]
-    DockerNetworkCreate {
-        name: String,
-        subnet: String,
-        gateway: String,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    CertGenerate {
-        zone: String,
-    },
-
-    TrustBundle {},
-
-    HostTrustInstall {},
-
-    #[serde(rename_all = "camelCase")]
-    DnsSetup {
-        host: String,
-        port: u64,
-        zone: String,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    DnsTeardown {
-        zone: String,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    ColimaNetworkRoute {
-        subnet: String,
-        profile: String,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    RegistrySetup {
-        port: u64,
-        #[serde(default)]
-        upstreams: Vec<String>,
-        zone: String,
-    },
-
-    WarmCache {},
-
-    #[serde(rename_all = "camelCase")]
-    CreateCluster {
-        name: String,
-        provisioner: String,
-    },
-
-    EnsureSecrets {
-        #[serde(default)]
-        stores: Vec<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    DeployManifests {
-        target: String,
-        #[serde(default)]
-        bootstrap: bool,
-        #[serde(default)]
-        kube_context: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    CrossClusterSecretCopy {
-        name: String,
-        source_cluster: String,
-        source_namespace: String,
-        source_secret: String,
-        target_cluster: String,
-        target_namespace: String,
-        target_secret: String,
-        #[serde(default)]
-        secret_type: Option<String>,
-        #[serde(default)]
-        source_context: Option<String>,
-        #[serde(default)]
-        target_context: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    WaitForResources {
-        target: String,
-        #[serde(default)]
-        resources: Vec<Value>,
-        #[serde(default)]
-        wait_timeout_seconds: Option<u64>,
-        #[serde(default)]
-        kube_context: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    SyncKubeconfig {
-        target: String,
-        #[serde(default)]
-        clusters: Vec<String>,
-        #[serde(default)]
-        kube_context: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    Pivot {
-        cluster: String,
-        bootstrap_context: String,
-        target_context: String,
-        provisioner: String,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    PublishImages {
-        source_cluster: String,
-        #[serde(default)]
-        images: Vec<Value>,
-    },
-
-    PublishManifests {},
-
-    #[serde(rename_all = "camelCase")]
-    ApplyRootApplication {
-        target: String,
-        #[serde(default)]
-        namespace: Option<String>,
-        #[serde(default)]
-        manifest_path: Option<String>,
-        #[serde(default)]
-        kube_context: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    BootstrapForgejoRepos {
-        target: String,
-        #[serde(default)]
-        namespace: Option<String>,
-        #[serde(default)]
-        job_label_selector: Option<String>,
-        #[serde(default)]
-        kube_context: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    BootstrapArgocdKubectlSsa {
-        target: String,
-        manifest_root: String,
-        #[serde(default)]
-        kube_context: Option<String>,
-        #[serde(default)]
-        field_manager: Option<String>,
-        #[serde(default)]
-        namespace: Option<String>,
-        #[serde(default)]
-        wait_timeout_seconds: Option<u64>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    BootstrapArgocdHelm {
-        target: String,
-        values_path: String,
-        chart_ref: String,
-        release_name: String,
-        #[serde(default)]
-        kube_context: Option<String>,
-        #[serde(default)]
-        namespace: Option<String>,
-        #[serde(default)]
-        wait_timeout_seconds: Option<u64>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    VerifyArgocdReachable {
-        target: String,
-        #[serde(default)]
-        kube_context: Option<String>,
-        #[serde(default)]
-        namespace: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    RunScript {
-        bin: String,
-        #[serde(default)]
-        env: Vec<ScriptEnv>,
-        #[serde(default)]
-        kube_context: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    DestroyCluster {
-        name: String,
-        provisioner: String,
-        #[serde(default)]
-        skip_if_missing: Option<bool>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    ReconcileManagedResource {
-        target: String,
-        resource_kind: String,
-        resource_name: String,
-        #[serde(default)]
-        kube_context: Option<String>,
-        #[serde(default)]
-        external_name_discovery_bin: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    DeleteManagedResource {
-        target: String,
-        resource_kind: String,
-        resource_name: String,
-        #[serde(default)]
-        wait: Option<bool>,
-        #[serde(default)]
-        wait_timeout_seconds: Option<u64>,
-        #[serde(default)]
-        kube_context: Option<String>,
-        #[serde(default)]
-        external_name_discovery_bin: Option<String>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    WaitForClusterGone {
-        #[serde(default)]
-        target: Option<String>,
-        #[serde(default)]
-        kube_context: Option<String>,
-        #[serde(default)]
-        resource_kind: Option<String>,
-        #[serde(default)]
-        resource_name: Option<String>,
-        #[serde(default)]
-        wait_timeout_seconds: Option<u64>,
-    },
-
-    #[serde(rename_all = "camelCase")]
-    ReleaseClusterCloudResources {
-        target: String,
-        #[serde(default)]
-        kube_context: Option<String>,
-        #[serde(default)]
-        wait_timeout_seconds: Option<u64>,
-    },
-
-    RemoveNetwork {},
-
-    RemoveServices {},
+    SetupServices(SetupServicesParams),
+    DockerNetworkCreate(DockerNetworkCreateParams),
+    CertGenerate(CertGenerateParams),
+    TrustBundle(TrustBundleParams),
+    HostTrustInstall(HostTrustInstallParams),
+    DnsSetup(DnsSetupParams),
+    DnsTeardown(DnsTeardownParams),
+    ColimaNetworkRoute(ColimaNetworkRouteParams),
+    RegistrySetup(RegistrySetupParams),
+    WarmCache(WarmCacheParams),
+    CreateCluster(CreateClusterParams),
+    EnsureSecrets(EnsureSecretsParams),
+    DeployManifests(DeployManifestsParams),
+    CrossClusterSecretCopy(CrossClusterSecretCopyParams),
+    WaitForResources(WaitForResourcesParams),
+    SyncKubeconfig(SyncKubeconfigParams),
+    Pivot(PivotParams),
+    PublishImages(PublishImagesParams),
+    PublishManifests(PublishManifestsParams),
+    ApplyRootApplication(ApplyRootApplicationParams),
+    BootstrapForgejoRepos(BootstrapForgejoReposParams),
+    BootstrapArgocdKubectlSsa(BootstrapArgocdKubectlSsaParams),
+    BootstrapArgocdHelm(BootstrapArgocdHelmParams),
+    VerifyArgocdReachable(VerifyArgocdReachableParams),
+    RunScript(RunScriptParams),
+    DestroyCluster(DestroyClusterParams),
+    ReconcileManagedResource(ReconcileManagedResourceParams),
+    DeleteManagedResource(DeleteManagedResourceParams),
+    WaitForClusterGone(WaitForClusterGoneParams),
+    ReleaseClusterCloudResources(ReleaseClusterCloudResourcesParams),
+    RemoveNetwork(RemoveNetworkParams),
+    RemoveServices(RemoveServicesParams),
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetupServicesParams {}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DockerNetworkCreateParams {
+    pub name: String,
+    pub subnet: String,
+    pub gateway: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertGenerateParams {
+    pub zone: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrustBundleParams {}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HostTrustInstallParams {}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DnsSetupParams {
+    pub host: String,
+    pub port: u64,
+    pub zone: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DnsTeardownParams {
+    pub zone: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColimaNetworkRouteParams {
+    pub subnet: String,
+    pub profile: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrySetupParams {
+    pub port: u64,
+    #[serde(default)]
+    pub upstreams: Vec<String>,
+    pub zone: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WarmCacheParams {}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateClusterParams {
+    pub name: String,
+    pub provisioner: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnsureSecretsParams {
+    #[serde(default)]
+    pub stores: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeployManifestsParams {
+    pub target: String,
+    #[serde(default)]
+    pub bootstrap: bool,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrossClusterSecretCopyParams {
+    pub name: String,
+    pub source_cluster: String,
+    pub source_namespace: String,
+    pub source_secret: String,
+    pub target_cluster: String,
+    pub target_namespace: String,
+    pub target_secret: String,
+    #[serde(default)]
+    pub secret_type: Option<String>,
+    #[serde(default)]
+    pub source_context: Option<String>,
+    #[serde(default)]
+    pub target_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaitForResourcesParams {
+    pub target: String,
+    #[serde(default)]
+    pub resources: Vec<Value>,
+    #[serde(default)]
+    pub wait_timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncKubeconfigParams {
+    pub target: String,
+    #[serde(default)]
+    pub clusters: Vec<String>,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PivotParams {
+    pub cluster: String,
+    pub bootstrap_context: String,
+    pub target_context: String,
+    pub provisioner: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishImagesParams {
+    pub source_cluster: String,
+    #[serde(default)]
+    pub images: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PublishManifestsParams {}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyRootApplicationParams {
+    pub target: String,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub manifest_path: Option<String>,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootstrapForgejoReposParams {
+    pub target: String,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub job_label_selector: Option<String>,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootstrapArgocdKubectlSsaParams {
+    pub target: String,
+    pub manifest_root: String,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+    #[serde(default)]
+    pub field_manager: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub wait_timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootstrapArgocdHelmParams {
+    pub target: String,
+    pub values_path: String,
+    pub chart_ref: String,
+    pub release_name: String,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
+    pub wait_timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyArgocdReachableParams {
+    pub target: String,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunScriptParams {
+    pub bin: String,
+    #[serde(default)]
+    pub env: Vec<ScriptEnv>,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DestroyClusterParams {
+    pub name: String,
+    pub provisioner: String,
+    #[serde(default)]
+    pub skip_if_missing: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcileManagedResourceParams {
+    pub target: String,
+    pub resource_kind: String,
+    pub resource_name: String,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+    #[serde(default)]
+    pub external_name_discovery_bin: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteManagedResourceParams {
+    pub target: String,
+    pub resource_kind: String,
+    pub resource_name: String,
+    #[serde(default)]
+    pub wait: Option<bool>,
+    #[serde(default)]
+    pub wait_timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+    #[serde(default)]
+    pub external_name_discovery_bin: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaitForClusterGoneParams {
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+    #[serde(default)]
+    pub resource_kind: Option<String>,
+    #[serde(default)]
+    pub resource_name: Option<String>,
+    #[serde(default)]
+    pub wait_timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseClusterCloudResourcesParams {
+    pub target: String,
+    #[serde(default)]
+    pub kube_context: Option<String>,
+    #[serde(default)]
+    pub wait_timeout_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemoveNetworkParams {}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemoveServicesParams {}
 
 impl StepParams {
     pub fn cluster_refs(&self) -> Vec<(&'static str, &str)> {
         match self {
-            StepParams::CreateCluster { name, .. } => vec![("name", name)],
-            StepParams::DeployManifests { target, .. } => vec![("target", target)],
-            StepParams::CrossClusterSecretCopy {
-                source_cluster,
-                target_cluster,
-                ..
-            } => vec![
-                ("sourceCluster", source_cluster),
-                ("targetCluster", target_cluster),
+            StepParams::CreateCluster(p) => vec![("name", &p.name)],
+            StepParams::DeployManifests(p) => vec![("target", &p.target)],
+            StepParams::CrossClusterSecretCopy(p) => vec![
+                ("sourceCluster", &p.source_cluster),
+                ("targetCluster", &p.target_cluster),
             ],
-            StepParams::WaitForResources { target, .. } => vec![("target", target)],
-            StepParams::SyncKubeconfig { target, .. } => vec![("target", target)],
-            StepParams::Pivot { cluster, .. } => vec![("cluster", cluster)],
-            StepParams::PublishImages { source_cluster, .. } => {
-                vec![("sourceCluster", source_cluster)]
-            }
-            StepParams::ApplyRootApplication { target, .. } => vec![("target", target)],
-            StepParams::BootstrapForgejoRepos { target, .. } => vec![("target", target)],
-            StepParams::DestroyCluster { name, .. } => vec![("name", name)],
-            StepParams::ReconcileManagedResource { target, .. } => vec![("target", target)],
-            StepParams::DeleteManagedResource { target, .. } => vec![("target", target)],
-            StepParams::WaitForClusterGone { target, .. } => target
+            StepParams::WaitForResources(p) => vec![("target", &p.target)],
+            StepParams::SyncKubeconfig(p) => vec![("target", &p.target)],
+            StepParams::Pivot(p) => vec![("cluster", &p.cluster)],
+            StepParams::PublishImages(p) => vec![("sourceCluster", &p.source_cluster)],
+            StepParams::ApplyRootApplication(p) => vec![("target", &p.target)],
+            StepParams::BootstrapForgejoRepos(p) => vec![("target", &p.target)],
+            StepParams::DestroyCluster(p) => vec![("name", &p.name)],
+            StepParams::ReconcileManagedResource(p) => vec![("target", &p.target)],
+            StepParams::DeleteManagedResource(p) => vec![("target", &p.target)],
+            StepParams::WaitForClusterGone(p) => p
+                .target
                 .as_deref()
                 .map(|t| vec![("target", t)])
                 .unwrap_or_default(),
-            StepParams::ReleaseClusterCloudResources { target, .. } => vec![("target", target)],
-            StepParams::BootstrapArgocdKubectlSsa { target, .. } => vec![("target", target)],
-            StepParams::BootstrapArgocdHelm { target, .. } => vec![("target", target)],
-            StepParams::VerifyArgocdReachable { target, .. } => vec![("target", target)],
+            StepParams::ReleaseClusterCloudResources(p) => vec![("target", &p.target)],
+            StepParams::BootstrapArgocdKubectlSsa(p) => vec![("target", &p.target)],
+            StepParams::BootstrapArgocdHelm(p) => vec![("target", &p.target)],
+            StepParams::VerifyArgocdReachable(p) => vec![("target", &p.target)],
 
-            StepParams::SetupServices { .. }
-            | StepParams::DockerNetworkCreate { .. }
-            | StepParams::CertGenerate { .. }
-            | StepParams::TrustBundle { .. }
-            | StepParams::HostTrustInstall { .. }
-            | StepParams::DnsSetup { .. }
-            | StepParams::DnsTeardown { .. }
-            | StepParams::ColimaNetworkRoute { .. }
-            | StepParams::RegistrySetup { .. }
-            | StepParams::WarmCache { .. }
-            | StepParams::EnsureSecrets { .. }
-            | StepParams::PublishManifests { .. }
-            | StepParams::RunScript { .. }
-            | StepParams::RemoveNetwork { .. }
-            | StepParams::RemoveServices { .. } => Vec::new(),
+            StepParams::SetupServices(_)
+            | StepParams::DockerNetworkCreate(_)
+            | StepParams::CertGenerate(_)
+            | StepParams::TrustBundle(_)
+            | StepParams::HostTrustInstall(_)
+            | StepParams::DnsSetup(_)
+            | StepParams::DnsTeardown(_)
+            | StepParams::ColimaNetworkRoute(_)
+            | StepParams::RegistrySetup(_)
+            | StepParams::WarmCache(_)
+            | StepParams::EnsureSecrets(_)
+            | StepParams::PublishManifests(_)
+            | StepParams::RunScript(_)
+            | StepParams::RemoveNetwork(_)
+            | StepParams::RemoveServices(_) => Vec::new(),
         }
     }
 
     pub fn kind(&self) -> StepKind {
         match self {
-            StepParams::SetupServices { .. } => StepKind::SetupServices,
-            StepParams::DockerNetworkCreate { .. } => StepKind::DockerNetworkCreate,
-            StepParams::CertGenerate { .. } => StepKind::CertGenerate,
-            StepParams::TrustBundle { .. } => StepKind::TrustBundle,
-            StepParams::HostTrustInstall { .. } => StepKind::HostTrustInstall,
-            StepParams::DnsSetup { .. } => StepKind::DnsSetup,
-            StepParams::DnsTeardown { .. } => StepKind::DnsTeardown,
-            StepParams::ColimaNetworkRoute { .. } => StepKind::ColimaNetworkRoute,
-            StepParams::RegistrySetup { .. } => StepKind::RegistrySetup,
-            StepParams::WarmCache { .. } => StepKind::WarmCache,
-            StepParams::CreateCluster { .. } => StepKind::CreateCluster,
-            StepParams::EnsureSecrets { .. } => StepKind::EnsureSecrets,
-            StepParams::DeployManifests { .. } => StepKind::DeployManifests,
-            StepParams::CrossClusterSecretCopy { .. } => StepKind::CrossClusterSecretCopy,
-            StepParams::WaitForResources { .. } => StepKind::WaitForResources,
-            StepParams::SyncKubeconfig { .. } => StepKind::SyncKubeconfig,
-            StepParams::Pivot { .. } => StepKind::Pivot,
-            StepParams::PublishImages { .. } => StepKind::PublishImages,
-            StepParams::PublishManifests { .. } => StepKind::PublishManifests,
-            StepParams::ApplyRootApplication { .. } => StepKind::ApplyRootApplication,
-            StepParams::BootstrapForgejoRepos { .. } => StepKind::BootstrapForgejoRepos,
-            StepParams::BootstrapArgocdKubectlSsa { .. } => StepKind::BootstrapArgocdKubectlSsa,
-            StepParams::BootstrapArgocdHelm { .. } => StepKind::BootstrapArgocdHelm,
-            StepParams::VerifyArgocdReachable { .. } => StepKind::VerifyArgocdReachable,
-            StepParams::RunScript { .. } => StepKind::RunScript,
-            StepParams::DestroyCluster { .. } => StepKind::DestroyCluster,
-            StepParams::ReconcileManagedResource { .. } => StepKind::ReconcileManagedResource,
-            StepParams::DeleteManagedResource { .. } => StepKind::DeleteManagedResource,
-            StepParams::WaitForClusterGone { .. } => StepKind::WaitForClusterGone,
-            StepParams::ReleaseClusterCloudResources { .. } => {
-                StepKind::ReleaseClusterCloudResources
-            }
-            StepParams::RemoveNetwork { .. } => StepKind::RemoveNetwork,
-            StepParams::RemoveServices { .. } => StepKind::RemoveServices,
+            StepParams::SetupServices(_) => StepKind::SetupServices,
+            StepParams::DockerNetworkCreate(_) => StepKind::DockerNetworkCreate,
+            StepParams::CertGenerate(_) => StepKind::CertGenerate,
+            StepParams::TrustBundle(_) => StepKind::TrustBundle,
+            StepParams::HostTrustInstall(_) => StepKind::HostTrustInstall,
+            StepParams::DnsSetup(_) => StepKind::DnsSetup,
+            StepParams::DnsTeardown(_) => StepKind::DnsTeardown,
+            StepParams::ColimaNetworkRoute(_) => StepKind::ColimaNetworkRoute,
+            StepParams::RegistrySetup(_) => StepKind::RegistrySetup,
+            StepParams::WarmCache(_) => StepKind::WarmCache,
+            StepParams::CreateCluster(_) => StepKind::CreateCluster,
+            StepParams::EnsureSecrets(_) => StepKind::EnsureSecrets,
+            StepParams::DeployManifests(_) => StepKind::DeployManifests,
+            StepParams::CrossClusterSecretCopy(_) => StepKind::CrossClusterSecretCopy,
+            StepParams::WaitForResources(_) => StepKind::WaitForResources,
+            StepParams::SyncKubeconfig(_) => StepKind::SyncKubeconfig,
+            StepParams::Pivot(_) => StepKind::Pivot,
+            StepParams::PublishImages(_) => StepKind::PublishImages,
+            StepParams::PublishManifests(_) => StepKind::PublishManifests,
+            StepParams::ApplyRootApplication(_) => StepKind::ApplyRootApplication,
+            StepParams::BootstrapForgejoRepos(_) => StepKind::BootstrapForgejoRepos,
+            StepParams::BootstrapArgocdKubectlSsa(_) => StepKind::BootstrapArgocdKubectlSsa,
+            StepParams::BootstrapArgocdHelm(_) => StepKind::BootstrapArgocdHelm,
+            StepParams::VerifyArgocdReachable(_) => StepKind::VerifyArgocdReachable,
+            StepParams::RunScript(_) => StepKind::RunScript,
+            StepParams::DestroyCluster(_) => StepKind::DestroyCluster,
+            StepParams::ReconcileManagedResource(_) => StepKind::ReconcileManagedResource,
+            StepParams::DeleteManagedResource(_) => StepKind::DeleteManagedResource,
+            StepParams::WaitForClusterGone(_) => StepKind::WaitForClusterGone,
+            StepParams::ReleaseClusterCloudResources(_) => StepKind::ReleaseClusterCloudResources,
+            StepParams::RemoveNetwork(_) => StepKind::RemoveNetwork,
+            StepParams::RemoveServices(_) => StepKind::RemoveServices,
         }
     }
 }
@@ -614,13 +673,34 @@ mod tests {
             serde_json::json!({ "target": "core", "bootstrap": true }),
         );
         match step.params {
-            StepParams::DeployManifests {
-                ref target,
-                bootstrap,
-                ..
-            } => {
-                assert_eq!(target, "core");
-                assert!(bootstrap);
+            StepParams::DeployManifests(ref p) => {
+                assert_eq!(p.target, "core");
+                assert!(p.bootstrap);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn the_wire_format_did_not_change_when_the_variants_became_newtypes() {
+        let step = idempotent(
+            "cross-cluster-secret-copy",
+            serde_json::json!({
+                "name": "copy-ca",
+                "sourceCluster": "mgmt",
+                "sourceNamespace": "cert-manager",
+                "sourceSecret": "lab-ca",
+                "targetCluster": "apps",
+                "targetNamespace": "cert-manager",
+                "targetSecret": "lab-ca",
+            }),
+        );
+        match step.params {
+            StepParams::CrossClusterSecretCopy(ref p) => {
+                assert_eq!(p.name, "copy-ca");
+                assert_eq!(p.source_cluster, "mgmt");
+                assert_eq!(p.target_secret, "lab-ca");
+                assert_eq!(p.secret_type, None);
             }
             _ => panic!("wrong variant"),
         }

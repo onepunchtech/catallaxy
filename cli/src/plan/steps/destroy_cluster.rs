@@ -3,16 +3,19 @@ use std::process::Command;
 use anyhow::Result;
 use console::style;
 
+use crate::domain::plan::DestroyClusterParams;
 use crate::domain::{ClusterSpec, ProvisionerKind};
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(
-    sctx: &StepContext<'_>,
-    cluster_name: &str,
-    _provisioner: &str,
-    skip_if_missing: bool,
-) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &DestroyClusterParams) -> Result<()> {
+    let DestroyClusterParams {
+        name: cluster_name,
+        provisioner: _,
+        skip_if_missing,
+    } = p;
+    let skip_if_missing = skip_if_missing.unwrap_or(false);
+
     let mut step_failed = false;
 
     match sctx.lab.cluster(cluster_name) {

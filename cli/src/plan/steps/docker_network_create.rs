@@ -3,9 +3,16 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::plan::DockerNetworkCreateParams;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, name: &str, subnet: &str, gateway: &str) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &DockerNetworkCreateParams) -> Result<()> {
+    let DockerNetworkCreateParams {
+        name,
+        subnet,
+        gateway,
+    } = p;
+
     if sctx.dry_run {
         println!(
             "{} [dry-run] would ensure docker network '{}' (subnet: {}, gateway: {})",

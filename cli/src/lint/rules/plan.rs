@@ -53,13 +53,13 @@ fn check_duplicate_create(plan: &[PlannedStep]) -> Vec<Diagnostic> {
     let mut seen: HashSet<&str> = HashSet::new();
     let mut diags = Vec::new();
     for step in plan {
-        if let StepParams::CreateCluster { name, .. } = &step.params
-            && !seen.insert(name.as_str())
+        if let StepParams::CreateCluster(p) = &step.params
+            && !seen.insert(p.name.as_str())
         {
             diags.push(diag(
                 Severity::Error,
-                name,
-                format!("cluster '{}' has more than one create-cluster step", name),
+                &p.name,
+                format!("cluster '{}' has more than one create-cluster step", p.name),
             ));
         }
     }
@@ -73,31 +73,25 @@ fn check_secret_copy_ordering(plan: &[PlannedStep]) -> Vec<Diagnostic> {
     let ever_created: HashSet<&str> = plan
         .iter()
         .filter_map(|s| match &s.params {
-            StepParams::CreateCluster { name, .. } => Some(name.as_str()),
+            StepParams::CreateCluster(p) => Some(p.name.as_str()),
             _ => None,
         })
         .collect();
 
     for step in plan {
-        if let StepParams::CreateCluster { name, .. } = &step.params {
-            created.insert(name.as_str());
+        if let StepParams::CreateCluster(p) = &step.params {
+            created.insert(p.name.as_str());
         }
-        if let StepParams::CrossClusterSecretCopy {
-            name,
-            source_cluster,
-            target_cluster,
-            ..
-        } = &step.params
-        {
-            for endpoint in [source_cluster.as_str(), target_cluster.as_str()] {
+        if let StepParams::CrossClusterSecretCopy(p) = &step.params {
+            for endpoint in [p.source_cluster.as_str(), p.target_cluster.as_str()] {
                 if ever_created.contains(endpoint) && !created.contains(endpoint) {
                     diags.push(diag(
                         Severity::Error,
-                        name,
+                        &p.name,
                         format!(
                             "cross-cluster secret '{}' copy scheduled before \
                              cluster '{}' is created",
-                            name, endpoint,
+                            p.name, endpoint,
                         ),
                     ));
                 }

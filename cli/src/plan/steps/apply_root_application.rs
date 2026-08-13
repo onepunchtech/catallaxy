@@ -4,15 +4,20 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::plan::ApplyRootApplicationParams;
 use crate::plan::StepContext;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    _namespace: Option<&str>,
-    manifest_path: Option<&str>,
-    kube_context: Option<&str>,
-) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &ApplyRootApplicationParams) -> Result<()> {
+    let ApplyRootApplicationParams {
+        target,
+        namespace,
+        manifest_path,
+        kube_context,
+    } = p;
+    let _namespace = namespace.as_deref();
+    let manifest_path = manifest_path.as_deref();
+    let kube_context = kube_context.as_deref();
+
     let kube_context = kube_context.ok_or_else(|| {
         anyhow::anyhow!(
             "apply-root-application: missing kubeContext for target '{target}'. \

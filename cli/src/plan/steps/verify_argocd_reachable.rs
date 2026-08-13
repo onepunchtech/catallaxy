@@ -3,14 +3,18 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::plan::VerifyArgocdReachableParams;
 use crate::plan::StepContext;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    kube_context: Option<&str>,
-    namespace: Option<&str>,
-) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &VerifyArgocdReachableParams) -> Result<()> {
+    let VerifyArgocdReachableParams {
+        target,
+        kube_context,
+        namespace,
+    } = p;
+    let kube_context = kube_context.as_deref();
+    let namespace = namespace.as_deref();
+
     let kube_context = kube_context.ok_or_else(|| {
         anyhow::anyhow!(
             "verify-argocd-reachable: missing kubeContext for target '{target}'. \

@@ -1,10 +1,13 @@
 use anyhow::Result;
 use console::style;
 
+use crate::domain::plan::DnsSetupParams;
 use crate::host::dns;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, host: &str, port: u64, zone: &str) -> Result<()> {
+pub async fn run(sctx: &StepContext<'_>, p: &DnsSetupParams) -> Result<()> {
+    let DnsSetupParams { host, port, zone } = p;
+
     if sctx.dry_run {
         println!(
             "{} [dry-run] would point host DNS for '{}' at {}:{}",
@@ -15,5 +18,5 @@ pub async fn run(sctx: &StepContext<'_>, host: &str, port: u64, zone: &str) -> R
         );
         return Ok(());
     }
-    dns::dns_setup(host, port, zone).await
+    dns::dns_setup(host, *port, zone).await
 }

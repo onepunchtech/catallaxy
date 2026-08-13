@@ -6,6 +6,7 @@ use anyhow::Result;
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::plan::ReleaseClusterCloudResourcesParams;
 use crate::io;
 use crate::plan::StepContext;
 
@@ -15,12 +16,15 @@ const POLL_INTERVAL_SECS: u64 = 10;
 
 const DIAGNOSTIC_DUMP_GRACE_SECS: u64 = 45;
 
-pub fn run(
-    sctx: &StepContext<'_>,
-    target: &str,
-    kube_context: Option<&str>,
-    timeout_secs: u64,
-) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &ReleaseClusterCloudResourcesParams) -> Result<()> {
+    let ReleaseClusterCloudResourcesParams {
+        target,
+        kube_context,
+        wait_timeout_seconds: timeout_secs,
+    } = p;
+    let timeout_secs = timeout_secs.unwrap_or(600);
+    let kube_context = kube_context.as_deref();
+
     let kube_ctx = kube_context
         .map(String::from)
         .unwrap_or_else(|| target.to_string());
