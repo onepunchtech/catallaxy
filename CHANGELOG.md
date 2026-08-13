@@ -9,6 +9,29 @@ The format is based on
 
 ### Added
 
+- **The cloud teardown path has a plan snapshot.** Nothing exercised it:
+  none of the five example labs provision a cluster from another, `e2eLabs`
+  is those same five, and `lib/tests/plan-graph.nix` checks `topoSort`
+  against synthetic steps rather than a lab's real plan. So
+  `release-cluster-cloud-resources`, `delete-managed-resource`,
+  `wait-for-cluster-gone` and the pivot chain that feeds them had no test at
+  all, on the one path whose failure mode is billable infrastructure nobody
+  deletes.
+
+  `examples/labs/tests/cloud-teardown.nix` is a lab that exists only to be
+  evaluated: a bootstrap cluster provisioning two Crossplane clusters, one
+  of them needing an external-name discovery binary, plus a
+  self-provisioning cluster to reach the pivot and the wait-for-gone step
+  that only the self case emits. Its deploy and teardown plans are
+  snapshotted like the example labs', so it is checked without pretending to
+  be a lab anyone can run. It is not an example: `discoverExampleLabs` does
+  not see it, so it stays out of `cata lab list`, the docs and the e2e set.
+
+  It earns its keep: deleting the edge that orders releasing a cluster's
+  LoadBalancers and volumes before deleting the Cluster CR that owns them
+  reorders the snapshot and fails the check, which is the mistake that would
+  otherwise leak resources silently.
+
 - **`nix flake check` now fails on a Rust warning, and on a lint
   suppression.** `cli-clippy` runs
   `cargo clippy --all-targets -- --deny warnings`, and

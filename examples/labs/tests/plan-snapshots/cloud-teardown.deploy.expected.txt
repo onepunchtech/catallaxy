@@ -1,0 +1,13 @@
+[001] create-cluster name=create-cluster-adopted policy.skipIfClusterReachable=adopted params.name=adopted params.provisioner=crossplane
+[002] create-cluster name=create-cluster-workload policy.skipIfClusterReachable=workload params.name=workload params.provisioner=crossplane
+[003] deploy-manifests name=deploy-manifests-adopted params.kubeContext=adopted params.target=adopted
+[004] deploy-manifests name=deploy-manifests-workload params.kubeContext=workload params.target=workload
+[005] docker-network-create name=docker-network-create params.gateway=172.31.0.1 params.name=cloud-teardown params.subnet=172.31.0.0/16
+[006] colima-network-route name=colima-network-route params.profile=catallaxy params.subnet=172.31.0.0/16
+[007] create-cluster name=create-cluster-mgmt params.name=mgmt params.provisioner=k3d
+[008] create-cluster name=create-cluster-pivoted policy.skipIfClusterReachable=pivoted params.name=pivoted params.provisioner=k3d
+[009] deploy-manifests name=deploy-manifests-mgmt params.kubeContext=k3d-cloud-teardown-mgmt params.target=mgmt
+[010] deploy-manifests name=deploy-manifests-pivoted-stage1 policy.skipIfClusterReachable=pivoted params.bootstrap=true params.kubeContext=k3d-cloud-teardown-pivoted params.target=pivoted
+[011] wait-for-resources name=wait-cluster-pivoted policy.skipIfClusterReachable=pivoted params.kubeContext=k3d-cloud-teardown-pivoted params.resources=[{"name":"pivoted"}] params.target=pivoted params.waitTimeoutSeconds=600
+[012] sync-kubeconfig name=sync-kubeconfig-pivoted policy.skipIfClusterReachable=pivoted params.clusters=["pivoted"] params.kubeContext=k3d-cloud-teardown-pivoted params.target=pivoted
+[013] pivot name=pivot-pivoted policy.skipIfClusterReachable=pivoted params.bootstrapContext=k3d-cloud-teardown-pivoted params.cluster=pivoted params.provisioner=k3d params.targetContext=pivoted

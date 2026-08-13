@@ -3,6 +3,7 @@
   pkgs,
   cataWrapped,
   exampleLabDefs,
+  fixtureLabs,
 }:
 
 let
@@ -79,9 +80,9 @@ let
   ) labNames;
 
   planSnapshotCheck =
-    labName: direction:
+    labName: lab: direction:
     let
-      out = exampleLabDefs.${labName}.config.lab.out;
+      out = lab.config.lab.out;
       plan = if direction == "teardown" then out.teardownPlan else out.deploymentPlan;
       planJson = pkgs.writeText "plan-${labName}-${direction}.json" (builtins.toJSON plan);
       fixture = ../../examples/labs/tests/plan-snapshots + "/${labName}.${direction}.expected.txt";
@@ -112,19 +113,21 @@ let
         echo "plan snapshot ${labName}/${direction} matches" > $out
       '';
 
+  snapshotted = exampleLabDefs // fixtureLabs;
+
   planSnapshotChecks = lib.listToAttrs (
     lib.concatMap (
       labName:
       map
         (direction: {
           name = "plan-snapshot-${labName}-${direction}";
-          value = planSnapshotCheck labName direction;
+          value = planSnapshotCheck labName snapshotted.${labName} direction;
         })
         [
           "deploy"
           "teardown"
         ]
-    ) labNames
+    ) (builtins.attrNames snapshotted)
   );
 
   lintChecks = lib.mapAttrs' (

@@ -37,4 +37,7 @@
 // import ./examples.nix {
   inherit lib pkgs exampleLabDefs;
   inherit (packages) cataWrapped;
+  fixtureLabs = {
+    cloud-teardown = mkLab { modules = [ ../../examples/labs/tests/cloud-teardown.nix ]; };
+  };
 }
