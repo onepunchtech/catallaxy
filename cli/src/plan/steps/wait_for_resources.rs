@@ -5,7 +5,6 @@ use anyhow::{Context, Result, bail};
 use console::style;
 use serde_json::Value;
 
-use crate::commands::lab::state::resolve_cluster_context;
 use crate::plan::StepContext;
 
 pub async fn run(
@@ -17,7 +16,8 @@ pub async fn run(
 ) -> Result<()> {
     let context = kube_context_override
         .map(String::from)
-        .unwrap_or_else(|| resolve_cluster_context(sctx.lab, target));
+        .map(Ok)
+        .unwrap_or_else(|| sctx.lab.kube_context(target).map(String::from))?;
     for resource in resources {
         if resource["kind"].as_str().is_some() {
             wait_kubectl(target, &context, resource)?;

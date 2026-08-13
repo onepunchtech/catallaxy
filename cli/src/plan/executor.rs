@@ -1,8 +1,8 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use console::style;
-use serde_json::Value;
 
 use crate::config::Context as CataContext;
+use crate::domain::LabSpec;
 use crate::domain::plan::{PlannedStep, StepParams};
 use crate::io;
 
@@ -16,13 +16,6 @@ pub enum Direction {
 }
 
 impl Direction {
-    fn plan_key(self) -> &'static str {
-        match self {
-            Direction::Deploy => "deploymentPlan",
-            Direction::Teardown => "teardownPlan",
-        }
-    }
-
     fn label(self) -> &'static str {
         match self {
             Direction::Deploy => "deployment",
@@ -44,7 +37,7 @@ pub async fn execute(
     }
     let ctx = &ctx_owned;
 
-    let lab = crate::io::nix::get_lab_config(ctx, lab_name)?;
+    let lab = crate::io::nix::get_lab_spec(ctx, lab_name)?;
     let steps = load_steps(&lab, direction)?;
     if steps.is_empty() {
         println!(
@@ -69,24 +62,14 @@ pub async fn execute(
     let secrets_cache = load_stores_upfront(ctx, lab_name, &lab)?;
     let lab_package = build_lab_package_for(ctx, lab_name, direction)?;
 
-    let strategy = lab
-        .pointer("/cd/strategy")
-        .and_then(|v| v.as_str())
-        .unwrap_or("kapp");
-
-    let bootstrap = lab
-        .pointer("/cd/bootstrap")
-        .and_then(|v| v.as_str())
-        .unwrap_or("kapp");
-
     let step_ctx = StepContext {
         ctx,
         lab_name,
         lab: &lab,
         lab_package: &lab_package,
         secrets_cache,
-        strategy,
-        bootstrap,
+        strategy: lab.cd.strategy,
+        bootstrap: lab.cd.bootstrap,
         dry_run,
         failures: std::cell::RefCell::new(Vec::new()),
     };
@@ -653,41 +636,35 @@ fn should_skip_if_reachable(step: &PlannedStep) -> bool {
     }
 }
 
-fn load_steps(lab: &Value, direction: Direction) -> Result<Vec<PlannedStep>> {
-    let raw = lab
-        .get(direction.plan_key())
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    raw.into_iter()
-        .enumerate()
-        .map(|(i, v)| {
-            let step: PlannedStep = serde_json::from_value(v)
-                .with_context(|| format!("parsing {} plan step {}", direction.label(), i))?;
-            if !step.runs_in(direction.label()) {
-                bail!(
-                    "{} plan step {} is '{}', which the executor only runs in the \
-                     other direction. Refusing to start: aborting part-way through \
-                     would leave the lab half-built.",
-                    direction.label(),
-                    i + 1,
-                    step.type_tag(),
-                );
-            }
-            Ok(step)
-        })
-        .collect()
+fn load_steps(lab: &LabSpec, direction: Direction) -> Result<Vec<PlannedStep>> {
+    let steps = match direction {
+        Direction::Deploy => &lab.deployment_plan,
+        Direction::Teardown => &lab.teardown_plan,
+    };
+    for (i, step) in steps.iter().enumerate() {
+        if !step.runs_in(direction.label()) {
+            bail!(
+                "{} plan step {} is '{}', which the executor only runs in the \
+                 other direction. Refusing to start: aborting part-way through \
+                 would leave the lab half-built.",
+                direction.label(),
+                i + 1,
+                step.type_tag(),
+            );
+        }
+    }
+    Ok(steps.clone())
 }
 
 fn load_stores_upfront(
     ctx: &CataContext,
     lab_name: &str,
-    lab: &Value,
+    lab: &LabSpec,
 ) -> Result<Option<crate::commands::apply::SecretsCache>> {
     crate::commands::secrets::load_secrets_cache(
         ctx,
         lab_name,
-        lab,
+        &lab.secrets,
         "Loading secret stores now so you're not interrupted later...",
     )
 }

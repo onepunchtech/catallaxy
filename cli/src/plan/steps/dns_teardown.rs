@@ -13,5 +13,5 @@ pub async fn run(sctx: &StepContext<'_>, zone: &str) -> Result<()> {
         );
         return Ok(());
     }
-    dns::dns_teardown(zone, "").await
+    dns::dns_teardown(zone).await
 }

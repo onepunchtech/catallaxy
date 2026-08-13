@@ -25,14 +25,13 @@ pub async fn run(ctx: &CataContext, name: &str) -> Result<()> {
         println!("{}", style("Clusters:").bold());
 
         for cluster_name in &cluster_names {
-            match crate::io::nix::get_cluster_config_from_lab(&lab, cluster_name) {
-                Ok(config) => {
+            match crate::io::nix::get_cluster_spec_from_lab(&lab, cluster_name) {
+                Ok(spec) => {
                     println!(
                         "{} Stopping cluster '{cluster_name}'...",
                         style(">>>").cyan()
                     );
-                    if let Err(e) =
-                        crate::commands::cluster::stop_cluster(ctx, cluster_name, &config)
+                    if let Err(e) = crate::commands::cluster::stop_cluster(ctx, cluster_name, &spec)
                     {
                         println!(
                             "{} Failed to stop '{}': {}",

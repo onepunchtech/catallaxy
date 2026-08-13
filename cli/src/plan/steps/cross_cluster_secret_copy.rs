@@ -5,7 +5,6 @@ use anyhow::{Result, bail};
 use console::style;
 use serde_json::Value;
 
-use crate::commands::lab::state::resolve_cluster_context;
 use crate::plan::StepContext;
 
 pub struct SecretCopy<'a> {
@@ -34,10 +33,12 @@ pub async fn run(sctx: &StepContext<'_>, copy: SecretCopy<'_>) -> Result<()> {
     } = copy;
     let src_ctx = source_context
         .map(String::from)
-        .unwrap_or_else(|| resolve_cluster_context(sctx.lab, src_cluster));
+        .map(Ok)
+        .unwrap_or_else(|| sctx.lab.kube_context(src_cluster).map(String::from))?;
     let tgt_ctx = target_context
         .map(String::from)
-        .unwrap_or_else(|| resolve_cluster_context(sctx.lab, tgt_cluster));
+        .map(Ok)
+        .unwrap_or_else(|| sctx.lab.kube_context(tgt_cluster).map(String::from))?;
 
     if sctx.dry_run {
         println!(

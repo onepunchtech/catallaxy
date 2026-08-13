@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::domain::plan::ScriptEnv;
-use crate::domain::secrets::{SecretsSpec, describe_missing_value};
+use crate::domain::secrets::describe_missing_value;
 use crate::plan::StepContext;
 
 pub fn run(
@@ -92,7 +92,7 @@ fn resolve_env(
         );
     };
 
-    let spec = SecretsSpec::from_lab_config(sctx.lab)?;
+    let spec = &sctx.lab.secrets;
 
     env.iter()
         .map(|e| {
@@ -106,7 +106,7 @@ fn resolve_env(
                     anyhow::anyhow!(
                         "Lifecycle hook '{hook_name}' needs ${}: {}",
                         e.name,
-                        describe_missing_value(&spec, sctx.lab_name, store, &e.secret, &e.key),
+                        describe_missing_value(spec, sctx.lab_name, store, &e.secret, &e.key),
                     )
                 })?;
             Ok((e.name.clone(), value.clone()))

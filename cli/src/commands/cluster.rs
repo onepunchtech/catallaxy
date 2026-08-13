@@ -7,6 +7,8 @@ use clap::{Args, Subcommand};
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::lab::kube_context_in;
+use crate::domain::{ClusterSpec, ProvisionerKind};
 use crate::io;
 
 const CLUSTER_NAME_HELP: &str = "Cluster to act on. Defaults to the flake fragment";
@@ -114,73 +116,35 @@ pub async fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
     }
 }
 
-fn cluster_provisioner(config: &serde_json::Value) -> &str {
-    config["provisioner"].as_str().unwrap_or("k3d")
-}
-
-fn provisioner_cluster_name(config: &serde_json::Value) -> String {
-    match cluster_provisioner(config) {
-        "k3d" => config
-            .pointer("/provisionerConfig/k3d/clusterName")
-            .and_then(|v| v.as_str())
-            .unwrap_or("catallaxy")
-            .to_string(),
-        "talos" => config
-            .pointer("/provisionerConfig/docker/clusterName")
-            .and_then(|v| v.as_str())
-            .unwrap_or("catallaxy")
-            .to_string(),
-        _ => String::new(),
+fn provisioner_cluster_name(spec: &ClusterSpec) -> &str {
+    match spec.provisioner {
+        ProvisionerKind::K3d => &spec.provisioner_config.k3d.cluster_name,
+        ProvisionerKind::Talos => &spec.provisioner_config.docker.cluster_name,
+        ProvisionerKind::Crossplane | ProvisionerKind::External => "",
     }
 }
 
-pub fn resolve_docker_host(
-    ctx: &CataContext,
-    config: &serde_json::Value,
-) -> Result<Option<String>> {
+pub fn resolve_docker_host(ctx: &CataContext, spec: &ClusterSpec) -> Result<Option<String>> {
     if !io::colima::is_macos() {
         return Ok(None);
     }
 
-    let colima_enabled = config
-        .pointer("/provisionerConfig/docker/colima/enable")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-
-    if !colima_enabled {
+    let colima = &spec.provisioner_config.docker.colima;
+    if !colima.enable {
         return Ok(None);
     }
 
-    let profile = config
-        .pointer("/provisionerConfig/docker/colima/profile")
-        .and_then(|v| v.as_str())
-        .unwrap_or("catallaxy");
-
-    let cpu = config
-        .pointer("/provisionerConfig/docker/colima/cpu")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(4);
-
-    let memory = config
-        .pointer("/provisionerConfig/docker/colima/memory")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(8);
-
-    let disk = config
-        .pointer("/provisionerConfig/docker/colima/disk")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(60);
-
-    if !io::colima::profile_running(profile) {
-        io::colima::start(ctx, profile, cpu, memory, disk)?;
-    } else {
+    if io::colima::profile_running(&colima.profile) {
         println!(
-            "{} Colima VM already running (profile: {profile})",
-            style(">>>").green()
+            "{} Colima VM already running (profile: {})",
+            style(">>>").green(),
+            colima.profile
         );
+    } else {
+        io::colima::start(ctx, &colima.profile, colima.cpu, colima.memory, colima.disk)?;
     }
 
-    Ok(Some(io::colima::docker_socket(profile)))
+    Ok(Some(io::colima::docker_socket(&colima.profile)))
 }
 
 async fn list(ctx: &CataContext) -> Result<()> {
@@ -195,10 +159,9 @@ async fn list(ctx: &CataContext) -> Result<()> {
     }
 
     for name in &names {
-        match crate::io::nix::get_cluster_config(ctx, name) {
-            Ok(config) => {
-                let provisioner = cluster_provisioner(&config);
-                println!("  {} ({})", style(name).green(), provisioner);
+        match load_cluster_spec(ctx, name) {
+            Ok(spec) => {
+                println!("  {} ({})", style(name).green(), spec.provider);
             }
             Err(_) => {
                 println!("  {} (error loading config)", style(name).yellow());
@@ -312,34 +275,29 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
     None
 }
 
-fn run_pre_provision_hooks(name: &str, config: &serde_json::Value) -> Result<()> {
-    let Some(hooks) = config
-        .pointer("/lifecycle/preProvision")
-        .and_then(|v| v.as_array())
-    else {
-        return Ok(());
-    };
-
-    for hook in hooks {
-        let hook_name = hook["name"].as_str().unwrap_or("preProvision");
-        let hook_desc = hook["description"].as_str().unwrap_or(hook_name);
-        let bin = hook["bin"].as_str().unwrap_or("");
-
-        if bin.is_empty() {
+fn run_pre_provision_hooks(name: &str, spec: &ClusterSpec) -> Result<()> {
+    for hook in &spec.lifecycle.pre_provision {
+        if hook.bin.is_empty() {
             continue;
         }
 
-        println!("{} [{name}] {hook_desc}...", style(">>>").cyan());
+        println!("{} [{name}] {}...", style(">>>").cyan(), hook.description);
 
-        let status = std::process::Command::new(bin).status().map_err(|e| {
-            anyhow::anyhow!("failed to exec preProvision hook `{bin}` for cluster `{name}`: {e}")
-        })?;
+        let status = std::process::Command::new(&hook.bin)
+            .status()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to exec preProvision hook `{}` for cluster `{name}`: {e}",
+                    hook.bin
+                )
+            })?;
 
         if !status.success() {
             bail!(
-                "preProvision hook `{hook_name}` for cluster `{name}` failed \
+                "preProvision hook `{}` for cluster `{name}` failed \
                  (exit {}). See message above; the hook's stderr explains the \
                  fix.",
+                hook.name,
                 status.code().unwrap_or(-1)
             );
         }
@@ -351,28 +309,20 @@ fn run_pre_provision_hooks(name: &str, config: &serde_json::Value) -> Result<()>
 pub fn provision_cluster_with_registry(
     ctx: &CataContext,
     name: &str,
-    config: &serde_json::Value,
+    spec: &ClusterSpec,
     registries_yaml: Option<&std::path::Path>,
     lab_package: Option<&str>,
 ) -> Result<()> {
-    let provisioner = cluster_provisioner(config);
-    let cluster_name = provisioner_cluster_name(config);
+    let cluster_name = provisioner_cluster_name(spec).to_string();
 
-    run_pre_provision_hooks(name, config)?;
+    run_pre_provision_hooks(name, spec)?;
 
-    match provisioner {
-        "k3d" => {
-            provision_k3d(
-                ctx,
-                name,
-                &cluster_name,
-                config,
-                registries_yaml,
-                lab_package,
-            )?;
+    match spec.provisioner {
+        ProvisionerKind::K3d => {
+            provision_k3d(ctx, name, &cluster_name, spec, registries_yaml, lab_package)?;
         }
-        "talos" => {
-            let docker_host = resolve_docker_host(ctx, config)?;
+        ProvisionerKind::Talos => {
+            let docker_host = resolve_docker_host(ctx, spec)?;
             if io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!(
                     "{} Cluster '{name}' is already running",
@@ -381,31 +331,25 @@ pub fn provision_cluster_with_registry(
                 return Ok(());
             }
 
-            let control_planes = config["kubernetes"]["controlPlanes"].as_u64().unwrap_or(1) as u32;
-            let workers = config["kubernetes"]["workers"].as_u64().unwrap_or(1) as u32;
-
             io::talos::cluster_create(
                 ctx,
                 &cluster_name,
-                control_planes,
-                workers,
+                spec.kubernetes.control_planes,
+                spec.kubernetes.workers,
                 docker_host.as_deref(),
             )?;
         }
-        "crossplane" => {
+        ProvisionerKind::Crossplane => {
             println!(
                 "{} Crossplane clusters are provisioned via CAPI on the management cluster",
                 style(">>>").cyan()
             );
         }
-        "external" => {
+        ProvisionerKind::External => {
             println!(
                 "{} External cluster '{name}', no provisioning needed",
                 style(">>>").cyan()
             );
-        }
-        other => {
-            bail!("Unknown provisioner: {other}");
         }
     }
 
@@ -423,9 +367,9 @@ async fn init(ctx: &CataContext, name: &str) -> Result<()> {
     let registries_yaml_path = ensure_lab_services(ctx, name);
 
     println!("{} Loading cluster configuration...", style(">>>").cyan());
-    let config = crate::io::nix::get_cluster_config(ctx, name)?;
+    let spec = load_cluster_spec(ctx, name)?;
 
-    provision_cluster_with_registry(ctx, name, &config, registries_yaml_path.as_deref(), None)?;
+    provision_cluster_with_registry(ctx, name, &spec, registries_yaml_path.as_deref(), None)?;
 
     println!();
     println!(
@@ -445,82 +389,72 @@ async fn up(
 ) -> Result<()> {
     init(ctx, name).await?;
 
-    crate::commands::apply::run(
+    crate::commands::apply::apply(
         ctx,
-        crate::commands::apply::ApplyArgs {
-            cluster: Some(name.to_string()),
-            bundle,
+        crate::commands::apply::ApplyRequest {
+            bundle: bundle.as_deref(),
             dry_run,
             force,
-            manifests_dir: None,
-            secrets_cache: None,
-            lab_config: None,
-            kube_context_override: None,
+            ..crate::commands::apply::ApplyRequest::for_cluster(name)
         },
     )
     .await
 }
 
-pub fn stop_cluster(ctx: &CataContext, name: &str, config: &serde_json::Value) -> Result<()> {
-    let provisioner = cluster_provisioner(config);
-    let cluster_name = provisioner_cluster_name(config);
+pub fn stop_cluster(ctx: &CataContext, name: &str, spec: &ClusterSpec) -> Result<()> {
+    let cluster_name = provisioner_cluster_name(spec).to_string();
 
-    match provisioner {
-        "k3d" => {
-            let docker_host = resolve_docker_host(ctx, config)?;
+    match spec.provisioner {
+        ProvisionerKind::K3d => {
+            let docker_host = resolve_docker_host(ctx, spec)?;
             if !io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
             io::k3d::cluster_stop(ctx, &cluster_name, docker_host.as_deref())?;
         }
-        "external" | "crossplane" => {
-            println!("  {provisioner} cluster '{name}', nothing to stop locally");
+        ProvisionerKind::External | ProvisionerKind::Crossplane => {
+            println!(
+                "  {} cluster '{name}', nothing to stop locally",
+                spec.provider
+            );
         }
-        _ => {
-            println!("  Cluster '{name}' ({provisioner}): stop not supported, skipping");
+        ProvisionerKind::Talos => {
+            println!("  Cluster '{name}' (talos): stop not supported, skipping");
         }
     }
 
     Ok(())
 }
 
-pub fn deprovision_cluster(
-    ctx: &CataContext,
-    name: &str,
-    config: &serde_json::Value,
-) -> Result<()> {
-    let provisioner = cluster_provisioner(config);
-    let cluster_name = provisioner_cluster_name(config);
+pub fn deprovision_cluster(ctx: &CataContext, name: &str, spec: &ClusterSpec) -> Result<()> {
+    let cluster_name = provisioner_cluster_name(spec).to_string();
 
-    match provisioner {
-        "k3d" => {
-            let docker_host = resolve_docker_host(ctx, config)?;
+    match spec.provisioner {
+        ProvisionerKind::K3d => {
+            let docker_host = resolve_docker_host(ctx, spec)?;
             if !io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
             io::k3d::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
         }
-        "talos" => {
-            let docker_host = resolve_docker_host(ctx, config)?;
+        ProvisionerKind::Talos => {
+            let docker_host = resolve_docker_host(ctx, spec)?;
             if !io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 println!("{} Cluster '{name}' is not running", style(">>>").green());
                 return Ok(());
             }
             io::talos::cluster_destroy(ctx, &cluster_name, docker_host.as_deref())?;
         }
-        "crossplane" => {
+        ProvisionerKind::Crossplane => {
             println!(
                 "{} Crossplane clusters are deprovisioned via CAPI on the management cluster",
                 style(">>>").cyan()
             );
         }
-        "external" => {
+        ProvisionerKind::External => {
             println!("  External clusters cannot be deleted via cata.");
-        }
-        other => {
-            bail!("Unknown provisioner: {other}");
         }
     }
 
@@ -533,8 +467,8 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
         style("catallaxy").cyan().bold()
     );
 
-    let config = crate::io::nix::get_cluster_config(ctx, name)?;
-    deprovision_cluster(ctx, name, &config)
+    let spec = load_cluster_spec(ctx, name)?;
+    deprovision_cluster(ctx, name, &spec)
 }
 
 async fn status(ctx: &CataContext, name: &str) -> Result<()> {
@@ -544,46 +478,48 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
     );
     println!();
 
-    let config = crate::io::nix::get_cluster_config(ctx, name)?;
-    let provisioner = cluster_provisioner(&config);
+    let spec = load_cluster_spec(ctx, name)?;
 
     println!("{}", style("Configuration:").bold());
-    println!("  Provisioner: {provisioner}");
-    println!(
-        "  Control Planes: {}",
-        config["kubernetes"]["controlPlanes"].as_u64().unwrap_or(0)
-    );
-    println!(
-        "  Workers: {}",
-        config["kubernetes"]["workers"].as_u64().unwrap_or(0)
-    );
+    println!("  Provisioner: {}", spec.provider);
+    println!("  Control Planes: {}", spec.kubernetes.control_planes);
+    println!("  Workers: {}", spec.kubernetes.workers);
     println!();
 
-    let cluster_name = provisioner_cluster_name(&config);
+    let cluster_name = provisioner_cluster_name(&spec).to_string();
     println!("{}", style("Runtime:").bold());
-    match provisioner {
-        "k3d" => {
-            let docker_host = resolve_docker_host(ctx, &config)?;
+    match spec.provisioner {
+        ProvisionerKind::K3d => {
+            let docker_host = resolve_docker_host(ctx, &spec)?;
             if io::k3d::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 let _ = io::k3d::cluster_show(ctx, &cluster_name, docker_host.as_deref());
             } else {
                 println!("  (not running)");
             }
         }
-        "talos" => {
-            let docker_host = resolve_docker_host(ctx, &config)?;
+        ProvisionerKind::Talos => {
+            let docker_host = resolve_docker_host(ctx, &spec)?;
             if io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
                 let _ = io::talos::cluster_show(ctx, &cluster_name, docker_host.as_deref());
             } else {
                 println!("  (not running)");
             }
         }
-        _ => {
-            println!("  (status check not available for {provisioner} clusters)");
+        ProvisionerKind::Crossplane | ProvisionerKind::External => {
+            println!(
+                "  (status check not available for {} clusters)",
+                spec.provider
+            );
         }
     }
 
     Ok(())
+}
+
+fn load_cluster_spec(ctx: &CataContext, name: &str) -> Result<ClusterSpec> {
+    let lab_name = ctx.resolve_lab_name(None)?;
+    let lab = crate::io::nix::get_lab_config(ctx, &lab_name)?;
+    crate::io::nix::get_cluster_spec_from_lab(&lab, name)
 }
 
 async fn kubeconfig(ctx: &CataContext, args: KubeconfigArgs) -> Result<()> {
@@ -603,18 +539,10 @@ async fn kubeconfig_sync(
     timeout: &str,
 ) -> Result<()> {
     let mgmt_name = ctx.resolve_cluster_name(management.as_deref())?;
-    let config = crate::io::nix::get_cluster_config(ctx, &mgmt_name)?;
-
-    let default_name = format!("catallaxy-{mgmt_name}");
-    let kube_context = if cluster_provisioner(&config) == "k3d" {
-        let k3d_name = config
-            .pointer("/provisionerConfig/k3d/clusterName")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&default_name);
-        format!("k3d-{k3d_name}")
-    } else {
-        mgmt_name.clone()
-    };
+    let lab_name = ctx.resolve_lab_name(None)?;
+    let lab = crate::io::nix::get_lab_config(ctx, &lab_name)?;
+    let config = crate::io::nix::get_cluster_config_from_lab(&lab, &mgmt_name)?;
+    let kube_context = kube_context_in(&lab, &mgmt_name)?.to_string();
 
     if !io::kubectl::api_reachable(&kube_context) {
         bail!("Cannot reach management cluster (context: {kube_context}). Is it running?");
@@ -806,11 +734,11 @@ fn provision_k3d(
     ctx: &CataContext,
     name: &str,
     cluster_name: &str,
-    config: &serde_json::Value,
+    spec: &ClusterSpec,
     registries_yaml: Option<&std::path::Path>,
     lab_package: Option<&str>,
 ) -> Result<()> {
-    let docker_host = resolve_docker_host(ctx, config)?;
+    let docker_host = resolve_docker_host(ctx, spec)?;
     if io::k3d::cluster_exists(cluster_name, docker_host.as_deref()) {
         println!(
             "{} Cluster '{name}' is already running",
@@ -820,46 +748,9 @@ fn provision_k3d(
         return Ok(());
     }
 
-    let workers = config["kubernetes"]["workers"].as_u64().unwrap_or(0) as u32;
-    let no_traefik = config
-        .pointer("/provisionerConfig/k3d/noTraefik")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-    let no_service_lb = config
-        .pointer("/provisionerConfig/k3d/noServiceLB")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let no_flannel = config
-        .pointer("/provisionerConfig/k3d/noFlannel")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
-    let image = config
-        .pointer("/provisionerConfig/k3d/image")
-        .and_then(|v| v.as_str());
-
-    let service_cidr = config
-        .pointer("/network/serviceSubnet")
-        .and_then(|v| v.as_str());
-    let pod_cidr = config
-        .pointer("/network/podSubnet")
-        .and_then(|v| v.as_str());
-
-    let auto_deploy = resolve_auto_deploy(ctx, name, config, lab_package);
-
-    let ports: Vec<String> = config
-        .pointer("/provisionerConfig/k3d/ports")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    let port_refs: Vec<&str> = ports.iter().map(|s| s.as_str()).collect();
-
-    let network = config
-        .pointer("/provisionerConfig/k3d/network")
-        .and_then(|v| v.as_str());
+    let k3d = &spec.provisioner_config.k3d;
+    let auto_deploy = resolve_auto_deploy(ctx, name, spec, lab_package);
+    let port_refs: Vec<&str> = k3d.ports.iter().map(String::as_str).collect();
 
     let registries_yaml_str = registries_yaml.map(|p| p.to_string_lossy().to_string());
     let registry_dir = registries_yaml.and_then(|p| p.parent().map(|d| d.to_path_buf()));
@@ -878,20 +769,20 @@ fn provision_k3d(
         ctx,
         io::k3d::ClusterCreate {
             name: cluster_name,
-            workers,
-            no_traefik,
-            no_service_lb,
-            no_flannel,
-            image,
+            workers: spec.kubernetes.workers,
+            no_traefik: k3d.no_traefik,
+            no_service_lb: k3d.no_service_lb,
+            no_flannel: k3d.no_flannel,
+            image: k3d.image.as_deref(),
             docker_host: docker_host.as_deref(),
             registries_yaml: registries_yaml_str.as_deref(),
             certs_d: certs_d_str.as_deref(),
             resolv_conf: resolv_conf_str.as_deref(),
-            service_cidr,
-            pod_cidr,
+            service_cidr: Some(spec.network.service_subnet.as_str()),
+            pod_cidr: Some(spec.network.pod_subnet.as_str()),
             auto_deploy_manifests: &auto_deploy,
             ports: &port_refs,
-            network,
+            network: k3d.network.as_deref(),
         },
     )?;
 
@@ -901,22 +792,16 @@ fn provision_k3d(
 fn resolve_auto_deploy(
     ctx: &CataContext,
     name: &str,
-    config: &serde_json::Value,
+    spec: &ClusterSpec,
     lab_package: Option<&str>,
 ) -> Vec<(String, String)> {
-    let mut auto_deploy: Vec<(String, String)> = config
-        .pointer("/provisionerConfig/k3d/autoDeployManifests")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|m| {
-                    let name = m["name"].as_str()?.to_string();
-                    let path = m["path"].as_str()?.to_string();
-                    Some((name, path))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut auto_deploy: Vec<(String, String)> = spec
+        .provisioner_config
+        .k3d
+        .auto_deploy_manifests
+        .iter()
+        .map(|m| (m.name.clone(), m.path.clone()))
+        .collect();
 
     if !auto_deploy.is_empty() {
         let lab_pkg = if let Some(pkg) = lab_package {

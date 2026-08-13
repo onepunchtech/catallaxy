@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio};
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 
 use super::*;
 use crate::config::Context as CataContext;
+use crate::domain::CdConfig;
 use crate::domain::StepParams;
+use crate::domain::lab::kube_context_in;
 use crate::io;
 
 pub fn extract_static(lab: &serde_json::Value) -> Result<LabTopology> {
@@ -14,11 +16,9 @@ pub fn extract_static(lab: &serde_json::Value) -> Result<LabTopology> {
         .pointer("/dnsInfo/zone")
         .and_then(|v| v.as_str())
         .map(String::from);
-    let cd_strategy = lab
-        .pointer("/cd/strategy")
-        .and_then(|v| v.as_str())
-        .unwrap_or("kapp")
-        .to_string();
+    let cd: CdConfig = serde_json::from_value(lab["cd"].clone())
+        .context("parsing lab.cd from the evaluated lab")?;
+    let cd_strategy = cd.strategy.tag().to_string();
 
     let network = LabNetwork {
         name: lab
@@ -101,7 +101,9 @@ fn extract_clusters(lab: &serde_json::Value) -> BTreeMap<String, ClusterTopology
             Err(_) => continue,
         };
 
-        let kube_context = resolve_cluster_context(lab, cluster_name);
+        let kube_context = kube_context_in(lab, cluster_name)
+            .map(String::from)
+            .unwrap_or_else(|_| "<unresolved>".to_string());
         let components = extract_components(&config);
 
         clusters.insert(
@@ -371,8 +373,4 @@ pub fn check_namespace_health(context: &str, namespace: &str) -> ComponentHealth
     } else {
         ComponentHealthState::Degraded { ready, total }
     }
-}
-
-fn resolve_cluster_context(lab: &serde_json::Value, cluster_name: &str) -> String {
-    crate::commands::lab::state::resolve_cluster_context(lab, cluster_name)
 }

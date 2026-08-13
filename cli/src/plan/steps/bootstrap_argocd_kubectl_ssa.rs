@@ -24,8 +24,6 @@ pub fn run(
     let field_manager = field_manager.unwrap_or("catallaxy-bootstrap");
     let root = PathBuf::from(format!("{}/{manifest_root}", sctx.lab_package));
 
-    let cluster_config = crate::io::nix::get_cluster_config_with_secrets(sctx.lab, target).ok();
-
     io::ssa::apply_manifest_root(
         sctx.ctx,
         io::ssa::ApplyManifests {
@@ -34,7 +32,9 @@ pub fn run(
             field_manager,
             wait_timeout_seconds: wait_timeout_seconds.unwrap_or(600),
             dry_run: sctx.dry_run,
-            lab_config: cluster_config.as_ref(),
+            cluster: sctx.lab.cluster(target).ok(),
+            lab_name: sctx.lab_name,
+            secrets_spec: &sctx.lab.secrets,
             secrets_cache: sctx.secrets_cache.as_ref(),
         },
     )

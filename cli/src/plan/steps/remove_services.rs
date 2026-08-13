@@ -5,9 +5,7 @@ use crate::io;
 use crate::plan::StepContext;
 
 pub fn run(sctx: &StepContext<'_>) -> Result<()> {
-    let Some(services) = sctx.lab["services"].as_object() else {
-        return Ok(());
-    };
+    let services = &sctx.lab.services;
     for (svc_name, svc) in services {
         let container = svc["container"].as_str().unwrap_or("");
         let svc_desc = svc["description"].as_str().unwrap_or(svc_name);

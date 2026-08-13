@@ -80,6 +80,20 @@ The format is based on
 
 ### Fixed
 
+- **`cata diagnose` prints floe health again, and reports on the cluster it
+  was asked about.** `print_component_health` read `config["components"]`, a
+  key `cliConfig` stopped emitting when components became floes, so the
+  lookup missed on every cluster and the section silently never appeared.
+  Separately, `diagnose` carried its own copy of the kube-context resolver
+  with the `runtimeContexts` clause dropped, so in a lab that pivots a
+  cluster it dialled whatever the provisioner-baked context still reached.
+
+- **`cata kubeconfig show` reports the context a cluster actually uses.** It
+  derived the name itself, handled only k3d, and ignored the `kubeContext`
+  the module system computes, so a Talos or Crossplane cluster was listed
+  under its bare cluster name and then reported "not reachable" whether or
+  not it was.
+
 - **The lab proxy routes a floe that names its hostname under `gateway`.**
   `modules/lab/host/proxy.nix` built its HAProxy host map from each floe's
   top-level `domain`, so `floes.prometheus` and `floes.otel-collector`,
@@ -129,6 +143,57 @@ The format is based on
   loads the lab's `envFile` and nothing else.
 
 ### Changed
+
+- **The evaluated lab is parsed as a total type, and the CLI supplies no
+  defaults for it.** `LabSpec` and `ClusterSpec` now model every field
+  `lab.out.cliConfig` emits, each required except the three Nix genuinely
+  emits as null (`dnsInfo`, `registryPort`, `opsToolPath`). A field that
+  does not parse is an error naming the field rather than a value the CLI
+  invents, which is what the interpreter split already claimed: the
+  definition is in Nix, the actions are in Rust.
+
+  Thirty-odd `unwrap_or` fallbacks came out with it, each a second copy of a
+  module-system default. Six for `cd.strategy`, plus the colima sizes, the
+  k3d flags, both provisioner cluster names, `controlPlanes` / `workers`,
+  and the DNS host, port and zone. Two had already drifted apart from the
+  Nix they duplicated: the talos branch defaulted `workers` to 1 where k3d
+  defaulted it to 0, and `lab dns` fell back to port 5353 while the constant
+  deciding whether labs share one resolver drop-in was 5354, so a lab that
+  omitted the port quietly got a per-zone file. A third was never a legal
+  value at all: `cd.bootstrap` fell back to `"kapp"`, which its own enum
+  (`kubectl-ssa | helm | none`) does not permit.
+
+  `ProvisionerKind` now matches `cluster.provisioner` exactly. It carried a
+  `Capi` variant Nix never emits, lacked the `external` Nix does, and mapped
+  anything unrecognised to `Unknown`, so an external cluster matched neither
+  arm of any decision made on it.
+
+- **One kube-context resolver, and it does not guess.** Five had drifted:
+  `apply`, `diagnose`, `kubeconfig`, `cluster` and the shared one in
+  `lab/state.rs`, each with a different fallback chain ending in a name the
+  CLI made up, such as `k3d-catallaxy-<cluster>`. They now share one lookup
+  against `runtimeContexts`, which the planner populates for every cluster
+  and whose own option documentation says callers should prefer it over
+  `cluster.ref.kubeContext` precisely because the baked context goes stale
+  after a pivot. A cluster with no entry is an error naming the clusters
+  that have one, rather than a guess that fails later against the wrong
+  cluster.
+
+- **The plan executor works from typed values end to end.** `StepContext`
+  carries a `LabSpec` rather than raw JSON, so the step implementations read
+  fields instead of digging with `pointer()`, and `cata lab plan` reads
+  `deploymentPlan` / `teardownPlan` off the type rather than by string key.
+  Two models of the same JSON went away with it: `LabSecrets` merged into
+  the `SecretsSpec` that already described those fields, and `io::ssa` now
+  takes the cluster, lab name and secrets it needs rather than a cluster
+  config with the lab's secrets grafted onto it.
+
+  `ApplyArgs` split into the flags a user types and an `ApplyRequest` an
+  internal caller passes. It had been both at once, four clap arguments
+  beside four `#[arg(skip)]` fields, which clippy noticed only once a
+  `LabSpec` in one of them made the top-level command enum large. The
+  request borrows what it needs, so applying a lab no longer clones the
+  whole lab once per cluster.
 
 - **`nix develop` no longer builds the CLI to open.** The default shell
   listed `packages.cataWrapped`, so entering it built `cata` first. When the

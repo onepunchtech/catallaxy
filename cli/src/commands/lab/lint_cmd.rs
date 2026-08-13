@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::{Context as _, Result, bail};
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::CdConfig;
 use crate::io;
 use crate::lint;
 
@@ -48,10 +49,9 @@ pub async fn run(
                     .as_array()
                     .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
-                let strategy = lab
-                    .pointer("/cd/strategy")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("kapp");
+                let cd: CdConfig = serde_json::from_value(lab["cd"].clone())
+                    .context("parsing lab.cd from the evaluated lab")?;
+                let strategy = cd.strategy.tag();
 
                 println!("  {} lab: {}", style("✓").green(), lab_name);
                 println!("  {} strategy: {}", style("✓").green(), strategy);

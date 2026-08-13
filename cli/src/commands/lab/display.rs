@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::CdConfig;
+use crate::domain::lab::kube_context_in;
 use crate::io;
 
 pub async fn list(ctx: &CataContext) -> Result<()> {
@@ -85,7 +87,9 @@ pub async fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
             arr.iter()
                 .filter_map(|v| v.as_str())
                 .map(|cluster| {
-                    let context = super::state::resolve_cluster_context(&lab, cluster);
+                    let context = kube_context_in(&lab, cluster)
+                        .map(String::from)
+                        .unwrap_or_default();
                     ClusterState {
                         name: cluster.to_string(),
                         reachable: io::kubectl::api_reachable(&context),
@@ -121,10 +125,9 @@ pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
 
     let lab = crate::io::nix::get_lab_config(ctx, name)?;
 
-    let strategy = lab
-        .pointer("/cd/strategy")
-        .and_then(|v| v.as_str())
-        .unwrap_or("kapp");
+    let cd: CdConfig = serde_json::from_value(lab["cd"].clone())
+        .context("parsing lab.cd from the evaluated lab")?;
+    let strategy = cd.strategy.tag();
     let zone = lab
         .pointer("/dnsInfo/zone")
         .and_then(|v| v.as_str())
@@ -207,7 +210,9 @@ fn print_cluster_status(lab: &serde_json::Value) -> Result<()> {
 
     println!("{}", style("Clusters:").bold());
     for cluster_name in &cluster_names {
-        let context_name = super::state::resolve_cluster_context(lab, cluster_name);
+        let context_name = kube_context_in(lab, cluster_name)
+            .map(String::from)
+            .unwrap_or_default();
         let reachable = io::kubectl::api_reachable(&context_name);
 
         let status_str = if reachable {
@@ -229,8 +234,8 @@ fn print_cluster_status(lab: &serde_json::Value) -> Result<()> {
     let reachable_count = cluster_names
         .iter()
         .filter(|name| {
-            let ctx = super::state::resolve_cluster_context(lab, name);
-            io::kubectl::api_reachable(&ctx)
+            let ctx = kube_context_in(lab, name).unwrap_or_default();
+            io::kubectl::api_reachable(ctx)
         })
         .count();
 

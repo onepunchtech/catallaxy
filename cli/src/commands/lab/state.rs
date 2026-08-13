@@ -3,6 +3,8 @@ use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
+
+use crate::domain::HostProjection;
 use console::style;
 
 pub fn wait_for_dns(host: &str, timeout: std::time::Duration) -> Result<()> {
@@ -54,19 +56,12 @@ pub fn lab_state_dir(lab_name: &str) -> PathBuf {
 }
 
 pub fn project_host_secrets(
-    lab: &serde_json::Value,
+    projections: &[HostProjection],
     cache: &crate::commands::apply::SecretsCache,
     lab_name: &str,
 ) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let projections = match lab.pointer("/secrets/hostProjections") {
-        Some(v) => match v.as_array() {
-            Some(arr) => arr,
-            None => return Ok(()),
-        },
-        None => return Ok(()),
-    };
     if projections.is_empty() {
         return Ok(());
     }
@@ -76,22 +71,13 @@ pub fn project_host_secrets(
     let mut skipped = 0usize;
 
     for entry in projections {
-        let secret_name = entry
-            .pointer("/secretName")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("hostProjection entry missing secretName"))?;
-        let store = entry
-            .pointer("/store")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("hostProjection entry missing store"))?;
-        let key = entry
-            .pointer("/key")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("hostProjection entry missing key"))?;
-        let path_template = entry
-            .pointer("/hostPath")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("hostProjection entry missing hostPath"))?;
+        let HostProjection {
+            secret_name,
+            store,
+            key,
+            host_path: path_template,
+            ..
+        } = entry;
 
         let value = match cache
             .get(store)
@@ -153,29 +139,4 @@ pub fn project_host_secrets(
         );
     }
     Ok(())
-}
-
-pub fn resolve_cluster_context(lab: &serde_json::Value, cluster_name: &str) -> String {
-    if let Some(ctx) = lab
-        .pointer(&format!("/runtimeContexts/{cluster_name}"))
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        return ctx.to_string();
-    }
-
-    crate::io::nix::get_cluster_config_from_lab(lab, cluster_name)
-        .ok()
-        .and_then(|c| {
-            c.get("kubeContext")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .or_else(|| {
-                    c.pointer("/provisionerConfig/k3d/clusterName")
-                        .and_then(|v| v.as_str())
-                        .map(|k3d_name| format!("k3d-{k3d_name}"))
-                })
-        })
-        .unwrap_or_else(|| format!("k3d-catallaxy-{cluster_name}"))
 }

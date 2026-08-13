@@ -15,14 +15,14 @@ pub fn run(ctx: &VerifyContext<'_>) -> Vec<Diagnostic> {
 
         let mut present = Vec::new();
         for namespace in ctx.namespaces_for(cluster) {
-            if io::kubectl::namespace_exists(context, &namespace) {
-                present.push(namespace);
+            if io::kubectl::namespace_exists(context, namespace) {
+                present.push(namespace.clone());
             } else {
                 diags.push(diag(
                     Severity::Error,
                     CHECK,
                     cluster,
-                    &namespace,
+                    namespace,
                     "the lab declares this namespace but the cluster does not have it".to_string(),
                 ));
             }

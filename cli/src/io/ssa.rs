@@ -9,9 +9,11 @@ use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::commands::apply::SecretsCache;
-use crate::commands::apply::{ProjectionConfig, inject_projections_with, parse_projections};
+use crate::commands::apply::{
+    ProjectionConfig, ProjectionSource, inject_projections_with, parse_projections,
+};
 use crate::config::Context as CataContext;
-use crate::domain::secrets;
+use crate::domain::{ClusterSpec, SecretsSpec};
 use crate::io;
 
 const BUNDLE_APPLY_ATTEMPTS: u32 = 4;
@@ -23,7 +25,9 @@ pub struct ApplyManifests<'a> {
     pub field_manager: &'a str,
     pub wait_timeout_seconds: u64,
     pub dry_run: bool,
-    pub lab_config: Option<&'a serde_json::Value>,
+    pub cluster: Option<&'a ClusterSpec>,
+    pub lab_name: &'a str,
+    pub secrets_spec: &'a SecretsSpec,
     pub secrets_cache: Option<&'a SecretsCache>,
 }
 
@@ -143,7 +147,9 @@ fn apply_wave_ordered(
         manifest_root,
         field_manager,
         dry_run,
-        lab_config,
+        cluster,
+        lab_name,
+        secrets_spec,
         secrets_cache,
         ..
     } = opts;
@@ -152,8 +158,9 @@ fn apply_wave_ordered(
     let meta: WaveMeta = serde_json::from_str(&raw)
         .with_context(|| format!("parsing .wave-meta at {}", wave_meta_path.display()))?;
 
-    let projections: HashMap<String, ProjectionConfig> =
-        lab_config.map(parse_projections).unwrap_or_default();
+    let projections: HashMap<String, ProjectionConfig> = cluster
+        .map(|c| parse_projections(&c.projections))
+        .unwrap_or_default();
 
     let projections_for_wave = |wave: &Wave| -> Vec<(String, ProjectionConfig)> {
         wave.bundles
@@ -180,16 +187,17 @@ fn apply_wave_ordered(
         );
 
         let wave_projections = projections_for_wave(wave);
-        if !wave_projections.is_empty()
-            && let Some(cfg) = lab_config
-        {
+        if !wave_projections.is_empty() {
             inject_projections_ssa(
                 ctx,
                 kube_context,
-                cfg,
+                &ProjectionSource {
+                    lab_name,
+                    secrets: secrets_spec,
+                    pre_cache: secrets_cache.map(|v| &**v),
+                },
                 &wave_projections,
                 field_manager,
-                secrets_cache.map(|v| &**v),
                 dry_run,
             )?;
         }
@@ -681,53 +689,45 @@ fn probe_script(
 fn inject_projections_ssa(
     ctx: &CataContext,
     kube_context: &str,
-    lab_config: &serde_json::Value,
+    source: &ProjectionSource<'_>,
     projections: &[(String, ProjectionConfig)],
     field_manager: &str,
-    pre_cache: Option<&secrets::SecretsByStore>,
     dry_run: bool,
 ) -> Result<()> {
-    inject_projections_with(
-        ctx,
-        kube_context,
-        lab_config,
-        projections,
-        pre_cache,
-        |secret_dir, secret_name| {
-            if dry_run {
-                println!(
-                    "{} Would kubectl apply --context {kube_context} --server-side \
-                     --force-conflicts --field-manager={field_manager} -f {} --recursive",
-                    style(">>>").yellow(),
-                    secret_dir.display(),
-                );
-                return Ok(());
-            }
+    inject_projections_with(ctx, source, projections, |secret_dir, secret_name| {
+        if dry_run {
             println!(
-                "{} Applying projection Secret '{secret_name}' via SSA",
-                style(">>>").cyan(),
+                "{} Would kubectl apply --context {kube_context} --server-side \
+                     --force-conflicts --field-manager={field_manager} -f {} --recursive",
+                style(">>>").yellow(),
+                secret_dir.display(),
             );
-            let status = Command::new("kubectl")
-                .args([
-                    "--context",
-                    kube_context,
-                    "apply",
-                    "--server-side",
-                    "--force-conflicts",
-                    "--field-manager",
-                    field_manager,
-                    "-f",
-                ])
-                .arg(secret_dir)
-                .arg("--recursive")
-                .status()
-                .context("running kubectl apply --server-side for projection Secret")?;
-            if !status.success() {
-                bail!("kubectl apply of projection Secret '{secret_name}' exited with {status}",);
-            }
-            Ok(())
-        },
-    )
+            return Ok(());
+        }
+        println!(
+            "{} Applying projection Secret '{secret_name}' via SSA",
+            style(">>>").cyan(),
+        );
+        let status = Command::new("kubectl")
+            .args([
+                "--context",
+                kube_context,
+                "apply",
+                "--server-side",
+                "--force-conflicts",
+                "--field-manager",
+                field_manager,
+                "-f",
+            ])
+            .arg(secret_dir)
+            .arg("--recursive")
+            .status()
+            .context("running kubectl apply --server-side for projection Secret")?;
+        if !status.success() {
+            bail!("kubectl apply of projection Secret '{secret_name}' exited with {status}",);
+        }
+        Ok(())
+    })
 }
 
 fn yaml_files_under(dir: &Path) -> Vec<PathBuf> {

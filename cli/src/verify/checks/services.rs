@@ -6,11 +6,8 @@ const CHECK: &str = "services";
 
 pub fn run(ctx: &VerifyContext<'_>) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
-    let Some(services) = ctx.lab.services.as_object() else {
-        return diags;
-    };
 
-    for (name, svc) in services {
+    for (name, svc) in &ctx.lab.services {
         let container = svc["container"].as_str().unwrap_or(name);
         if !io::docker::container_running(container) {
             diags.push(diag(

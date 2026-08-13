@@ -1,8 +1,10 @@
-use anyhow::{Result, bail};
+use anyhow::{Context as _, Result, bail};
 use clap::Args;
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::lab::kube_context_in;
+use crate::domain::{ClusterSpec, FloeSpec};
 use crate::io;
 
 #[derive(Args)]
@@ -61,7 +63,7 @@ pub async fn run(ctx: &CataContext, args: DiagnoseArgs) -> Result<()> {
     };
 
     let cluster_config = crate::io::nix::get_cluster_config_from_lab(&lab, &cluster_name)?;
-    let context = resolve_context(&lab, &cluster_name);
+    let context = kube_context_in(&lab, &cluster_name)?.to_string();
 
     diagnose_cluster(ctx, &cluster_name, &context, &cluster_config, &args).await
 }
@@ -81,7 +83,7 @@ async fn diagnose_all(ctx: &CataContext, args: &DiagnoseArgs) -> Result<()> {
 
     for cluster_name in &cluster_names {
         let cluster_config = crate::io::nix::get_cluster_config_from_lab(&lab, cluster_name)?;
-        let context = resolve_context(&lab, cluster_name);
+        let context = kube_context_in(&lab, cluster_name)?.to_string();
         diagnose_cluster(ctx, cluster_name, &context, &cluster_config, args).await?;
         println!();
     }
@@ -200,26 +202,20 @@ fn print_kapp_status(context: &str) -> Result<()> {
 }
 
 fn print_component_health(context: &str, config: &serde_json::Value) -> Result<()> {
-    let components = match config["components"].as_object() {
-        Some(c) => c,
-        None => return Ok(()),
-    };
-
-    let enabled: Vec<(&String, &serde_json::Value)> = components
-        .iter()
-        .filter(|(_, v)| v["enable"].as_bool() == Some(true))
-        .collect();
+    let spec =
+        ClusterSpec::from_value(config.clone()).context("parsing the evaluated cluster config")?;
+    let enabled: Vec<(&String, &FloeSpec)> = spec.enabled_floes().collect();
 
     if enabled.is_empty() {
         return Ok(());
     }
 
     println!();
-    println!("  {}", style("Components:").bold());
+    println!("  {}", style("Floes:").bold());
 
-    for (name, comp) in &enabled {
-        let namespace = comp["namespace"].as_str().unwrap_or(name);
-        let version = comp["version"].as_str().unwrap_or("?");
+    for (name, floe) in &enabled {
+        let namespace = floe.namespace.as_deref().unwrap_or(name);
+        let version = floe.version.as_deref().unwrap_or("?");
 
         let ns_health = check_namespace_health(context, namespace);
         let (status, detail) = match ns_health {
@@ -498,21 +494,4 @@ fn print_warning_events(context: &str, since_minutes: u32) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn resolve_context(lab: &serde_json::Value, cluster_name: &str) -> String {
-    crate::io::nix::get_cluster_config_from_lab(lab, cluster_name)
-        .ok()
-        .and_then(|c| {
-            c.get("kubeContext")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(String::from)
-                .or_else(|| {
-                    c.pointer("/provisionerConfig/k3d/clusterName")
-                        .and_then(|v| v.as_str())
-                        .map(|k3d_name| format!("k3d-{k3d_name}"))
-                })
-        })
-        .unwrap_or_else(|| format!("k3d-catallaxy-{cluster_name}"))
 }

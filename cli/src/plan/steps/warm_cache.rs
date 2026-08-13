@@ -4,7 +4,7 @@ use console::style;
 use crate::plan::StepContext;
 
 pub async fn run(ctx: &StepContext<'_>) -> Result<()> {
-    let Some(port) = ctx.lab.pointer("/registryPort").and_then(|v| v.as_u64()) else {
+    let Some(port) = ctx.lab.registry_port else {
         println!(
             "{} Lab registry not enabled; nothing to warm",
             style(">>>").yellow()

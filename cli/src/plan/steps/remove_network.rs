@@ -6,21 +6,13 @@ use console::style;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>) -> Result<()> {
-    let docker_subnet = sctx
-        .lab
-        .pointer("/network/dockerSubnet")
-        .and_then(|v| v.as_str())
-        .unwrap_or("172.19.0.0/16");
+    let docker_subnet = sctx.lab.network.docker_subnet.as_str();
 
     if cfg!(target_os = "macos") {
         let _ = crate::commands::lab::dns::teardown_host_networking_macos(docker_subnet);
     }
 
-    let network_name = sctx
-        .lab
-        .pointer("/network/name")
-        .and_then(|v| v.as_str())
-        .unwrap_or(sctx.lab_name);
+    let network_name = sctx.lab.network.name.as_str();
     println!(
         "{} Removing Docker network '{}'...",
         style(">>>").cyan(),

@@ -1,11 +1,11 @@
 use anyhow::{Result, bail};
 use console::style;
 
-use crate::domain::secrets::{Backend, SecretsSpec, describe_store_problems, validate_store};
+use crate::domain::secrets::{Backend, describe_store_problems, validate_store};
 use crate::plan::StepContext;
 
 pub fn run(sctx: &StepContext<'_>, stores: &[String]) -> Result<()> {
-    let spec = SecretsSpec::from_lab_config(sctx.lab)?;
+    let spec = &sctx.lab.secrets;
 
     for store_name in stores {
         if sctx
@@ -37,10 +37,10 @@ pub fn run(sctx: &StepContext<'_>, stores: &[String]) -> Result<()> {
             Backend::Env => {
                 let bindings = spec.env_bindings(store_name);
                 let values = crate::io::secrets::read_env_store(&bindings);
-                let problems = validate_store(&spec, store_name, &values);
+                let problems = validate_store(spec, store_name, &values);
                 if !problems.is_empty() {
                     bail!(describe_store_problems(
-                        &spec,
+                        spec,
                         sctx.lab_name,
                         store_name,
                         &problems

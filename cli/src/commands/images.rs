@@ -6,6 +6,7 @@ use clap::Subcommand;
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::LabSpec;
 use crate::io::nix;
 
 const IMAGES_NAME_HELP: &str = "Lab to act on. Defaults to the flake fragment";
@@ -268,7 +269,7 @@ pub async fn warm_to_target_with(
     ctx: &CataContext,
     name: Option<&str>,
     target_registry: &str,
-    lab_config: Option<&serde_json::Value>,
+    lab: Option<&LabSpec>,
     lab_pkg: Option<&str>,
 ) -> Result<()> {
     let images = if let Some(pkg) = lab_pkg {
@@ -277,29 +278,16 @@ pub async fn warm_to_target_with(
         load_image_list(ctx, name)?
     };
 
-    let lab = if let Some(config) = lab_config {
-        config.clone()
-    } else {
-        crate::io::nix::get_lab_config(ctx, &ctx.resolve_lab_name(name)?)?
+    let (upstreams, lab_owned) = match lab {
+        Some(lab) => (
+            lab.registry_upstreams.clone(),
+            lab.lab_owned_registries.clone(),
+        ),
+        None => {
+            let lab = crate::io::nix::get_lab_spec(ctx, &ctx.resolve_lab_name(name)?)?;
+            (lab.registry_upstreams, lab.lab_owned_registries)
+        }
     };
-    let upstreams: Vec<String> = lab
-        .pointer("/registryUpstreams")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
-    let lab_owned: Vec<String> = lab
-        .pointer("/labOwnedRegistries")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
 
     println!(
         "{} Warming {} images via {}",

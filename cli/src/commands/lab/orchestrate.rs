@@ -4,6 +4,7 @@ use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::LabSpec;
 use crate::io;
 
 use super::state;
@@ -84,11 +85,7 @@ pub fn strip_finalizers_in_terminating_namespaces(kube_ctx: &str, namespaces: &[
     }
 }
 
-pub fn publish_one_image(
-    lab: &serde_json::Value,
-    _src_cluster: &str,
-    img: &serde_json::Value,
-) -> Result<()> {
+pub fn publish_one_image(lab: &LabSpec, _src_cluster: &str, img: &serde_json::Value) -> Result<()> {
     let name = img["name"].as_str().unwrap_or("?");
     let raw_source = img["source"]
         .as_str()
@@ -178,7 +175,7 @@ pub struct ClusterComponents<'a> {
     pub force: bool,
     pub manifests_dir: Option<String>,
     pub secrets_cache: Option<crate::commands::apply::SecretsCache>,
-    pub lab_config: Option<&'a serde_json::Value>,
+    pub lab_config: Option<&'a LabSpec>,
     pub kube_context_override: Option<String>,
 }
 
@@ -201,35 +198,34 @@ pub async fn apply_cluster_components(
         cluster_name
     );
 
-    crate::commands::apply::run(
+    crate::commands::apply::apply(
         ctx,
-        crate::commands::apply::ApplyArgs {
-            cluster: Some(cluster_name.to_string()),
-            bundle: None,
+        crate::commands::apply::ApplyRequest {
             dry_run,
             force,
-            manifests_dir,
+            manifests_dir: manifests_dir.as_deref(),
             secrets_cache,
-            lab_config: lab_config.cloned(),
-            kube_context_override,
+            lab: lab_config,
+            kube_context_override: kube_context_override.as_deref(),
+            ..crate::commands::apply::ApplyRequest::for_cluster(cluster_name)
         },
     )
     .await
 }
 
-pub fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str) {
+pub fn import_lab_ca(lab_name: &str, lab: &LabSpec, cluster_name: &str) -> Result<()> {
     let ingress_dir = state::service_state_dir(lab_name, "proxy");
     let ca_crt = ingress_dir.join("ca.crt");
     let ca_key = ingress_dir.join("ca.key");
 
     if !ca_crt.exists() || !ca_key.exists() {
-        return;
+        return Ok(());
     }
 
-    let context = state::resolve_cluster_context(lab, cluster_name);
+    let context = lab.kube_context(cluster_name)?;
 
     let _ = std::process::Command::new("kubectl")
-        .args(["--context", &context, "create", "namespace", "cert-manager"])
+        .args(["--context", context, "create", "namespace", "cert-manager"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
@@ -237,7 +233,7 @@ pub fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str
     let _ = std::process::Command::new("kubectl")
         .args([
             "--context",
-            &context,
+            context,
             "delete",
             "secret",
             "lab-ca-ca-secret",
@@ -251,7 +247,7 @@ pub fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str
     let status = std::process::Command::new("kubectl")
         .args([
             "--context",
-            &context,
+            context,
             "create",
             "secret",
             "tls",
@@ -281,6 +277,8 @@ pub fn import_lab_ca(lab_name: &str, lab: &serde_json::Value, cluster_name: &str
             );
         }
     }
+
+    Ok(())
 }
 
 pub fn sync_crossplane_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<()> {
@@ -633,7 +631,7 @@ fn image_credentials(
     img: &serde_json::Value,
     name: &str,
     dest_registry: &str,
-    lab: &serde_json::Value,
+    lab: &LabSpec,
 ) -> Result<Option<tempfile::TempDir>> {
     let docker_config_dir: Option<tempfile::TempDir> = match img["credentials"].as_object() {
         None => None,
@@ -641,7 +639,7 @@ fn image_credentials(
             let cred_cluster = creds["cluster"].as_str().unwrap_or_default();
             let cred_namespace = creds["namespace"].as_str().unwrap_or("harbor");
             let cred_secret = creds["secretName"].as_str().unwrap_or_default();
-            let cred_ctx = state::resolve_cluster_context(lab, cred_cluster);
+            let cred_ctx = lab.kube_context(cred_cluster)?;
 
             println!(
                 "{} Fetching push credentials from '{}/{}' on '{}'",
@@ -653,7 +651,7 @@ fn image_credentials(
             let _ = std::process::Command::new("kubectl")
                 .args([
                     "--context",
-                    &cred_ctx,
+                    cred_ctx,
                     "-n",
                     cred_namespace,
                     "wait",
@@ -666,7 +664,7 @@ fn image_credentials(
             let dockercfg_out = std::process::Command::new("kubectl")
                 .args([
                     "--context",
-                    &cred_ctx,
+                    cred_ctx,
                     "-n",
                     cred_namespace,
                     "get",

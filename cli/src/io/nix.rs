@@ -142,6 +142,15 @@ pub fn get_cluster_config_from_lab(
         })
 }
 
+pub fn get_cluster_spec_from_lab(
+    lab: &serde_json::Value,
+    cluster_name: &str,
+) -> Result<ClusterSpec> {
+    let config = get_cluster_config_from_lab(lab, cluster_name)?;
+    ClusterSpec::from_value(config)
+        .with_context(|| format!("parsing the evaluated config for cluster '{cluster_name}'"))
+}
+
 pub fn get_cluster_config_with_secrets(
     lab: &serde_json::Value,
     cluster_name: &str,
@@ -210,9 +219,10 @@ pub fn get_lab_config(ctx: &CataContext, lab_name: &str) -> Result<serde_json::V
     Ok(value)
 }
 
-pub fn eval_lab(ctx: &CataContext, lab_name: &str) -> Result<LabSpec> {
+pub fn get_lab_spec(ctx: &CataContext, lab_name: &str) -> Result<LabSpec> {
     let value = get_lab_config(ctx, lab_name)?;
-    LabSpec::from_value(value).context("Failed to parse lab config into LabSpec")
+    LabSpec::from_value(value)
+        .with_context(|| format!("parsing the evaluated config for lab '{lab_name}'"))
 }
 
 pub fn eval_cluster_from_lab(lab: &LabSpec, cluster_name: &str) -> Result<ClusterSpec> {

@@ -44,22 +44,7 @@ impl Default for EndpointPolicy {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct ExposedHost {
-    pub host: String,
-    pub tier: String,
-    pub namespace: String,
-    pub bundle: String,
-    #[serde(default)]
-    pub paths: Vec<String>,
-}
-
-impl ExposedHost {
-    pub fn probe_path(&self) -> &str {
-        self.paths.first().map_or("/", |p| p.as_str())
-    }
-}
+pub use crate::domain::ExposedHost;
 
 pub struct VerifyContext<'a> {
     pub lab_name: &'a str,
@@ -70,46 +55,31 @@ pub struct VerifyContext<'a> {
 
 impl VerifyContext<'_> {
     pub fn context_for(&self, cluster: &str) -> Option<&str> {
-        self.lab
-            .runtime_contexts
-            .get(cluster)
-            .map(String::as_str)
-            .filter(|c| !c.is_empty())
+        self.lab.kube_context(cluster).ok()
     }
 
-    pub fn namespaces_for(&self, cluster: &str) -> Vec<String> {
-        self.lab
-            .extra
-            .get("labNamespaces")
-            .and_then(|v| v.get(cluster))
-            .and_then(|v| v.as_array())
-            .map(|ns| {
-                ns.iter()
-                    .filter_map(|n| n.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default()
+    pub fn namespaces_for(&self, cluster: &str) -> &[String] {
+        self.lab.namespaces_for(cluster)
     }
 
     pub fn exposed_hosts(&self) -> Vec<(String, ExposedHost)> {
-        let mut out = Vec::new();
-        for (cluster, spec) in &self.lab.clusters {
-            let Some(hosts) = spec.extra.get("exposedHosts").and_then(|v| v.as_array()) else {
-                continue;
-            };
-            for host in hosts {
-                if let Ok(parsed) = serde_json::from_value::<ExposedHost>(host.clone()) {
-                    out.push((cluster.clone(), parsed));
-                }
-            }
-        }
+        let mut out: Vec<(String, ExposedHost)> = self
+            .lab
+            .clusters
+            .iter()
+            .flat_map(|(cluster, spec)| {
+                spec.exposed_hosts
+                    .iter()
+                    .map(move |host| (cluster.clone(), host.clone()))
+            })
+            .collect();
         out.sort_by(|a, b| a.1.host.cmp(&b.1.host));
         out.dedup_by(|a, b| a.1.host == b.1.host);
         out
     }
 
     pub fn ingress(&self) -> Option<(&'static str, u16)> {
-        let published: Vec<u16> = self.lab.services["proxy"]["ports"]
+        let published: Vec<u16> = self.lab.services.get("proxy")?["ports"]
             .as_array()?
             .iter()
             .filter_map(|p| p.as_str())
@@ -196,28 +166,95 @@ pub fn diag(
 mod tests {
     use super::*;
 
-    fn ctx_from(lab: serde_json::Value, config: VerifyConfig) -> (LabSpec, VerifyConfig) {
-        (
-            serde_json::from_value(lab).expect("test lab spec parses"),
-            config,
-        )
+    use serde_json::{Value, json};
+
+    fn merge(base: &mut Value, over: Value) {
+        match (base, over) {
+            (Value::Object(b), Value::Object(o)) => {
+                for (k, v) in o {
+                    merge(b.entry(k).or_insert(Value::Null), v);
+                }
+            }
+            (b, o) => *b = o,
+        }
     }
 
-    fn with(lab: serde_json::Value) -> (LabSpec, VerifyConfig) {
-        ctx_from(lab, VerifyConfig::default())
+    fn base_lab() -> Value {
+        json!({
+            "labName": "l",
+            "environment": "development",
+            "clusterNames": [],
+            "clusters": {},
+            "labNamespaces": {},
+            "network": { "name": "l", "dockerSubnet": "172.20.0.0/16" },
+            "dnsInfo": null,
+            "registryPort": null,
+            "registryUpstreams": [],
+            "labOwnedRegistries": [],
+            "opsToolPath": null,
+            "cd": { "strategy": "kapp", "bootstrap": "kubectl-ssa", "git": {} },
+            "secrets": { "envFile": null, "stores": {}, "managed": {}, "hostProjections": [] },
+            "deploymentPlan": [],
+            "teardownPlan": [],
+            "runtimeContexts": {},
+            "services": {},
+            "selfContained": { "eligible": true, "envFile": null, "reasons": [] },
+            "destroy": { "rescueHints": {} },
+            "verify": {},
+        })
+    }
+
+    fn base_cluster(name: &str) -> Value {
+        json!({
+            "name": name,
+            "labName": "l",
+            "provisioner": "k3d",
+            "provider": "docker",
+            "kubeContext": format!("k3d-{name}"),
+            "kubernetes": { "distribution": "k3s", "version": "1.31", "controlPlanes": 1, "workers": 0 },
+            "network": { "podSubnet": "10.244.0.0/16", "serviceSubnet": "10.96.0.0/12" },
+            "deploy": { "strategy": "kapp" },
+            "lifecycle": { "preProvision": [] },
+            "provisionerConfig": {
+                "k3d": { "clusterName": name, "image": null, "network": null,
+                         "noTraefik": true, "noServiceLB": false, "noFlannel": false,
+                         "ports": [], "extraApiServerArgs": [], "extraVolumes": [],
+                         "autoDeployManifests": [] },
+                "docker": { "clusterName": name, "waitTimeout": "10m",
+                            "colima": { "enable": true, "profile": "catallaxy", "cpu": 4, "disk": 60, "memory": 8 } },
+            },
+            "floes": {},
+            "exposedHosts": [],
+            "projections": {},
+        })
+    }
+
+    fn with(overrides: Value) -> (LabSpec, VerifyConfig) {
+        let mut lab = base_lab();
+        merge(&mut lab, overrides);
+        if let Some(clusters) = lab["clusters"].as_object_mut() {
+            for (name, cluster) in clusters.iter_mut() {
+                let mut full = base_cluster(name);
+                merge(&mut full, cluster.clone());
+                *cluster = full;
+            }
+        }
+        (
+            serde_json::from_value(lab).expect("test lab spec parses"),
+            VerifyConfig::default(),
+        )
     }
 
     #[test]
     fn exposed_hosts_are_collected_across_clusters_and_deduped() {
-        let (lab, config) = with(serde_json::json!({
-            "labName": "l",
+        let (lab, config) = with(json!({
             "clusterNames": ["mgmt", "apps"],
             "clusters": {
-                "mgmt": { "name": "mgmt", "exposedHosts": [
+                "mgmt": { "exposedHosts": [
                     { "host": "b.test", "tier": "public", "namespace": "n", "bundle": "x" },
                     { "host": "a.test", "tier": "internal", "namespace": "n", "bundle": "y" },
                 ]},
-                "apps": { "name": "apps", "exposedHosts": [
+                "apps": { "exposedHosts": [
                     { "host": "b.test", "tier": "public", "namespace": "n", "bundle": "z" },
                 ]},
             },
@@ -238,10 +275,9 @@ mod tests {
 
     #[test]
     fn a_lab_with_no_routes_has_nothing_to_probe() {
-        let (lab, config) = with(serde_json::json!({
-            "labName": "l",
+        let (lab, config) = with(json!({
             "clusterNames": ["app"],
-            "clusters": { "app": { "name": "app" } },
+            "clusters": { "app": {} },
         }));
         let ctx = VerifyContext {
             lab_name: "l",
@@ -254,8 +290,7 @@ mod tests {
 
     #[test]
     fn the_ingress_follows_the_proxy_ports() {
-        let plain = with(serde_json::json!({
-            "labName": "l",
+        let plain = with(json!({
             "services": { "proxy": { "ports": ["80:80"] } },
         }));
         let ctx = VerifyContext {
@@ -266,8 +301,7 @@ mod tests {
         };
         assert_eq!(ctx.ingress(), Some(("http", 80)));
 
-        let tls = with(serde_json::json!({
-            "labName": "l",
+        let tls = with(json!({
             "services": { "proxy": { "ports": ["80:80", "443:443"] } },
         }));
         let ctx = VerifyContext {
@@ -281,7 +315,7 @@ mod tests {
 
     #[test]
     fn a_lab_with_no_proxy_has_no_ingress_to_probe_through() {
-        let (lab, config) = with(serde_json::json!({ "labName": "l" }));
+        let (lab, config) = with(json!({}));
         let ctx = VerifyContext {
             lab_name: "l",
             lab: &lab,
@@ -293,8 +327,7 @@ mod tests {
 
     #[test]
     fn namespaces_come_from_the_lab_not_the_cluster() {
-        let (lab, config) = with(serde_json::json!({
-            "labName": "l",
+        let (lab, config) = with(json!({
             "clusterNames": ["app"],
             "labNamespaces": { "app": ["podinfo", "gateway"] },
         }));
@@ -304,14 +337,16 @@ mod tests {
             config: &config,
             package: None,
         };
-        assert_eq!(ctx.namespaces_for("app"), vec!["podinfo", "gateway"]);
+        assert_eq!(
+            ctx.namespaces_for("app").to_vec(),
+            vec!["podinfo", "gateway"]
+        );
         assert!(ctx.namespaces_for("nonexistent").is_empty());
     }
 
     #[test]
     fn an_empty_runtime_context_is_no_context_at_all() {
-        let (lab, config) = with(serde_json::json!({
-            "labName": "l",
+        let (lab, config) = with(json!({
             "clusterNames": ["app"],
             "runtimeContexts": { "app": "", "obs": "k3d-obs" },
         }));

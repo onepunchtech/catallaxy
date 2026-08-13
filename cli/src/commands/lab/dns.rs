@@ -6,6 +6,7 @@ use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::LabSpec;
 use crate::io;
 
 const RESOLVED_CONF_DIR: &str = "/etc/systemd/resolved.conf.d";
@@ -49,29 +50,25 @@ fn zone_is_shell_safe(zone: &str) -> bool {
 
 pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> Result<()> {
     let lab = crate::io::nix::get_lab_config(ctx, name)?;
+    let lab = LabSpec::from_value(lab).context("parsing the lab configuration")?;
 
-    let Some(dns_info) = lab.get("dnsInfo").filter(|v| !v.is_null()) else {
+    let Some(dns_info) = lab.dns_info.as_ref() else {
         println!(
             "{} No DNS configured (enable lab.dns to use local DNS resolution)",
             style(">>>").yellow()
         );
         return Ok(());
     };
-    let host = dns_info["host"].as_str().unwrap_or("127.0.0.1");
-    let port = dns_info["port"].as_u64().unwrap_or(5353);
-    let zone = dns_info["zone"].as_str().unwrap_or("lab.test");
-
-    let docker_subnet = lab
-        .pointer("/network/dockerSubnet")
-        .and_then(|v| v.as_str())
-        .unwrap_or("172.19.0.0/16");
+    let host = dns_info.host.as_str();
+    let port = u64::from(dns_info.port);
+    let zone = dns_info.zone.as_str();
 
     if teardown {
-        return dns_teardown(zone, docker_subnet).await;
+        return dns_teardown(zone).await;
     }
 
     if setup {
-        return dns_setup(host, port, zone, docker_subnet).await;
+        return dns_setup(host, port, zone).await;
     }
 
     println!("{} Lab DNS Configuration", style("catallaxy").cyan().bold());
@@ -120,7 +117,7 @@ pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> 
     Ok(())
 }
 
-pub async fn dns_setup(host: &str, port: u64, zone: &str, _docker_subnet: &str) -> Result<()> {
+pub async fn dns_setup(host: &str, port: u64, zone: &str) -> Result<()> {
     println!(
         "{} Setting up DNS resolution for *.{}",
         style(">>>").cyan(),
@@ -571,7 +568,7 @@ fn dns_setup_systemd_resolved(host: &str, port: u64, zone: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn dns_teardown(zone: &str, _docker_subnet: &str) -> Result<()> {
+pub async fn dns_teardown(zone: &str) -> Result<()> {
     println!(
         "{} Removing DNS configuration for *.{}",
         style(">>>").cyan(),

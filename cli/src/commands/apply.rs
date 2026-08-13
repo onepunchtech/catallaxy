@@ -8,8 +8,8 @@ use console::style;
 use serde::Deserialize;
 
 use crate::config::Context as CataContext;
-use crate::domain::ClusterSpec;
 use crate::domain::secrets::{self, SecretsSpec};
+use crate::domain::{ClusterSpec, LabSpec};
 use crate::io;
 use crate::io::nix;
 
@@ -31,18 +31,32 @@ pub struct ApplyArgs {
         help = "Apply directly even when the cluster's deploy strategy is GitOps"
     )]
     pub force: bool,
+}
 
-    #[arg(skip)]
-    pub manifests_dir: Option<String>,
-
-    #[arg(skip)]
+pub struct ApplyRequest<'a> {
+    pub cluster: Option<&'a str>,
+    pub bundle: Option<&'a str>,
+    pub dry_run: bool,
+    pub force: bool,
+    pub manifests_dir: Option<&'a str>,
     pub secrets_cache: Option<SecretsCache>,
+    pub lab: Option<&'a LabSpec>,
+    pub kube_context_override: Option<&'a str>,
+}
 
-    #[arg(skip)]
-    pub lab_config: Option<serde_json::Value>,
-
-    #[arg(skip)]
-    pub kube_context_override: Option<String>,
+impl<'a> ApplyRequest<'a> {
+    pub fn for_cluster(cluster: &'a str) -> Self {
+        ApplyRequest {
+            cluster: Some(cluster),
+            bundle: None,
+            dry_run: false,
+            force: false,
+            manifests_dir: None,
+            secrets_cache: None,
+            lab: None,
+            kube_context_override: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -68,13 +82,8 @@ pub struct ProjectionKeyConfig {
     pub json_key: Option<String>,
 }
 
-pub fn parse_projections(config: &serde_json::Value) -> HashMap<String, ProjectionConfig> {
-    let projs_value = match config.get("projections") {
-        Some(v) => v,
-        None => return HashMap::new(),
-    };
-
-    match serde_json::from_value(projs_value.clone()) {
+pub fn parse_projections(projections: &serde_json::Value) -> HashMap<String, ProjectionConfig> {
+    match serde_json::from_value(projections.clone()) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Warning: failed to parse projections: {e}");
@@ -84,7 +93,24 @@ pub fn parse_projections(config: &serde_json::Value) -> HashMap<String, Projecti
 }
 
 pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
-    let cluster = ctx.resolve_cluster_name(args.cluster.as_deref())?;
+    apply(
+        ctx,
+        ApplyRequest {
+            cluster: args.cluster.as_deref(),
+            bundle: args.bundle.as_deref(),
+            dry_run: args.dry_run,
+            force: args.force,
+            manifests_dir: None,
+            secrets_cache: None,
+            lab: None,
+            kube_context_override: None,
+        },
+    )
+    .await
+}
+
+pub async fn apply(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<()> {
+    let cluster = ctx.resolve_cluster_name(args.cluster)?;
 
     println!(
         "{} Applying to cluster '{cluster}'",
@@ -92,34 +118,30 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
     );
     println!();
 
-    let config = if let Some(ref lab) = args.lab_config {
-        let mut cluster_config = nix::get_cluster_config_from_lab(lab, &cluster)?;
-        if let Some(secrets) = lab.get("secrets") {
-            cluster_config["secrets"] = secrets.clone();
+    let owned_lab;
+    let lab = match args.lab {
+        Some(lab) => lab,
+        None => {
+            let lab_name = ctx.resolve_lab_name(None)?;
+            owned_lab = nix::get_lab_spec(ctx, &lab_name)?;
+            &owned_lab
         }
-        cluster_config
-    } else {
-        load_cluster_config(ctx, &cluster, args.manifests_dir.as_deref())?
     };
-    let cluster_spec = ClusterSpec::from_value(config.clone()).ok();
-    let strategy = cluster_spec
-        .as_ref()
-        .and_then(|c| c.deploy_strategy())
-        .unwrap_or("kapp");
+    let spec = lab.cluster(&cluster)?;
 
-    if (strategy == "argocd" || strategy == "fleet") && !args.force {
+    let strategy = spec.deploy.strategy;
+    if strategy.is_gitops() && !args.force {
         return Err(deployed_through_git(strategy));
     }
 
-    let kube_context = resolve_kube_context(
-        cluster_spec.as_ref(),
-        &cluster,
-        args.kube_context_override.as_deref(),
-    );
+    let kube_context = args
+        .kube_context_override
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&spec.kube_context);
 
-    let manifests_path = if let Some(ref dir) = args.manifests_dir {
+    let manifests_path = if let Some(dir) = args.manifests_dir {
         println!("{} Using pre-built manifests: {dir}", style(">>>").green());
-        dir.clone()
+        dir.to_string()
     } else {
         println!("{} Building manifests...", style(">>>").cyan());
         let lab_name = ctx.resolve_lab_name(None)?;
@@ -136,106 +158,7 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
         manifests_path.clone()
     };
 
-    if args.force {
-        apply_kapp(ctx, &kube_context, &effective_path, &args, &config).await
-    } else {
-        match strategy {
-            "kapp" => apply_kapp(ctx, &kube_context, &effective_path, &args, &config).await,
-            "argocd" | "fleet" => Err(deployed_through_git(strategy)),
-            _ => bail!("Unknown deploy strategy: {strategy}"),
-        }
-    }
-}
-
-fn resolve_kube_context(
-    spec: Option<&ClusterSpec>,
-    cluster: &str,
-    override_: Option<&str>,
-) -> String {
-    use crate::domain::ProvisionerKind;
-
-    if let Some(ctx) = override_.filter(|s| !s.is_empty()) {
-        return ctx.to_string();
-    }
-    let Some(spec) = spec else {
-        return cluster.to_string();
-    };
-    if let Some(ctx) = spec.kube_context.as_deref().filter(|s| !s.is_empty()) {
-        return ctx.to_string();
-    }
-    match spec.provisioner {
-        ProvisionerKind::K3d => {
-            let default_name = format!("catallaxy-{cluster}");
-            let k3d_name = spec.k3d_cluster_name().unwrap_or(&default_name);
-            format!("k3d-{k3d_name}")
-        }
-        ProvisionerKind::Talos => format!("{cluster}-admin@{cluster}"),
-        _ => cluster.to_string(),
-    }
-}
-
-fn load_cluster_config(
-    ctx: &CataContext,
-    cluster: &str,
-    manifests_dir: Option<&str>,
-) -> Result<serde_json::Value> {
-    if let Some(dir) = manifests_dir {
-        let manifests_path = Path::new(dir);
-        let pkg_root = manifests_path
-            .ancestors()
-            .find(|p| p.join("metadata.json").exists());
-
-        if let Some(root) = pkg_root {
-            let metadata_path = root.join("metadata.json");
-            if let Ok(content) = fs::read_to_string(&metadata_path)
-                && let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&content)
-                && let Some(cluster_meta) = metadata.pointer(&format!("/clusters/{cluster}"))
-            {
-                let mut config = serde_json::json!({});
-                if let Some(projs) = cluster_meta.get("projections") {
-                    config["projections"] = projs.clone();
-                }
-                if let Some(secrets) = metadata.get("secrets") {
-                    config["secrets"] = secrets.clone();
-                }
-                config["labName"] = serde_json::Value::String(
-                    metadata
-                        .get("name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("default")
-                        .to_string(),
-                );
-                if let Ok(nix_config) = load_cluster_config_from_nix(ctx, cluster) {
-                    let mut merged = nix_config;
-                    if let Some(projs) = cluster_meta.get("projections") {
-                        merged["projections"] = projs.clone();
-                    }
-                    return Ok(merged);
-                }
-                return Ok(config);
-            }
-        }
-    }
-
-    load_cluster_config_from_nix(ctx, cluster)
-}
-
-fn load_cluster_config_from_nix(ctx: &CataContext, cluster: &str) -> Result<serde_json::Value> {
-    let config = ctx
-        .resolve_lab_name(None)
-        .ok()
-        .and_then(|lab_name| {
-            nix::get_lab_config(ctx, &lab_name).ok().and_then(|lab| {
-                let mut cluster_config = nix::get_cluster_config_from_lab(&lab, cluster).ok()?;
-                if let Some(secrets) = lab.get("secrets") {
-                    cluster_config["secrets"] = secrets.clone();
-                }
-                Some(cluster_config)
-            })
-        })
-        .or_else(|| nix::get_cluster_config(ctx, cluster).ok())
-        .ok_or_else(|| anyhow::anyhow!("Failed to load config for cluster '{cluster}'"))?;
-    Ok(config)
+    apply_kapp(ctx, kube_context, &effective_path, &args, lab, spec).await
 }
 
 fn kapp_app_name(bundle_key: &str) -> String {
@@ -297,8 +220,9 @@ async fn apply_kapp(
     ctx: &CataContext,
     kube_context: &str,
     manifests_path: &str,
-    args: &ApplyArgs,
-    config: &serde_json::Value,
+    args: &ApplyRequest<'_>,
+    lab: &LabSpec,
+    spec: &ClusterSpec,
 ) -> Result<()> {
     if !io::kubectl::api_reachable(kube_context) {
         bail!("Cannot reach cluster (context: {kube_context}). Is it running?");
@@ -308,14 +232,14 @@ async fn apply_kapp(
     let timeout = read_deploy_timeout(cluster_manifests);
     let mut bundles = discover_bundles(cluster_manifests)?;
 
-    if let Some(ref key) = args.bundle {
-        bundles.retain(|b| b.key == *key);
+    if let Some(key) = args.bundle {
+        bundles.retain(|b| b.key == key);
         if bundles.is_empty() {
             bail!("Bundle '{key}' not found in rendered manifests");
         }
     }
 
-    let projections = parse_projections(config);
+    let projections = parse_projections(&spec.projections);
     if !projections.is_empty() {
         println!(
             "{} Found {} projection(s){}",
@@ -328,8 +252,6 @@ async fn apply_kapp(
             },
         );
     }
-    let cluster_name = ctx.resolve_cluster_name(args.cluster.as_deref())?;
-
     if args.dry_run {
         println!("{} Dry run: would deploy:", style("Note:").yellow());
         for b in &bundles {
@@ -346,15 +268,17 @@ async fn apply_kapp(
         inject_projections(
             ctx,
             kube_context,
-            &cluster_name,
-            config,
+            &ProjectionSource {
+                lab_name: &lab.lab_name,
+                secrets: &lab.secrets,
+                pre_cache: args.secrets_cache.as_deref(),
+            },
             &ordered,
             &timeout,
-            args.secrets_cache.as_deref(),
         )?;
     }
 
-    cleanup_bootstrap_resources(kube_context, config);
+    cleanup_bootstrap_resources(kube_context, spec);
 
     for bundle in &bundles {
         println!(
@@ -404,50 +328,42 @@ async fn apply_kapp(
 fn inject_projections(
     ctx: &CataContext,
     kube_context: &str,
-    _cluster_name: &str,
-    config: &serde_json::Value,
+    source: &ProjectionSource<'_>,
     projections: &[(String, ProjectionConfig)],
     timeout: &str,
-    pre_cache: Option<&secrets::SecretsByStore>,
 ) -> Result<()> {
-    inject_projections_with(
-        ctx,
-        kube_context,
-        config,
-        projections,
-        pre_cache,
-        |secret_dir, secret_name| {
-            io::kapp::deploy(
-                ctx,
-                kube_context,
-                &format!("secrets-{secret_name}"),
-                &secret_dir.display().to_string(),
-                timeout,
-            )
-        },
-    )
+    inject_projections_with(ctx, source, projections, |secret_dir, secret_name| {
+        io::kapp::deploy(
+            ctx,
+            kube_context,
+            &format!("secrets-{secret_name}"),
+            &secret_dir.display().to_string(),
+            timeout,
+        )
+    })
+}
+
+pub struct ProjectionSource<'a> {
+    pub lab_name: &'a str,
+    pub secrets: &'a SecretsSpec,
+    pub pre_cache: Option<&'a secrets::SecretsByStore>,
 }
 
 pub fn inject_projections_with<F>(
     ctx: &CataContext,
-    _kube_context: &str,
-    config: &serde_json::Value,
+    source: &ProjectionSource<'_>,
     projections: &[(String, ProjectionConfig)],
-    pre_cache: Option<&secrets::SecretsByStore>,
     mut apply_fn: F,
 ) -> Result<()>
 where
     F: FnMut(&std::path::Path, &str) -> Result<()>,
 {
-    let lab_name = config
-        .get("labName")
-        .and_then(|v| v.as_str())
-        .map(String::from)
-        .or_else(|| ctx.resolve_lab_name(None).ok())
-        .unwrap_or_else(|| "default".to_string());
-
+    let ProjectionSource {
+        lab_name,
+        secrets: spec,
+        pre_cache,
+    } = source;
     let secrets_tmp = tempfile::tempdir()?;
-    let spec = SecretsSpec::from_lab_config(config)?;
 
     let mut store_cache: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
 
@@ -459,11 +375,11 @@ where
         } else if let Some(cached) = store_cache.get(store_name) {
             cached.clone()
         } else {
-            let data = io::secrets::load_store(ctx, &lab_name, store_name, &spec)?;
-            let problems = secrets::validate_store(&spec, store_name, &data);
+            let data = io::secrets::load_store(ctx, lab_name, store_name, spec)?;
+            let problems = secrets::validate_store(spec, store_name, &data);
             if !problems.is_empty() {
                 bail!(secrets::describe_store_problems(
-                    &spec, &lab_name, store_name, &problems
+                    spec, lab_name, store_name, &problems
                 ));
             }
             store_cache.insert(store_name.to_string(), data.clone());
@@ -482,7 +398,7 @@ where
             anyhow::anyhow!(
                 "projection '{proj_name}' references managed secret '{}', which store '{store_name}' does not carry. {}",
                 proj.source,
-                secrets::describe_store_source(&spec, &lab_name, store_name),
+                secrets::describe_store_source(spec, lab_name, store_name),
             )
         })?;
         let mut k8s_data: HashMap<String, String> = HashMap::new();
@@ -494,8 +410,8 @@ where
                     key_def.from,
                     proj.source,
                     secrets::describe_missing_value(
-                        &spec,
-                        &lab_name,
+                        spec,
+                        lab_name,
                         store_name,
                         &proj.source,
                         &key_def.from
@@ -542,12 +458,8 @@ where
     Ok(())
 }
 
-fn cleanup_bootstrap_resources(kube_context: &str, config: &serde_json::Value) {
-    let auto_deploy = config
-        .pointer("/provisionerConfig/k3d/autoDeployManifests")
-        .and_then(|v| v.as_array());
-
-    if auto_deploy.is_none_or(|a| a.is_empty()) {
+fn cleanup_bootstrap_resources(kube_context: &str, spec: &ClusterSpec) {
+    if spec.provisioner_config.k3d.auto_deploy_manifests.is_empty() {
         return;
     }
 
@@ -618,7 +530,8 @@ fn cleanup_bootstrap_resources(kube_context: &str, config: &serde_json::Value) {
     }
 }
 
-fn deployed_through_git(strategy: &str) -> anyhow::Error {
+fn deployed_through_git(strategy: crate::domain::DeployStrategy) -> anyhow::Error {
+    let strategy = strategy.tag();
     anyhow::anyhow!(
         "This lab uses '{strategy}' strategy. Manifests must be deployed via Git.\n\
          Use 'cata lab publish' to push manifests to the Git repository.\n\

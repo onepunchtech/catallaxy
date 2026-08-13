@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Result, bail};
 use console::style;
 
+use crate::domain::BootstrapTool;
 use crate::io;
 use crate::plan::StepContext;
 
@@ -67,8 +68,8 @@ pub async fn run(
         style(">>>").cyan(),
         cluster,
     );
-    let bootstrap_config = crate::io::nix::get_cluster_config_from_lab(sctx.lab, cluster)?;
-    crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster, &bootstrap_config)?;
+    let bootstrap_spec = sctx.lab.cluster(cluster)?;
+    crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster, bootstrap_spec)?;
 
     println!(
         "{} Pivot complete: '{}' is now running in the cloud",
@@ -84,9 +85,7 @@ async fn apply_stage1_to_target(
     cluster_manifests: &str,
     target_ctx: &str,
 ) -> Result<()> {
-    if sctx.bootstrap == "kubectl-ssa" {
-        let cluster_config =
-            crate::io::nix::get_cluster_config_with_secrets(sctx.lab, cluster).ok();
+    if sctx.bootstrap == BootstrapTool::KubectlSsa {
         return io::ssa::apply_manifest_root(
             sctx.ctx,
             io::ssa::ApplyManifests {
@@ -95,7 +94,9 @@ async fn apply_stage1_to_target(
                 field_manager: "catallaxy-bootstrap",
                 wait_timeout_seconds: 600,
                 dry_run: sctx.dry_run,
-                lab_config: cluster_config.as_ref(),
+                cluster: sctx.lab.cluster(cluster).ok(),
+                lab_name: sctx.lab_name,
+                secrets_spec: &sctx.lab.secrets,
                 secrets_cache: sctx.secrets_cache.as_ref(),
             },
         );
@@ -189,9 +190,8 @@ fn cleanup_leftover_bootstrap(
         "{} Cleaning up leftover bootstrap cluster '{bootstrap_ctx}'...",
         style(">>>").cyan(),
     );
-    let bootstrap_config = crate::io::nix::get_cluster_config_from_lab(sctx.lab, cluster)?;
-    if let Err(e) =
-        crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster, &bootstrap_config)
+    let bootstrap_spec = sctx.lab.cluster(cluster)?;
+    if let Err(e) = crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster, bootstrap_spec)
     {
         println!(
             "{} Failed to clean up bootstrap cluster '{bootstrap_ctx}': {e}",

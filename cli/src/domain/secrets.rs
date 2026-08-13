@@ -73,6 +73,19 @@ pub struct SecretsSpec {
     pub managed: BTreeMap<String, ManagedSecret>,
     #[serde(default)]
     pub env_file: Option<String>,
+    #[serde(default)]
+    pub host_projections: Vec<HostProjection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostProjection {
+    pub secret_name: String,
+    pub store: String,
+    pub key: String,
+    pub host_path: String,
+    #[serde(default)]
+    pub kind: SecretKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,6 +5,7 @@ use clap::Subcommand;
 use console::style;
 
 use crate::config::Context as CataContext;
+use crate::domain::LabSpec;
 use crate::io;
 
 #[derive(Subcommand)]
@@ -34,44 +35,24 @@ async fn show(ctx: &CataContext) -> Result<()> {
     );
     println!();
 
-    if let Some(clusters) = lab["clusterNames"].as_array() {
-        for cluster_name in clusters {
-            let cluster_name = cluster_name.as_str().unwrap_or("?");
-            if let Ok(config) = crate::io::nix::get_cluster_config(ctx, cluster_name) {
-                let context = resolve_kube_context(&config, cluster_name);
-                let reachable = io::kubectl::api_reachable(&context);
-                let status = if reachable {
-                    style("reachable").green()
-                } else {
-                    style("not reachable").yellow()
-                };
-                println!(
-                    "  {} → {} [{}]",
-                    style(cluster_name).cyan(),
-                    context,
-                    status
-                );
-            }
-        }
+    let lab = LabSpec::from_value(lab).context("parsing the lab configuration")?;
+
+    for cluster_name in &lab.cluster_names {
+        let context = lab.kube_context(cluster_name)?;
+        let status = if io::kubectl::api_reachable(context) {
+            style("reachable").green()
+        } else {
+            style("not reachable").yellow()
+        };
+        println!(
+            "  {} → {} [{}]",
+            style(cluster_name).cyan(),
+            context,
+            status
+        );
     }
 
     Ok(())
-}
-
-fn resolve_kube_context(config: &serde_json::Value, cluster_name: &str) -> String {
-    let is_k3d = config["provisioner"].as_str().unwrap_or("k3d") == "k3d";
-
-    let default_name = format!("catallaxy-{cluster_name}");
-
-    if is_k3d {
-        let k3d_name = config
-            .pointer("/provisionerConfig/k3d/clusterName")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&default_name);
-        format!("k3d-{k3d_name}")
-    } else {
-        cluster_name.to_string()
-    }
 }
 
 pub fn cleanup_kubeconfig(ctx: &CataContext, cluster_name: &str) -> Result<()> {

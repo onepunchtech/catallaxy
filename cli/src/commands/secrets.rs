@@ -359,10 +359,10 @@ fn env_store_hint(spec: &SecretsSpec, store: &str) -> String {
 pub fn load_secrets_cache(
     ctx: &CataContext,
     lab_name: &str,
-    lab: &serde_json::Value,
+    spec: &SecretsSpec,
     banner: &str,
 ) -> Result<Option<SecretsCache>> {
-    let spec = SecretsSpec::from_lab_config(lab)?;
+    let host_projections = &spec.host_projections;
     let store_names: Vec<String> = spec
         .stores
         .iter()
@@ -379,11 +379,11 @@ pub fn load_secrets_cache(
 
     let mut cache = HashMap::new();
     for store_name in &store_names {
-        let values = crate::io::secrets::load_store(ctx, lab_name, store_name, &spec)?;
-        let problems = validate_store(&spec, store_name, &values);
+        let values = crate::io::secrets::load_store(ctx, lab_name, store_name, spec)?;
+        let problems = validate_store(spec, store_name, &values);
         if !problems.is_empty() {
             bail!(describe_store_problems(
-                &spec, lab_name, store_name, &problems
+                spec, lab_name, store_name, &problems
             ));
         }
         println!(
@@ -396,7 +396,7 @@ pub fn load_secrets_cache(
     }
 
     let cache: SecretsCache = std::sync::Arc::new(cache);
-    crate::commands::lab::state::project_host_secrets(lab, &cache, lab_name)?;
+    crate::commands::lab::state::project_host_secrets(host_projections, &cache, lab_name)?;
 
     Ok(Some(cache))
 }

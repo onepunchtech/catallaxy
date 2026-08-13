@@ -3,6 +3,7 @@ use std::process::Command;
 use anyhow::Result;
 use console::style;
 
+use crate::domain::{ClusterSpec, ProvisionerKind};
 use crate::io;
 use crate::plan::StepContext;
 
@@ -14,13 +15,13 @@ pub async fn run(
 ) -> Result<()> {
     let mut step_failed = false;
 
-    match crate::io::nix::get_cluster_config_from_lab(sctx.lab, cluster_name) {
-        Ok(config) => {
-            if skip_if_missing && k3d_already_gone(sctx, cluster_name, &config) {
+    match sctx.lab.cluster(cluster_name) {
+        Ok(spec) => {
+            if skip_if_missing && k3d_already_gone(sctx, spec) {
                 return Ok(());
             }
             if let Err(e) =
-                crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster_name, &config)
+                crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster_name, spec)
             {
                 step_failed = true;
                 println!(
@@ -63,20 +64,12 @@ pub async fn run(
     Ok(())
 }
 
-fn k3d_already_gone(
-    sctx: &StepContext<'_>,
-    cluster_name: &str,
-    config: &serde_json::Value,
-) -> bool {
-    let provisioner = config.pointer("/provisioner").and_then(|v| v.as_str());
-    if provisioner != Some("k3d") {
+fn k3d_already_gone(sctx: &StepContext<'_>, spec: &ClusterSpec) -> bool {
+    if spec.provisioner != ProvisionerKind::K3d {
         return false;
     }
-    let cluster_short = config
-        .pointer("/provisionerConfig/k3d/clusterName")
-        .and_then(|v| v.as_str())
-        .unwrap_or(cluster_name);
-    let docker_host = crate::commands::cluster::resolve_docker_host(sctx.ctx, config)
+    let cluster_short = spec.provisioner_config.k3d.cluster_name.as_str();
+    let docker_host = crate::commands::cluster::resolve_docker_host(sctx.ctx, spec)
         .ok()
         .flatten();
     if io::k3d::cluster_exists(cluster_short, docker_host.as_deref()) {

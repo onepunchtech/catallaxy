@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use console::style;
 
+use crate::domain::{BootstrapTool, DeployStrategy};
 use crate::io;
 use crate::plan::StepContext;
 
@@ -14,7 +15,7 @@ pub async fn run(
 ) -> Result<()> {
     let subdir = if bootstrap {
         "stage1"
-    } else if sctx.strategy == "kapp" {
+    } else if sctx.strategy == DeployStrategy::Kapp {
         "manifests"
     } else {
         "bootstrap"
@@ -30,11 +31,11 @@ pub async fn run(
         return Ok(());
     }
 
-    if sctx.bootstrap == "kubectl-ssa" {
-        let kube_context = kube_context_override.map(String::from).unwrap_or_else(|| {
-            crate::commands::lab::state::resolve_cluster_context(sctx.lab, target)
-        });
-        let cluster_config = crate::io::nix::get_cluster_config_with_secrets(sctx.lab, target).ok();
+    if sctx.bootstrap == BootstrapTool::KubectlSsa {
+        let kube_context = match kube_context_override {
+            Some(override_) => override_.to_string(),
+            None => sctx.lab.kube_context(target)?.to_string(),
+        };
         return io::ssa::apply_manifest_root(
             sctx.ctx,
             io::ssa::ApplyManifests {
@@ -43,7 +44,9 @@ pub async fn run(
                 field_manager: "catallaxy-bootstrap",
                 wait_timeout_seconds: 600,
                 dry_run: sctx.dry_run,
-                lab_config: cluster_config.as_ref(),
+                cluster: sctx.lab.cluster(target).ok(),
+                lab_name: sctx.lab_name,
+                secrets_spec: &sctx.lab.secrets,
                 secrets_cache: sctx.secrets_cache.as_ref(),
             },
         );
