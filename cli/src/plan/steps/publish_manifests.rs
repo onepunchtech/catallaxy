@@ -10,5 +10,5 @@ pub async fn run(sctx: &StepContext<'_>) -> Result<()> {
              Configure it in your lab (see modules/lab/types.nix cd.git)."
         );
     }
-    crate::commands::lab::publish::publish(sctx.ctx, sctx.lab_name, false, None, sctx.dry_run).await
+    crate::publish::publish(sctx.ctx, sctx.lab_name, false, None, sctx.dry_run).await
 }

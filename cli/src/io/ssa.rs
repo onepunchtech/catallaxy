@@ -8,11 +8,11 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::commands::apply::SecretsCache;
-use crate::commands::apply::{
+use crate::apply::{
     ProjectionConfig, ProjectionSource, inject_projections_with, parse_projections,
 };
 use crate::config::Context as CataContext;
+use crate::domain::SecretsCache;
 use crate::domain::{ClusterSpec, SecretsSpec};
 use crate::io;
 

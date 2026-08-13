@@ -10,7 +10,7 @@ pub async fn run(sctx: &StepContext<'_>, name: &str, _provisioner: &str) -> Resu
     let registries_yaml = registry_dir.join("registries.yaml");
     let registries_yaml = registries_yaml.exists().then_some(registries_yaml);
 
-    crate::commands::cluster::provision_cluster_with_registry(
+    crate::provision::provision_cluster_with_registry(
         sctx.ctx,
         name,
         spec,

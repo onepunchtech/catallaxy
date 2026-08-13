@@ -650,8 +650,8 @@ fn load_stores_upfront(
     ctx: &CataContext,
     lab_name: &str,
     lab: &LabSpec,
-) -> Result<Option<crate::commands::apply::SecretsCache>> {
-    crate::commands::secrets::load_secrets_cache(
+) -> Result<Option<crate::domain::SecretsCache>> {
+    crate::io::secrets::load_secrets_cache(
         ctx,
         lab_name,
         &lab.secrets,

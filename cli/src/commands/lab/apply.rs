@@ -14,7 +14,7 @@ pub async fn run(
 
     println!("{} Applying lab '{name}'", style("catallaxy").cyan().bold());
 
-    let secrets_cache = crate::commands::secrets::load_secrets_cache(
+    let secrets_cache = crate::io::secrets::load_secrets_cache(
         ctx,
         name,
         &lab.secrets,
@@ -26,16 +26,16 @@ pub async fn run(
 
     for cluster_name in &lab.cluster_names {
         let cluster_manifests = format!("{lab_package}/manifests/{cluster_name}");
-        crate::commands::apply::apply(
+        crate::apply::apply(
             ctx,
-            crate::commands::apply::ApplyRequest {
+            crate::apply::ApplyRequest {
                 bundle: bundle.as_deref(),
                 dry_run,
                 force,
                 manifests_dir: Some(&cluster_manifests),
                 secrets_cache: secrets_cache.clone(),
                 lab: Some(&lab),
-                ..crate::commands::apply::ApplyRequest::for_cluster(cluster_name)
+                ..crate::apply::ApplyRequest::for_cluster(cluster_name)
             },
         )
         .await?;

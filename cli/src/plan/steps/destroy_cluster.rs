@@ -20,9 +20,7 @@ pub async fn run(
             if skip_if_missing && k3d_already_gone(sctx, spec) {
                 return Ok(());
             }
-            if let Err(e) =
-                crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster_name, spec)
-            {
+            if let Err(e) = crate::provision::deprovision_cluster(sctx.ctx, cluster_name, spec) {
                 step_failed = true;
                 println!(
                     "{} Failed to destroy '{}': {}",
@@ -47,7 +45,7 @@ pub async fn run(
         step_failed = true;
     }
 
-    if let Err(e) = crate::commands::kubeconfig::cleanup_kubeconfig(sctx.ctx, cluster_name) {
+    if let Err(e) = crate::io::kubectl::cleanup_kubeconfig(cluster_name) {
         println!(
             "{} Failed to cleanup kubeconfig for '{}': {}",
             style("Warning:").yellow(),
@@ -69,7 +67,7 @@ fn k3d_already_gone(sctx: &StepContext<'_>, spec: &ClusterSpec) -> bool {
         return false;
     }
     let cluster_short = spec.provisioner_config.k3d.cluster_name.as_str();
-    let docker_host = crate::commands::cluster::resolve_docker_host(sctx.ctx, spec)
+    let docker_host = crate::provision::resolve_docker_host(sctx.ctx, spec)
         .ok()
         .flatten();
     if io::k3d::cluster_exists(cluster_short, docker_host.as_deref()) {

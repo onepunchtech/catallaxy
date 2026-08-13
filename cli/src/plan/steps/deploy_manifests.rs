@@ -58,16 +58,16 @@ pub async fn run(
         target
     );
 
-    crate::commands::apply::apply(
+    crate::apply::apply(
         sctx.ctx,
-        crate::commands::apply::ApplyRequest {
+        crate::apply::ApplyRequest {
             dry_run: sctx.dry_run,
             force: true,
             manifests_dir: Some(&cluster_manifests),
             secrets_cache: sctx.secrets_cache.clone(),
             lab: Some(sctx.lab),
             kube_context_override,
-            ..crate::commands::apply::ApplyRequest::for_cluster(target)
+            ..crate::apply::ApplyRequest::for_cluster(target)
         },
     )
     .await

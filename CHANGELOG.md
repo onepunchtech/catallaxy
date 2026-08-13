@@ -250,6 +250,19 @@ The format is based on
   `"deployment"` and every caller that passed `"deploy"` had been agreeing
   by accident: both fell through to the same arm, and so would a typo.
 
+- **`commands/` is only commands now.** The step implementations had been
+  calling up into it for the work itself: applying manifests, provisioning a
+  cluster, loading the secret stores, publishing to git, warming the image
+  cache, cleaning up a kubeconfig. The command modules were where that code
+  happened to be written first, not where it belonged, and the plan layer
+  reaching upward for it is backwards from what the layering claims.
+
+  Those became `apply/`, `provision/`, `publish/`, and additions to
+  `images/`, `io/secrets` and `io::kubectl`. What is left under `commands/`
+  parses arguments and calls one of them. Nothing outside `commands/` refers
+  to `crate::commands` any more, which is the property that was worth
+  having: the plan can be read without reading the CLI.
+
 - **The host-side modules moved out of `commands/` into `host/`.**
   `services.rs`, `pki.rs`, `state.rs` and `dns.rs` sat under
   `commands/lab/`, but their callers were plan steps and the verifier, not

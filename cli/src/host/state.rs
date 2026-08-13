@@ -57,7 +57,7 @@ pub fn lab_state_dir(lab_name: &str) -> PathBuf {
 
 pub fn project_host_secrets(
     projections: &[HostProjection],
-    cache: &crate::commands::apply::SecretsCache,
+    cache: &crate::domain::SecretsCache,
     lab_name: &str,
 ) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
-use crate::commands::apply::SecretsCache;
 use crate::config::Context as CataContext;
+use crate::domain::SecretsCache;
 use crate::domain::{BootstrapTool, DeployStrategy, LabSpec};
 
 pub struct StepContext<'a> {

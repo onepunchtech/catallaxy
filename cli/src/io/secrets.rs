@@ -1,7 +1,15 @@
+use std::path::PathBuf;
+
 use anyhow::{Result, bail};
+use console::style;
 
 use crate::config::Context as CataContext;
-use crate::domain::secrets::{Backend, EnvVarBinding, SecretsSpec, StoreValues};
+use std::collections::HashMap;
+
+use crate::domain::SecretsCache;
+use crate::domain::secrets::{
+    Backend, EnvVarBinding, SecretsSpec, StoreValues, describe_store_problems, validate_store,
+};
 
 pub fn load_store(
     ctx: &CataContext,
@@ -11,7 +19,7 @@ pub fn load_store(
 ) -> Result<StoreValues> {
     match spec.backend_of(store) {
         Backend::Sops => {
-            let path = crate::commands::secrets::store_file_path(ctx, lab_name, store);
+            let path = store_file_path(ctx, lab_name, store);
             if !path.exists() {
                 bail!(
                     "Secret store '{store}' not found at {}. Run `cata secrets generate` first.",
@@ -46,6 +54,71 @@ fn read_env_store_with(
         }
     }
     values
+}
+
+pub fn store_file_path(ctx: &CataContext, lab_name: &str, store_name: &str) -> PathBuf {
+    let flake_root = PathBuf::from(ctx.flake_uri());
+    let filename = format!("{store_name}.enc.yaml");
+
+    let primary = flake_root.join("secrets").join(lab_name).join(&filename);
+    if primary.exists() {
+        return primary;
+    }
+
+    let fallback = flake_root
+        .join("examples/labs/secrets")
+        .join(lab_name)
+        .join(&filename);
+    if fallback.exists() {
+        return fallback;
+    }
+
+    primary
+}
+
+pub fn load_secrets_cache(
+    ctx: &CataContext,
+    lab_name: &str,
+    spec: &SecretsSpec,
+    banner: &str,
+) -> Result<Option<SecretsCache>> {
+    let host_projections = &spec.host_projections;
+    let store_names: Vec<String> = spec
+        .stores
+        .iter()
+        .filter(|(_, store)| store.backend.readable_here())
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    if store_names.is_empty() {
+        return Ok(None);
+    }
+
+    println!();
+    println!("{} {banner}", style(">>>").cyan());
+
+    let mut cache = HashMap::new();
+    for store_name in &store_names {
+        let values = crate::io::secrets::load_store(ctx, lab_name, store_name, spec)?;
+        let problems = validate_store(spec, store_name, &values);
+        if !problems.is_empty() {
+            bail!(describe_store_problems(
+                spec, lab_name, store_name, &problems
+            ));
+        }
+        println!(
+            "{} Loaded store '{}' ({})",
+            style(">>>").green(),
+            store_name,
+            spec.backend_of(store_name).as_str(),
+        );
+        cache.insert(store_name.clone(), values);
+    }
+
+    let cache: SecretsCache = std::sync::Arc::new(cache);
+    crate::host::state::project_host_secrets(host_projections, &cache, lab_name)?;
+
+    Ok(Some(cache))
 }
 
 #[cfg(test)]

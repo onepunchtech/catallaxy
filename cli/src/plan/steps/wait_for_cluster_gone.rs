@@ -69,9 +69,7 @@ pub fn run(
         true
     };
 
-    if cluster_confirmed_gone
-        && let Err(e) = crate::commands::kubeconfig::cleanup_kubeconfig(sctx.ctx, target)
-    {
+    if cluster_confirmed_gone && let Err(e) = crate::io::kubectl::cleanup_kubeconfig(target) {
         println!(
             "{} Kubeconfig cleanup for '{target}' failed: {e}",
             style("Warning:").yellow(),

@@ -69,7 +69,7 @@ pub async fn run(
         cluster,
     );
     let bootstrap_spec = sctx.lab.cluster(cluster)?;
-    crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster, bootstrap_spec)?;
+    crate::provision::deprovision_cluster(sctx.ctx, cluster, bootstrap_spec)?;
 
     println!(
         "{} Pivot complete: '{}' is now running in the cloud",
@@ -107,16 +107,16 @@ async fn apply_stage1_to_target(
         cluster
     );
 
-    crate::commands::apply::apply(
+    crate::apply::apply(
         sctx.ctx,
-        crate::commands::apply::ApplyRequest {
+        crate::apply::ApplyRequest {
             dry_run: sctx.dry_run,
             force: true,
             manifests_dir: Some(cluster_manifests),
             secrets_cache: sctx.secrets_cache.clone(),
             lab: Some(sctx.lab),
             kube_context_override: Some(target_ctx),
-            ..crate::commands::apply::ApplyRequest::for_cluster(cluster)
+            ..crate::apply::ApplyRequest::for_cluster(cluster)
         },
     )
     .await
@@ -197,8 +197,7 @@ fn cleanup_leftover_bootstrap(
         style(">>>").cyan(),
     );
     let bootstrap_spec = sctx.lab.cluster(cluster)?;
-    if let Err(e) = crate::commands::cluster::deprovision_cluster(sctx.ctx, cluster, bootstrap_spec)
-    {
+    if let Err(e) = crate::provision::deprovision_cluster(sctx.ctx, cluster, bootstrap_spec) {
         println!(
             "{} Failed to clean up bootstrap cluster '{bootstrap_ctx}': {e}",
             style("Warning:").yellow(),

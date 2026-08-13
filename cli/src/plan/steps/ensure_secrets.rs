@@ -24,7 +24,7 @@ pub fn run(sctx: &StepContext<'_>, stores: &[String]) -> Result<()> {
         match spec.backend_of(store_name) {
             Backend::Sops => {
                 let enc_path =
-                    crate::commands::secrets::store_file_path(sctx.ctx, sctx.lab_name, store_name);
+                    crate::io::secrets::store_file_path(sctx.ctx, sctx.lab_name, store_name);
                 if !enc_path.exists() {
                     bail!(
                         "Secret store '{store_name}' is not at {}.\nRun these commands first:\n  \

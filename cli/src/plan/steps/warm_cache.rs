@@ -12,7 +12,7 @@ pub async fn run(ctx: &StepContext<'_>) -> Result<()> {
         return Ok(());
     };
     let target = format!("localhost:{port}");
-    crate::commands::images::warm_to_target_with(
+    crate::images::warm_to_target_with(
         ctx.ctx,
         Some(ctx.lab_name),
         &target,

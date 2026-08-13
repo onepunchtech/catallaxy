@@ -1,5 +1,3 @@
-use std::fs;
-
 use anyhow::{Context, Result};
 use clap::Subcommand;
 use console::style;
@@ -51,31 +49,6 @@ async fn show(ctx: &CataContext) -> Result<()> {
             status
         );
     }
-
-    Ok(())
-}
-
-pub fn cleanup_kubeconfig(_ctx: &CataContext, cluster_name: &str) -> Result<()> {
-    let kubeconfig_path = dirs::home_dir()
-        .context("Could not find home directory")?
-        .join(".kube")
-        .join(format!("{}.kubeconfig", cluster_name));
-
-    if kubeconfig_path.exists() {
-        fs::remove_file(&kubeconfig_path)
-            .with_context(|| format!("Failed to remove {}", kubeconfig_path.display()))?;
-        println!(
-            "{} Removed {}",
-            style(">>>").green(),
-            kubeconfig_path.display()
-        );
-    }
-
-    io::kubectl::delete_kubeconfig_context(&format!("{}-admin@{}", cluster_name, cluster_name))?;
-    io::kubectl::delete_kubeconfig_context(cluster_name)?;
-
-    io::kubectl::delete_kubeconfig_cluster(cluster_name)?;
-    io::kubectl::delete_kubeconfig_user(&format!("{}-admin", cluster_name))?;
 
     Ok(())
 }

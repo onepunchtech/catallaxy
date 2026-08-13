@@ -10,8 +10,7 @@ use serde::Deserialize;
 
 use crate::config::Context as CataContext;
 use crate::domain::secrets::{
-    Backend, SecretKind, SecretsCache, SecretsSpec, StoreProblem, describe_store_problems,
-    env_var_name, validate_store,
+    Backend, SecretKind, SecretsSpec, StoreProblem, describe_store_problems, env_var_name,
 };
 use crate::generators;
 use crate::io::nix;
@@ -292,26 +291,6 @@ fn parse_lab_secrets(lab_name: &str, lab: &serde_json::Value) -> Result<LabSecre
     })
 }
 
-pub fn store_file_path(ctx: &CataContext, lab_name: &str, store_name: &str) -> PathBuf {
-    let flake_root = PathBuf::from(ctx.flake_uri());
-    let filename = format!("{store_name}.enc.yaml");
-
-    let primary = flake_root.join("secrets").join(lab_name).join(&filename);
-    if primary.exists() {
-        return primary;
-    }
-
-    let fallback = flake_root
-        .join("examples/labs/secrets")
-        .join(lab_name)
-        .join(&filename);
-    if fallback.exists() {
-        return fallback;
-    }
-
-    primary
-}
-
 fn resolve_store_or_path(ctx: &CataContext, input: &str) -> Result<String> {
     if input.contains('/') || input.contains('.') {
         return Ok(input.to_string());
@@ -326,7 +305,7 @@ fn resolve_store_or_path(ctx: &CataContext, input: &str) -> Result<String> {
         );
     }
 
-    let path = store_file_path(ctx, &lab.lab_name, input);
+    let path = crate::io::secrets::store_file_path(ctx, &lab.lab_name, input);
     if path.exists() {
         return Ok(path.display().to_string());
     }
@@ -354,51 +333,6 @@ fn env_store_hint(spec: &SecretsSpec, store: &str) -> String {
         hint.push_str(&format!("\nThe lab sets them in {file}."));
     }
     hint
-}
-
-pub fn load_secrets_cache(
-    ctx: &CataContext,
-    lab_name: &str,
-    spec: &SecretsSpec,
-    banner: &str,
-) -> Result<Option<SecretsCache>> {
-    let host_projections = &spec.host_projections;
-    let store_names: Vec<String> = spec
-        .stores
-        .iter()
-        .filter(|(_, store)| store.backend.readable_here())
-        .map(|(name, _)| name.clone())
-        .collect();
-
-    if store_names.is_empty() {
-        return Ok(None);
-    }
-
-    println!();
-    println!("{} {banner}", style(">>>").cyan());
-
-    let mut cache = HashMap::new();
-    for store_name in &store_names {
-        let values = crate::io::secrets::load_store(ctx, lab_name, store_name, spec)?;
-        let problems = validate_store(spec, store_name, &values);
-        if !problems.is_empty() {
-            bail!(describe_store_problems(
-                spec, lab_name, store_name, &problems
-            ));
-        }
-        println!(
-            "{} Loaded store '{}' ({})",
-            style(">>>").green(),
-            store_name,
-            spec.backend_of(store_name).as_str(),
-        );
-        cache.insert(store_name.clone(), values);
-    }
-
-    let cache: SecretsCache = std::sync::Arc::new(cache);
-    crate::host::state::project_host_secrets(host_projections, &cache, lab_name)?;
-
-    Ok(Some(cache))
 }
 
 async fn generate(
@@ -442,7 +376,7 @@ async fn generate(
     }
 
     for store_name in &sops_stores {
-        let path = store_file_path(ctx, &lab.lab_name, store_name);
+        let path = crate::io::secrets::store_file_path(ctx, &lab.lab_name, store_name);
 
         if !example && path.exists() && !force {
             println!(
@@ -591,7 +525,7 @@ fn write_sops_store(
 ) -> Result<()> {
     crate::io::process::check_tool("sops")?;
 
-    let path = store_file_path(ctx, lab_name, store_name);
+    let path = crate::io::secrets::store_file_path(ctx, lab_name, store_name);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).context("Failed to create secrets directory")?;
     }
@@ -692,7 +626,7 @@ async fn init_intermediate(
                 "{} Wrote store '{}' at {}",
                 style(">>>").green(),
                 store_name,
-                store_file_path(ctx, &lab.lab_name, &store_name).display(),
+                crate::io::secrets::store_file_path(ctx, &lab.lab_name, &store_name).display(),
             );
         }
         _ => {
@@ -860,7 +794,7 @@ async fn list(ctx: &CataContext, cluster: Option<&str>) -> Result<()> {
 fn store_status(ctx: &CataContext, lab: &LabSecrets, store_name: &str) -> String {
     match lab.spec.backend_of(store_name) {
         Backend::Sops => {
-            let path = store_file_path(ctx, &lab.lab_name, store_name);
+            let path = crate::io::secrets::store_file_path(ctx, &lab.lab_name, store_name);
             let status = if path.exists() {
                 style("generated").green()
             } else {

@@ -31,8 +31,7 @@ pub async fn run(ctx: &CataContext, name: &str) -> Result<()> {
                         "{} Stopping cluster '{cluster_name}'...",
                         style(">>>").cyan()
                     );
-                    if let Err(e) = crate::commands::cluster::stop_cluster(ctx, cluster_name, &spec)
-                    {
+                    if let Err(e) = crate::provision::stop_cluster(ctx, cluster_name, &spec) {
                         println!(
                             "{} Failed to stop '{}': {}",
                             style("Warning:").yellow(),

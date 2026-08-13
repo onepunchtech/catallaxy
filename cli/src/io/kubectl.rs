@@ -696,3 +696,28 @@ pub fn strip_finalizers_in_terminating_namespaces(kube_ctx: &str, namespaces: &[
         }
     }
 }
+
+pub fn cleanup_kubeconfig(cluster_name: &str) -> Result<()> {
+    let kubeconfig_path = dirs::home_dir()
+        .context("Could not find home directory")?
+        .join(".kube")
+        .join(format!("{}.kubeconfig", cluster_name));
+
+    if kubeconfig_path.exists() {
+        std::fs::remove_file(&kubeconfig_path)
+            .with_context(|| format!("Failed to remove {}", kubeconfig_path.display()))?;
+        println!(
+            "{} Removed {}",
+            style(">>>").green(),
+            kubeconfig_path.display()
+        );
+    }
+
+    delete_kubeconfig_context(&format!("{}-admin@{}", cluster_name, cluster_name))?;
+    delete_kubeconfig_context(cluster_name)?;
+
+    delete_kubeconfig_cluster(cluster_name)?;
+    delete_kubeconfig_user(&format!("{}-admin", cluster_name))?;
+
+    Ok(())
+}
