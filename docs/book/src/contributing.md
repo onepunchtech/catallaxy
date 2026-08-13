@@ -73,9 +73,10 @@ Only `io/` performs I/O: `Command::new`, `std::fs`, `env::var` and `reqwest`
 appear nowhere else. `commands/` is thin glue; logic that accumulates there
 cannot be unit-tested or reused.
 
-Parse `nix eval` JSON into a typed struct at the seam (`io::nix::eval_lab`);
-downstream code takes `LabSpec`, not `serde_json::Value`. A
-`.pointer("/foo/bar")` chain means a type is missing at the edge.
+Parse `nix eval` JSON into a typed struct at the seam
+(`io::nix::get_lab_spec`); downstream code takes `LabSpec`, not
+`serde_json::Value`. A `.pointer("/foo/bar")` chain means a type is missing
+at the edge.
 
 `commands/` returns `anyhow::Result<T>` because the context is what the user
 reads; domain and `io/` use the `CataError` enum so callers can classify.
@@ -256,3 +257,11 @@ get from the generated reference.
 - **New files under about 1000 lines.**
 - **`CHANGELOG.md` under `[Unreleased]`** for anything user-visible.
 - **Snapshot refreshes reviewed, not rubber-stamped.**
+
+## AI
+
+Using AI is fine. Pull requests are judged by their content, not their
+author, and everything above applies the same way.
+
+Smaller pull requests are easier to understand and review. Pull requests
+with tests that exercise the new feature or bugfix are easier to accept.
