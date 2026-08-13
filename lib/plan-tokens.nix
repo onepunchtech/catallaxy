@@ -15,6 +15,7 @@ let
     gitopsStarted = "cluster/${name}/gitops-started";
     cleanup = "cluster/${name}/cleanup";
     cloudReleased = "cluster/${name}/cloud-released";
+    managedResourceAdopted = "cluster/${name}/mr-adopted";
     managedResourceDeleted = "cluster/${name}/mr-deleted";
     gone = "cluster/${name}/gone";
     destroyed = "cluster/${name}/destroyed";

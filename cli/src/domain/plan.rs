@@ -361,6 +361,17 @@ pub enum StepParams {
     },
 
     #[serde(rename_all = "camelCase")]
+    ReconcileManagedResource {
+        target: String,
+        resource_kind: String,
+        resource_name: String,
+        #[serde(default)]
+        kube_context: Option<String>,
+        #[serde(default)]
+        external_name_discovery_bin: Option<String>,
+    },
+
+    #[serde(rename_all = "camelCase")]
     DeleteManagedResource {
         target: String,
         resource_kind: String,
@@ -425,6 +436,7 @@ impl StepParams {
             StepParams::ApplyRootApplication { target, .. } => vec![("target", target)],
             StepParams::BootstrapForgejoRepos { target, .. } => vec![("target", target)],
             StepParams::DestroyCluster { name, .. } => vec![("name", name)],
+            StepParams::ReconcileManagedResource { target, .. } => vec![("target", target)],
             StepParams::DeleteManagedResource { target, .. } => vec![("target", target)],
             StepParams::WaitForClusterGone { target, .. } => target
                 .as_deref()
@@ -481,6 +493,7 @@ impl StepParams {
             StepParams::VerifyArgocdReachable { .. } => StepKind::VerifyArgocdReachable,
             StepParams::RunScript { .. } => StepKind::RunScript,
             StepParams::DestroyCluster { .. } => StepKind::DestroyCluster,
+            StepParams::ReconcileManagedResource { .. } => StepKind::ReconcileManagedResource,
             StepParams::DeleteManagedResource { .. } => StepKind::DeleteManagedResource,
             StepParams::WaitForClusterGone { .. } => StepKind::WaitForClusterGone,
             StepParams::ReleaseClusterCloudResources { .. } => {

@@ -52,11 +52,32 @@ in
             };
           };
 
+          reconcileStep = target: {
+            "reconcile-mr-${target}" = {
+              kind = "reconcile-managed-resource";
+              direction = "teardown";
+              after = [ (needs (tokens.cluster target).cloudReleased) ];
+              provides = [ (tokens.cluster target).managedResourceAdopted ];
+              params = {
+                inherit target;
+                inherit (declared.${target}) resourceKind resourceName;
+
+                kubeContext = selfCtx;
+              }
+              // optionalAttrs (declared.${target}.externalNameDiscoveryBin != null) {
+                inherit (declared.${target}) externalNameDiscoveryBin;
+              };
+              description = "Adopt ${
+                declared.${target}.resourceKind
+              }/${target} before deleting it, so its controller destroys the cloud resource";
+            };
+          };
+
           deleteMRStep = target: waitFlag: {
             "delete-mr-${target}" = {
               kind = "delete-managed-resource";
               direction = "teardown";
-              after = [ (needs (tokens.cluster target).cloudReleased) ];
+              after = [ (needs (tokens.cluster target).managedResourceAdopted) ];
               provides = [ (tokens.cluster target).managedResourceDeleted ];
               params = {
                 inherit target;
@@ -96,11 +117,13 @@ in
 
           nonSelfSteps = concatMap (t: [
             (releaseStep t)
+            (reconcileStep t)
             (deleteMRStep t true)
           ]) nonSelfTargets;
 
           selfSteps = lib.optionals (builtins.elem selfName deletable) [
             (releaseStep selfName)
+            (reconcileStep selfName)
             (deleteMRStep selfName false)
             (waitGoneStep selfName)
           ];

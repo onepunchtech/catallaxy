@@ -186,6 +186,26 @@ The format is based on
 
 ### Changed
 
+- **The teardown reconcile is a step in the plan, not something the executor
+  did on the way past.** `cata lab destroy` called into Crossplane before
+  running the plan, annotating live managed resources and toggling
+  `crossplane.io/paused` to make their controllers reclaim them. It ran on
+  every teardown, printed as it went, and appeared nowhere in
+  `cata lab plan --teardown`, so the one command whose promise is that you
+  can read what will happen omitted the part that touches cloud state.
+
+  The planner now emits `reconcile-managed-resource` per deletable target,
+  between releasing that cluster's LoadBalancers and deleting the Cluster CR
+  that owns them, which is where it belongs and where it used to run by
+  accident of being first. It is a step like any other: it prints in the
+  plan, `--up-to` can stop before it, and the ordering is a graph edge
+  rather than a line at the top of `execute`.
+
+  It also stops re-deriving its own work. It had scanned the step list for
+  `delete-managed-resource` entries and grouped them by context to decide
+  what to reconcile, which is the planner's job done twice; the planner
+  passes it a target now.
+
 - **`cata lab plan` refuses a step the executor would refuse.** The command
   and the executor each parsed the plan their own way, and only the executor
   checked that a step can run in the direction it was found in. A teardown

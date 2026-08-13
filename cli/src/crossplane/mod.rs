@@ -163,50 +163,27 @@ struct Target {
     discovery_bin: Option<String>,
 }
 
-pub fn reconcile_state_for_teardown(ctx: &CataContext, steps: &[crate::domain::plan::PlannedStep]) {
-    let targets = crossplane_teardown_targets(steps);
-    if targets.is_empty() {
-        return;
+pub fn reconcile_managed_resource(
+    ctx: &CataContext,
+    kube_ctx: &str,
+    resource_kind: &str,
+    resource_name: &str,
+    discovery_bin: Option<&str>,
+) -> Result<()> {
+    if resource_kind.is_empty() || resource_name.is_empty() || kube_ctx.is_empty() {
+        bail!(
+            "reconcile-managed-resource needs a kind, a name and a context, \
+             got kind='{resource_kind}' name='{resource_name}' context='{kube_ctx}'"
+        );
     }
 
-    let mut by_ctx: std::collections::BTreeMap<String, Vec<Target>> = Default::default();
-    for (ctx, t) in targets {
-        by_ctx.entry(ctx).or_default().push(t);
-    }
-
-    for (kube_ctx, targets) in by_ctx {
-        reconcile_context(ctx, &kube_ctx, &targets);
-    }
-}
-
-fn crossplane_teardown_targets(
-    steps: &[crate::domain::plan::PlannedStep],
-) -> Vec<(String, Target)> {
-    let mut targets: Vec<(String, Target)> = Vec::new();
-    for step in steps {
-        if let crate::domain::plan::StepParams::DeleteManagedResource {
-            target,
-            resource_kind,
-            resource_name,
-            kube_context,
-            external_name_discovery_bin,
-            ..
-        } = &step.params
-        {
-            let ctx = kube_context.as_deref().unwrap_or(target.as_str());
-            if !resource_kind.is_empty() && !ctx.is_empty() && !resource_name.is_empty() {
-                targets.push((
-                    ctx.to_string(),
-                    Target {
-                        kind: resource_kind.clone(),
-                        name: resource_name.clone(),
-                        discovery_bin: external_name_discovery_bin.clone(),
-                    },
-                ));
-            }
-        }
-    }
-    targets
+    let target = Target {
+        kind: resource_kind.to_string(),
+        name: resource_name.to_string(),
+        discovery_bin: discovery_bin.map(String::from),
+    };
+    reconcile_context(ctx, kube_ctx, std::slice::from_ref(&target));
+    Ok(())
 }
 
 fn try_discover_and_annotate(

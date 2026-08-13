@@ -421,6 +421,35 @@
     "idempotency": "idempotent",
     "params": {}
   },
+  "reconcile-managed-resource": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "externalNameDiscoveryBin": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "kubeContext": {
+        "required": false,
+        "sample": "conformance-sample"
+      },
+      "resourceKind": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "resourceName": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "target": {
+        "required": true,
+        "sample": "conformance-sample"
+      }
+    }
+  },
   "registry-setup": {
     "directions": [
       "deploy"

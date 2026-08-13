@@ -28,6 +28,7 @@ pub enum StepKind {
     VerifyArgocdReachable,
     RunScript,
     DestroyCluster,
+    ReconcileManagedResource,
     DeleteManagedResource,
     WaitForClusterGone,
     ReleaseClusterCloudResources,
@@ -36,7 +37,7 @@ pub enum StepKind {
 }
 
 impl StepKind {
-    pub const ALL: [StepKind; 31] = [
+    pub const ALL: [StepKind; 32] = [
         StepKind::SetupServices,
         StepKind::DockerNetworkCreate,
         StepKind::CertGenerate,
@@ -63,6 +64,7 @@ impl StepKind {
         StepKind::VerifyArgocdReachable,
         StepKind::RunScript,
         StepKind::DestroyCluster,
+        StepKind::ReconcileManagedResource,
         StepKind::DeleteManagedResource,
         StepKind::WaitForClusterGone,
         StepKind::ReleaseClusterCloudResources,
@@ -102,6 +104,7 @@ impl StepKind {
             StepKind::VerifyArgocdReachable => "verify-argocd-reachable",
             StepKind::RunScript => "run-script",
             StepKind::DestroyCluster => "destroy-cluster",
+            StepKind::ReconcileManagedResource => "reconcile-managed-resource",
             StepKind::DeleteManagedResource => "delete-managed-resource",
             StepKind::WaitForClusterGone => "wait-for-cluster-gone",
             StepKind::ReleaseClusterCloudResources => "release-cluster-cloud-resources",
@@ -141,6 +144,7 @@ impl StepKind {
             | StepKind::VerifyArgocdReachable
             | StepKind::RunScript
             | StepKind::WaitForClusterGone
+            | StepKind::ReconcileManagedResource
             | StepKind::ReleaseClusterCloudResources => Idempotency::Idempotent,
         }
     }
@@ -148,7 +152,8 @@ impl StepKind {
     pub fn runs_in(self, direction: Direction) -> bool {
         let (deploy, teardown) = match self {
             StepKind::RunScript | StepKind::DestroyCluster => (true, true),
-            StepKind::DeleteManagedResource
+            StepKind::ReconcileManagedResource
+            | StepKind::DeleteManagedResource
             | StepKind::WaitForClusterGone
             | StepKind::ReleaseClusterCloudResources
             | StepKind::RemoveNetwork
@@ -213,6 +218,7 @@ impl StepKind {
             | StepKind::BootstrapArgocdHelm
             | StepKind::RunScript
             | StepKind::DestroyCluster
+            | StepKind::ReconcileManagedResource
             | StepKind::DeleteManagedResource
             | StepKind::ReleaseClusterCloudResources
             | StepKind::RemoveNetwork

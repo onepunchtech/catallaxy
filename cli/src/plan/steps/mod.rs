@@ -17,6 +17,7 @@ pub mod host_trust_install;
 pub mod pivot;
 pub mod publish_images;
 pub mod publish_manifests;
+pub mod reconcile_managed_resource;
 pub mod registry_setup;
 pub mod release_cluster_cloud_resources;
 pub mod remove_network;

@@ -59,10 +59,6 @@ pub async fn execute(
         failures: std::cell::RefCell::new(Vec::new()),
     };
 
-    if direction == Direction::Teardown && !dry_run {
-        crate::crossplane::reconcile_state_for_teardown(ctx, &steps);
-    }
-
     let stop_after = resolve_stop_after(&steps, up_to, direction)?;
 
     let total = steps.len();
@@ -543,6 +539,24 @@ async fn dispatch_teardown(
             target,
             kube_context.as_deref(),
             wait_timeout_seconds.unwrap_or(600),
+        ),
+        (
+            Direction::Teardown,
+            StepParams::ReconcileManagedResource {
+                target,
+                resource_kind,
+                resource_name,
+                kube_context,
+                external_name_discovery_bin,
+                ..
+            },
+        ) => steps::reconcile_managed_resource::run(
+            sctx,
+            target,
+            resource_kind,
+            resource_name,
+            kube_context.as_deref(),
+            external_name_discovery_bin.as_deref(),
         ),
         (
             Direction::Teardown,

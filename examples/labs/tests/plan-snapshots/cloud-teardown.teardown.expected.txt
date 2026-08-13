@@ -1,10 +1,13 @@
 [001] destroy-cluster name=destroy-cluster-bootstrap-mgmt params.name=mgmt params.provisioner=k3d params.skipIfMissing=true
 [002] release-cluster-cloud-resources name=release-adopted-cloud params.kubeContext=adopted params.target=adopted params.waitTimeoutSeconds=300
-[003] delete-managed-resource name=delete-mr-adopted params.externalNameDiscoveryBin=/nix/store/0000000000000000000000000000000-discover/bin/discover params.resourceKind=clusters.eks.aws.upbound.io params.resourceName=adopted params.target=adopted params.wait=true params.waitTimeoutSeconds=600
-[004] release-cluster-cloud-resources name=release-pivoted-cloud params.kubeContext=pivoted params.target=pivoted params.waitTimeoutSeconds=300
-[005] delete-managed-resource name=delete-mr-pivoted params.kubeContext=pivoted params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=pivoted params.target=pivoted params.waitTimeoutSeconds=600
-[006] release-cluster-cloud-resources name=release-workload-cloud params.kubeContext=workload params.target=workload params.waitTimeoutSeconds=300
-[007] delete-managed-resource name=delete-mr-workload params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=workload params.target=workload params.wait=true params.waitTimeoutSeconds=600
-[008] wait-for-cluster-gone name=wait-cluster-gone-pivoted params.kubeContext=pivoted params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=pivoted params.target=pivoted params.waitTimeoutSeconds=600
-[009] destroy-cluster name=destroy-cluster-bootstrap-pivoted params.name=pivoted params.provisioner=k3d params.skipIfMissing=true
-[010] remove-network name=remove-network
+[003] reconcile-managed-resource name=reconcile-mr-adopted params.externalNameDiscoveryBin=/nix/store/0000000000000000000000000000000-discover/bin/discover params.resourceKind=clusters.eks.aws.upbound.io params.resourceName=adopted params.target=adopted
+[004] delete-managed-resource name=delete-mr-adopted params.externalNameDiscoveryBin=/nix/store/0000000000000000000000000000000-discover/bin/discover params.resourceKind=clusters.eks.aws.upbound.io params.resourceName=adopted params.target=adopted params.wait=true params.waitTimeoutSeconds=600
+[005] release-cluster-cloud-resources name=release-pivoted-cloud params.kubeContext=pivoted params.target=pivoted params.waitTimeoutSeconds=300
+[006] reconcile-managed-resource name=reconcile-mr-pivoted params.kubeContext=pivoted params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=pivoted params.target=pivoted
+[007] delete-managed-resource name=delete-mr-pivoted params.kubeContext=pivoted params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=pivoted params.target=pivoted params.waitTimeoutSeconds=600
+[008] release-cluster-cloud-resources name=release-workload-cloud params.kubeContext=workload params.target=workload params.waitTimeoutSeconds=300
+[009] reconcile-managed-resource name=reconcile-mr-workload params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=workload params.target=workload
+[010] delete-managed-resource name=delete-mr-workload params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=workload params.target=workload params.wait=true params.waitTimeoutSeconds=600
+[011] wait-for-cluster-gone name=wait-cluster-gone-pivoted params.kubeContext=pivoted params.resourceKind=clusters.kubernetes.digitalocean.crossplane.io params.resourceName=pivoted params.target=pivoted params.waitTimeoutSeconds=600
+[012] destroy-cluster name=destroy-cluster-bootstrap-pivoted params.name=pivoted params.provisioner=k3d params.skipIfMissing=true
+[013] remove-network name=remove-network

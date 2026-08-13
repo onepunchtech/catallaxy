@@ -20,6 +20,7 @@
   "pivot" = import ./pivot.nix { inherit lib; };
   "publish-images" = import ./publish-images.nix { inherit lib; };
   "publish-manifests" = import ./publish-manifests.nix { inherit lib; };
+  "reconcile-managed-resource" = import ./reconcile-managed-resource.nix { inherit lib; };
   "registry-setup" = import ./registry-setup.nix { inherit lib; };
   "release-cluster-cloud-resources" = import ./release-cluster-cloud-resources.nix { inherit lib; };
   "remove-network" = import ./remove-network.nix { inherit lib; };
