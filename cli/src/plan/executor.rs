@@ -75,7 +75,7 @@ pub async fn execute(
     };
 
     if direction == Direction::Teardown && !dry_run {
-        crate::commands::lab::orchestrate::reconcile_crossplane_state_for_teardown(&steps);
+        crate::crossplane::reconcile_state_for_teardown(ctx, &steps);
     }
 
     let stop_after = resolve_stop_after(&steps, up_to, direction)?;

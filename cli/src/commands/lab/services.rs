@@ -13,7 +13,7 @@ use console::style;
 use crate::config::Context as CataContext;
 use crate::io;
 
-use super::state::{lab_state_dir, service_state_dir};
+use crate::host::state::{lab_state_dir, service_state_dir};
 
 pub fn k3d_host_endpoint() -> &'static str {
     "host.k3d.internal"

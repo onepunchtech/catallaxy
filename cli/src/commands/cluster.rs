@@ -201,7 +201,7 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
         }
 
         if let Some(port) = lab.registry_port {
-            let state_dir = super::lab::state::service_state_dir(lab_name, "registry");
+            let state_dir = crate::host::state::service_state_dir(lab_name, "registry");
             if fs::create_dir_all(&state_dir).is_ok() {
                 let path = state_dir.join("registries.yaml");
                 let registry_yaml =
@@ -214,7 +214,7 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
                             super::lab::services::generate_registry_hosts_toml(zone),
                         );
                         let ca_src =
-                            super::lab::state::service_state_dir(lab_name, "proxy").join("ca.crt");
+                            crate::host::state::service_state_dir(lab_name, "proxy").join("ca.crt");
                         if ca_src.exists() {
                             let _ = fs::copy(&ca_src, host_dir.join("ca.crt"));
                         }

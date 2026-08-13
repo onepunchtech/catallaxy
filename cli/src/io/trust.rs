@@ -6,7 +6,7 @@ use std::sync::{OnceLock, RwLock};
 use anyhow::{Context, Result};
 use console::style;
 
-use crate::commands::lab::state::service_state_dir;
+use crate::host::state::service_state_dir;
 
 const SYSTEM_ROOT_CANDIDATES: &[&str] = &[
     "/etc/ssl/certs/ca-certificates.crt",

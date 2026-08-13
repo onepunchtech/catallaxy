@@ -396,7 +396,7 @@ pub fn load_secrets_cache(
     }
 
     let cache: SecretsCache = std::sync::Arc::new(cache);
-    crate::commands::lab::state::project_host_secrets(host_projections, &cache, lab_name)?;
+    crate::host::state::project_host_secrets(host_projections, &cache, lab_name)?;
 
     Ok(Some(cache))
 }

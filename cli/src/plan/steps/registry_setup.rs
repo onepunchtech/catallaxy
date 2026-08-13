@@ -5,7 +5,8 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use console::style;
 
-use crate::commands::lab::{services, state};
+use crate::commands::lab::services;
+use crate::host::state;
 use crate::plan::StepContext;
 
 pub async fn run(

@@ -101,16 +101,22 @@ async fn apply_stage1_to_target(
             },
         );
     }
-    crate::commands::lab::orchestrate::apply_cluster_components(
+    println!(
+        "{} Applying manifests to cluster '{}'...",
+        style(">>>").cyan(),
+        cluster
+    );
+
+    crate::commands::apply::apply(
         sctx.ctx,
-        crate::commands::lab::orchestrate::ClusterComponents {
-            cluster_name: cluster,
+        crate::commands::apply::ApplyRequest {
             dry_run: sctx.dry_run,
             force: true,
-            manifests_dir: Some(cluster_manifests.to_string()),
+            manifests_dir: Some(cluster_manifests),
             secrets_cache: sctx.secrets_cache.clone(),
-            lab_config: Some(sctx.lab),
-            kube_context_override: Some(target_ctx.to_string()),
+            lab: Some(sctx.lab),
+            kube_context_override: Some(target_ctx),
+            ..crate::commands::apply::ApplyRequest::for_cluster(cluster)
         },
     )
     .await

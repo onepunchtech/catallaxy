@@ -1,7 +1,8 @@
 use anyhow::{Result, bail};
 use console::style;
 
-use crate::commands::lab::{pki, state};
+use crate::commands::lab::pki;
+use crate::host::state;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>) -> Result<()> {

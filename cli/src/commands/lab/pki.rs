@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use super::state::service_state_dir;
+use crate::host::state::service_state_dir;
 
 pub fn ensure_ingress_cert(lab_name: &str, zone: &str) -> Result<PathBuf> {
     let ingress_dir = service_state_dir(lab_name, "proxy");

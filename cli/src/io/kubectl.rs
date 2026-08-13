@@ -690,3 +690,72 @@ pub fn namespace_exists(context: &str, namespace: &str) -> bool {
         .status();
     matches!(output, Ok(s) if s.success())
 }
+
+pub fn strip_finalizers_in_terminating_namespaces(
+    ctx: &CataContext,
+    kube_ctx: &str,
+    namespaces: &[String],
+) {
+    let mut list = Command::new("kubectl");
+    list.args([
+        "--context",
+        kube_ctx,
+        "get",
+        "crd",
+        "-o",
+        r#"jsonpath={range .items[?(@.spec.scope=="Namespaced")]}{.spec.names.plural}.{.spec.group}{"\n"}{end}"#,
+    ]);
+    let crd_names: Vec<String> = run_capture(&mut list, ctx)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+
+    for kind in &crd_names {
+        for ns in namespaces {
+            let mut get = Command::new("kubectl");
+            get.args([
+                "--context",
+                kube_ctx,
+                "-n",
+                ns,
+                "get",
+                kind,
+                "-o",
+                "jsonpath={.items[*].metadata.name}",
+            ]);
+            let names: Vec<String> = run_capture(&mut get, ctx)
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(String::from)
+                .collect();
+            if names.is_empty() {
+                continue;
+            }
+            for name in &names {
+                let mut patch = Command::new("kubectl");
+                patch.args([
+                    "--context",
+                    kube_ctx,
+                    "-n",
+                    ns,
+                    "patch",
+                    &format!("{kind}/{name}"),
+                    "--type=merge",
+                    "-p",
+                    r#"{"metadata":{"finalizers":[]}}"#,
+                ]);
+                if run_capture(&mut patch, ctx).is_ok() {
+                    println!(
+                        "{}   stripped finalizers: {}/{}/{}",
+                        style(">>>").dim(),
+                        ns,
+                        kind,
+                        name
+                    );
+                }
+            }
+        }
+    }
+}

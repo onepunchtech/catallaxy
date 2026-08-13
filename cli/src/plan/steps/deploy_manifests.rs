@@ -52,16 +52,22 @@ pub async fn run(
         );
     }
 
-    crate::commands::lab::orchestrate::apply_cluster_components(
+    println!(
+        "{} Applying manifests to cluster '{}'...",
+        style(">>>").cyan(),
+        target
+    );
+
+    crate::commands::apply::apply(
         sctx.ctx,
-        crate::commands::lab::orchestrate::ClusterComponents {
-            cluster_name: target,
+        crate::commands::apply::ApplyRequest {
             dry_run: sctx.dry_run,
             force: true,
-            manifests_dir: Some(cluster_manifests),
+            manifests_dir: Some(&cluster_manifests),
             secrets_cache: sctx.secrets_cache.clone(),
-            lab_config: Some(sctx.lab),
-            kube_context_override: kube_context_override.map(String::from),
+            lab: Some(sctx.lab),
+            kube_context_override,
+            ..crate::commands::apply::ApplyRequest::for_cluster(target)
         },
     )
     .await

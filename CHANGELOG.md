@@ -144,6 +144,27 @@ The format is based on
 
 ### Changed
 
+- **`commands/lab/orchestrate.rs` is gone, split by what its parts were
+  for.** Nothing under `commands/` ever called it: every caller was a plan
+  step or the executor, so it was plan infrastructure filed under the
+  command tree, and its name said only that it did several things. Its
+  Crossplane half (connection secrets, kubeconfig sync, the paused-toggle
+  reconcile) is `crossplane/`; image publishing is `images/`; importing the
+  lab CA into a cluster is `host/pki.rs`, alongside `host/state.rs` moved
+  out of `commands/lab/`; stripping finalizers off terminating namespaces is
+  `io::kubectl`, which is what it always was.
+
+  `apply_cluster_components` went with it. It was a wrapper that printed one
+  line and forwarded to `apply`, through a `ClusterComponents` struct
+  identical in shape to the `ApplyRequest` it built, so the two callers now
+  call `apply` directly.
+
+  The nineteen subprocesses those parts ran are now issued through
+  `io::process`, so they carry the lab CA in their environment and appear
+  under `--verbose` like every other command the CLI runs. One of them,
+  `crane push`, already called `io::trust::apply` by hand, which is the sort
+  of local patch that stops being needed once the seam is used.
+
 - **The evaluated lab is parsed as a total type, and the CLI supplies no
   defaults for it.** `LabSpec` and `ClusterSpec` now model every field
   `lab.out.cliConfig` emits, each required except the three Nix genuinely

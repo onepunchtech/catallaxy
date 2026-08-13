@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::commands::lab::state;
+use crate::host::state;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>, name: &str, _provisioner: &str) -> Result<()> {
@@ -19,7 +19,7 @@ pub async fn run(sctx: &StepContext<'_>, name: &str, _provisioner: &str) -> Resu
     )?;
 
     if sctx.lab.services.contains_key("proxy") {
-        crate::commands::lab::orchestrate::import_lab_ca(sctx.lab_name, sctx.lab, name)?;
+        crate::host::pki::import_lab_ca(sctx.ctx, sctx.lab_name, sctx.lab, name)?;
     }
 
     Ok(())

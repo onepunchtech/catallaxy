@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use console::style;
 
+use crate::config::Context as CataContext;
 use crate::io;
 use crate::plan::StepContext;
 
@@ -32,7 +33,7 @@ pub fn run(
     delete_load_balancer_services(&kube_ctx);
     let target_namespaces = delete_user_namespaces(&kube_ctx);
 
-    if !poll_until_released(&kube_ctx, &target_namespaces, timeout_secs) {
+    if !poll_until_released(sctx.ctx, &kube_ctx, &target_namespaces, timeout_secs) {
         println!(
             "{} Timed out releasing cloud resources on '{}'; cloud resources may orphan",
             style("Warning:").yellow(),
@@ -141,7 +142,12 @@ fn delete_user_namespaces(kube_ctx: &str) -> Vec<String> {
     target_namespaces
 }
 
-fn poll_until_released(kube_ctx: &str, target_namespaces: &[String], timeout_secs: u64) -> bool {
+fn poll_until_released(
+    ctx: &CataContext,
+    kube_ctx: &str,
+    target_namespaces: &[String],
+    timeout_secs: u64,
+) -> bool {
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     let mut last_report = Instant::now();
     let mut stuck_since: Option<Instant> = None;
@@ -216,7 +222,8 @@ fn poll_until_released(kube_ctx: &str, target_namespaces: &[String], timeout_sec
                     FINALIZER_STRIP_GRACE_SECS,
                     remaining_ns.join(", "),
                 );
-                crate::commands::lab::orchestrate::strip_finalizers_in_terminating_namespaces(
+                crate::io::kubectl::strip_finalizers_in_terminating_namespaces(
+                    ctx,
                     kube_ctx,
                     &remaining_ns,
                 );
