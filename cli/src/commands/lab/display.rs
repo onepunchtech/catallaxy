@@ -1,9 +1,8 @@
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 use console::style;
 
 use crate::config::Context as CataContext;
-use crate::domain::CdConfig;
-use crate::domain::lab::kube_context_in;
+use crate::domain::LabSpec;
 use crate::io;
 
 pub async fn list(ctx: &CataContext) -> Result<()> {
@@ -30,8 +29,8 @@ pub async fn list(ctx: &CataContext) -> Result<()> {
 }
 
 pub async fn topology_cmd(ctx: &CataContext, name: &str, format: &str, live: bool) -> Result<()> {
-    let lab = crate::io::nix::get_lab_config(ctx, name)?;
-    let mut topo = crate::topology::extract::extract_static(&lab)?;
+    let lab = crate::io::nix::get_lab_spec(ctx, name)?;
+    let mut topo = crate::topology::extract::extract_static(&lab);
 
     if live {
         crate::topology::extract::enrich_live(ctx, &mut topo)?;
@@ -63,42 +62,33 @@ struct LabState {
 }
 
 pub async fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
-    let lab = crate::io::nix::get_lab_config(ctx, name)?;
+    let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
-    let services = lab["services"]
-        .as_object()
-        .map(|svcs| {
-            svcs.iter()
-                .map(|(svc_name, svc)| {
-                    let container = svc["container"].as_str().unwrap_or("").to_string();
-                    ServiceState {
-                        name: svc_name.clone(),
-                        running: !container.is_empty() && io::docker::container_running(&container),
-                        container,
-                    }
-                })
-                .collect()
+    let services = lab
+        .services
+        .iter()
+        .map(|(svc_name, svc)| {
+            let container = svc["container"].as_str().unwrap_or("").to_string();
+            ServiceState {
+                name: svc_name.clone(),
+                running: !container.is_empty() && io::docker::container_running(&container),
+                container,
+            }
         })
-        .unwrap_or_default();
+        .collect();
 
-    let clusters = lab["clusterNames"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str())
-                .map(|cluster| {
-                    let context = kube_context_in(&lab, cluster)
-                        .map(String::from)
-                        .unwrap_or_default();
-                    ClusterState {
-                        name: cluster.to_string(),
-                        reachable: io::kubectl::api_reachable(&context),
-                        context,
-                    }
-                })
-                .collect()
+    let clusters = lab
+        .cluster_names
+        .iter()
+        .map(|cluster| {
+            let context = lab.kube_context(cluster).unwrap_or_default().to_string();
+            ClusterState {
+                name: cluster.clone(),
+                reachable: io::kubectl::api_reachable(&context),
+                context,
+            }
         })
-        .unwrap_or_default();
+        .collect::<Vec<_>>();
 
     println!(
         "{}",
@@ -123,15 +113,10 @@ pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
     );
     println!();
 
-    let lab = crate::io::nix::get_lab_config(ctx, name)?;
+    let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
-    let cd: CdConfig = serde_json::from_value(lab["cd"].clone())
-        .context("parsing lab.cd from the evaluated lab")?;
-    let strategy = cd.strategy.tag();
-    let zone = lab
-        .pointer("/dnsInfo/zone")
-        .and_then(|v| v.as_str())
-        .unwrap_or("?");
+    let strategy = lab.cd.strategy.tag();
+    let zone = lab.dns_info.as_ref().map_or("?", |d| d.zone.as_str());
     println!(
         "  {} {} {}  {} {}",
         style("strategy:").dim(),
@@ -148,12 +133,10 @@ pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn print_service_status(lab: &serde_json::Value) {
-    if let Some(services) = lab["services"].as_object()
-        && !services.is_empty()
-    {
+fn print_service_status(lab: &LabSpec) {
+    if !lab.services.is_empty() {
         println!("{}", style("Services:").bold());
-        for (svc_name, svc) in services {
+        for (svc_name, svc) in &lab.services {
             let container = svc["container"].as_str().unwrap_or("");
             let description = svc["description"].as_str().unwrap_or("");
             let running = if !container.is_empty() {
@@ -198,22 +181,13 @@ fn print_service_status(lab: &serde_json::Value) {
     }
 }
 
-fn print_cluster_status(lab: &serde_json::Value) -> Result<()> {
-    let cluster_names: Vec<String> = lab["clusterNames"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+fn print_cluster_status(lab: &LabSpec) -> Result<()> {
+    let cluster_names = &lab.cluster_names;
 
     println!("{}", style("Clusters:").bold());
-    for cluster_name in &cluster_names {
-        let context_name = kube_context_in(lab, cluster_name)
-            .map(String::from)
-            .unwrap_or_default();
-        let reachable = io::kubectl::api_reachable(&context_name);
+    for cluster_name in cluster_names {
+        let context_name = lab.kube_context(cluster_name).unwrap_or_default();
+        let reachable = io::kubectl::api_reachable(context_name);
 
         let status_str = if reachable {
             style("ready").green()
@@ -225,7 +199,7 @@ fn print_cluster_status(lab: &serde_json::Value) -> Result<()> {
             "  {} [{}] (context: {})",
             style(cluster_name).green(),
             status_str,
-            style(&context_name).dim(),
+            style(context_name).dim(),
         );
     }
     println!();
@@ -233,10 +207,7 @@ fn print_cluster_status(lab: &serde_json::Value) -> Result<()> {
     let total = cluster_names.len();
     let reachable_count = cluster_names
         .iter()
-        .filter(|name| {
-            let ctx = kube_context_in(lab, name).unwrap_or_default();
-            io::kubectl::api_reachable(ctx)
-        })
+        .filter(|name| io::kubectl::api_reachable(lab.kube_context(name).unwrap_or_default()))
         .count();
 
     println!(

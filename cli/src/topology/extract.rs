@@ -1,135 +1,88 @@
 use std::collections::BTreeMap;
 use std::process::{Command, Stdio};
 
-use anyhow::{Context as _, Result};
+use anyhow::Result;
 
 use super::*;
 use crate::config::Context as CataContext;
-use crate::domain::CdConfig;
-use crate::domain::StepParams;
-use crate::domain::lab::kube_context_in;
+use crate::domain::{ClusterSpec, LabSpec, StepParams};
 use crate::io;
 
-pub fn extract_static(lab: &serde_json::Value) -> Result<LabTopology> {
-    let name = lab["labName"].as_str().unwrap_or("unknown").to_string();
-    let zone = lab
-        .pointer("/dnsInfo/zone")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    let cd: CdConfig = serde_json::from_value(lab["cd"].clone())
-        .context("parsing lab.cd from the evaluated lab")?;
-    let cd_strategy = cd.strategy.tag().to_string();
-
+pub fn extract_static(lab: &LabSpec) -> LabTopology {
     let network = LabNetwork {
-        name: lab
-            .pointer("/network/name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        docker_subnet: lab
-            .pointer("/network/dockerSubnet")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
+        name: lab.network.name.clone(),
+        docker_subnet: lab.network.docker_subnet.clone(),
     };
 
     let services = extract_services(lab);
-
     let clusters = extract_clusters(lab);
-
     let mut edges = extract_edges_from_plan(lab);
 
     if services.contains_key("proxy") {
-        extract_proxy_route_edges(lab, &clusters, &mut edges);
+        extract_proxy_route_edges(&clusters, &mut edges);
     }
 
-    let deployment_plan = extract_plan_steps(lab);
-
-    Ok(LabTopology {
-        name,
-        zone,
-        cd_strategy,
+    LabTopology {
+        name: lab.lab_name.clone(),
+        zone: lab.dns_info.as_ref().map(|d| d.zone.clone()),
+        cd_strategy: lab.cd.strategy.tag().to_string(),
         network,
         services,
         clusters,
         edges,
-        deployment_plan,
-    })
+        deployment_plan: extract_plan_steps(lab),
+    }
 }
 
-fn extract_services(lab: &serde_json::Value) -> BTreeMap<String, LabService> {
+fn extract_services(lab: &LabSpec) -> BTreeMap<String, LabService> {
     let mut services = BTreeMap::new();
-    if let Some(svcs) = lab["services"].as_object() {
-        for (name, svc) in svcs {
-            let ports = svc["ports"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
+    for (name, svc) in &lab.services {
+        let ports = svc["ports"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
 
-            services.insert(
-                name.clone(),
-                LabService {
-                    description: svc["description"].as_str().unwrap_or("").to_string(),
-                    container: svc["container"].as_str().unwrap_or("").to_string(),
-                    ports,
-                    running: None,
-                },
-            );
-        }
+        services.insert(
+            name.clone(),
+            LabService {
+                description: svc["description"].as_str().unwrap_or("").to_string(),
+                container: svc["container"].as_str().unwrap_or("").to_string(),
+                ports,
+                running: None,
+            },
+        );
     }
     services
 }
 
-fn extract_clusters(lab: &serde_json::Value) -> BTreeMap<String, ClusterTopology> {
+fn extract_clusters(lab: &LabSpec) -> BTreeMap<String, ClusterTopology> {
     let mut clusters = BTreeMap::new();
-    let cluster_names: Vec<String> = lab["clusterNames"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
 
-    for cluster_name in &cluster_names {
-        let config = match crate::io::nix::get_cluster_config_from_lab(lab, cluster_name) {
-            Ok(c) => c,
-            Err(_) => continue,
+    for cluster_name in &lab.cluster_names {
+        let Ok(cluster) = lab.cluster(cluster_name) else {
+            continue;
         };
 
-        let kube_context = kube_context_in(lab, cluster_name)
-            .map(String::from)
-            .unwrap_or_else(|_| "<unresolved>".to_string());
-        let components = extract_components(&config);
+        let kube_context = lab
+            .kube_context(cluster_name)
+            .unwrap_or("<unresolved>")
+            .to_string();
+        let components = extract_components(cluster);
 
         clusters.insert(
             cluster_name.clone(),
             ClusterTopology {
                 name: cluster_name.clone(),
-                provider: config["provider"].as_str().unwrap_or("?").to_string(),
+                provider: cluster.provider.clone(),
                 kube_context,
-                control_planes: config
-                    .pointer("/kubernetes/controlPlanes")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0),
-                workers: config
-                    .pointer("/kubernetes/workers")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(0),
-                pod_subnet: config
-                    .pointer("/network/podSubnet")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                service_subnet: config
-                    .pointer("/network/serviceSubnet")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string(),
+                control_planes: u64::from(cluster.kubernetes.control_planes),
+                workers: u64::from(cluster.kubernetes.workers),
+                pod_subnet: cluster.network.pod_subnet.clone(),
+                service_subnet: cluster.network.service_subnet.clone(),
                 components,
                 live: None,
             },
@@ -138,38 +91,28 @@ fn extract_clusters(lab: &serde_json::Value) -> BTreeMap<String, ClusterTopology
     clusters
 }
 
-fn extract_components(config: &serde_json::Value) -> BTreeMap<String, ComponentSummary> {
-    let mut components = BTreeMap::new();
-    if let Some(comps) = config["floes"].as_object() {
-        for (name, comp) in comps {
-            let enabled = comp["enable"].as_bool().unwrap_or(false);
-            if !enabled {
-                continue;
-            }
-            let domain = comp["domain"]
-                .as_str()
-                .filter(|d| !d.is_empty())
-                .map(String::from);
-
-            components.insert(
+fn extract_components(cluster: &ClusterSpec) -> BTreeMap<String, ComponentSummary> {
+    cluster
+        .enabled_floes()
+        .map(|(name, floe)| {
+            (
                 name.clone(),
                 ComponentSummary {
-                    enabled,
-                    version: comp["version"].as_str().map(String::from),
-                    namespace: comp["namespace"].as_str().unwrap_or(name).to_string(),
-                    domain,
+                    enabled: true,
+                    version: floe.version.clone(),
+                    namespace: floe.namespace.clone().unwrap_or_else(|| name.clone()),
+                    domain: floe.domain.clone().filter(|d| !d.is_empty()),
                     health: None,
                 },
-            );
-        }
-    }
-    components
+            )
+        })
+        .collect()
 }
 
-fn extract_edges_from_plan(lab: &serde_json::Value) -> Vec<TopologyEdge> {
+fn extract_edges_from_plan(lab: &LabSpec) -> Vec<TopologyEdge> {
     let mut edges = Vec::new();
 
-    for step in planned_steps(lab) {
+    for step in &lab.deployment_plan {
         match &step.params {
             StepParams::CrossClusterSecretCopy {
                 source_cluster,
@@ -206,20 +149,7 @@ fn extract_edges_from_plan(lab: &serde_json::Value) -> Vec<TopologyEdge> {
     edges
 }
 
-fn planned_steps(lab: &serde_json::Value) -> Vec<crate::domain::PlannedStep> {
-    lab["deploymentPlan"]
-        .as_array()
-        .map(|steps| {
-            steps
-                .iter()
-                .filter_map(|s| serde_json::from_value(s.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn extract_proxy_route_edges(
-    _lab: &serde_json::Value,
     clusters: &BTreeMap<String, ClusterTopology>,
     edges: &mut Vec<TopologyEdge>,
 ) {
@@ -237,9 +167,9 @@ fn extract_proxy_route_edges(
     }
 }
 
-fn extract_plan_steps(lab: &serde_json::Value) -> Vec<PlanStep> {
-    planned_steps(lab)
-        .into_iter()
+fn extract_plan_steps(lab: &LabSpec) -> Vec<PlanStep> {
+    lab.deployment_plan
+        .iter()
         .map(|s| PlanStep {
             step_type: s.type_tag().to_string(),
             description: s.description.clone(),

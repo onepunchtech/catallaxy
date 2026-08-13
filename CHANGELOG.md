@@ -188,6 +188,12 @@ The format is based on
   takes the cluster, lab name and secrets it needs rather than a cluster
   config with the lab's secrets grafted onto it.
 
+  The command layer followed: `diagnose`, `lab status`, `lab topology` and
+  `cluster` read the lab through the same type, so the JSON-shaped accessor
+  that existed only for them is gone and `runtimeContexts` has exactly one
+  reader. `pointer()` calls across the crate went from 68 to 26, none of
+  them now in the plan or the domain.
+
   `ApplyArgs` split into the flags a user types and an `ApplyRequest` an
   internal caller passes. It had been both at once, four clap arguments
   beside four `#[arg(skip)]` fields, which clippy noticed only once a

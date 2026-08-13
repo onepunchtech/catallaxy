@@ -7,7 +7,6 @@ use clap::{Args, Subcommand};
 use console::style;
 
 use crate::config::Context as CataContext;
-use crate::domain::lab::kube_context_in;
 use crate::domain::{ClusterSpec, ProvisionerKind};
 use crate::io;
 
@@ -180,49 +179,34 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
     };
 
     for lab_name in &lab_names {
-        let lab: serde_json::Value = match crate::io::nix::get_lab_config(ctx, lab_name) {
-            Ok(config) => config,
+        let lab = match crate::io::nix::get_lab_spec(ctx, lab_name) {
+            Ok(lab) => lab,
             Err(_) => continue,
         };
 
-        let contains_cluster = lab["clusterNames"]
-            .as_array()
-            .is_some_and(|names| names.iter().any(|n| n.as_str() == Some(cluster_name)));
-
-        if !contains_cluster {
+        if !lab.cluster_names.iter().any(|n| n == cluster_name) {
             continue;
         }
 
-        if let Some(services) = lab["services"].as_object() {
-            for (svc_name, svc) in services {
-                if let Err(e) = super::lab::services::start_service(ctx, lab_name, svc_name, svc) {
-                    let description = svc["description"].as_str().unwrap_or(svc_name);
-                    println!(
-                        "{} Failed to start {}: {}",
-                        style("Warning:").yellow(),
-                        description,
-                        e
-                    );
-                }
+        for (svc_name, svc) in &lab.services {
+            if let Err(e) = super::lab::services::start_service(ctx, lab_name, svc_name, svc) {
+                let description = svc["description"].as_str().unwrap_or(svc_name);
+                println!(
+                    "{} Failed to start {}: {}",
+                    style("Warning:").yellow(),
+                    description,
+                    e
+                );
             }
         }
 
-        if let Some(port) = lab.pointer("/registryPort").and_then(|v| v.as_u64()) {
+        if let Some(port) = lab.registry_port {
             let state_dir = super::lab::state::service_state_dir(lab_name, "registry");
             if fs::create_dir_all(&state_dir).is_ok() {
                 let path = state_dir.join("registries.yaml");
-                let upstreams: Vec<String> = lab
-                    .pointer("/registryUpstreams")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(str::to_owned))
-                            .collect()
-                    })
-                    .unwrap_or_default();
                 let registry_yaml =
-                    super::lab::services::generate_registries_yaml(port as u16, &upstreams);
-                if let Some(zone) = lab.pointer("/dnsInfo/zone").and_then(|v| v.as_str()) {
+                    super::lab::services::generate_registries_yaml(port, &lab.registry_upstreams);
+                if let Some(zone) = lab.dns_info.as_ref().map(|d| d.zone.as_str()) {
                     let host_dir = state_dir.join("certs.d").join(format!("registry.{zone}"));
                     if fs::create_dir_all(&host_dir).is_ok() {
                         let _ = fs::write(
@@ -236,7 +220,7 @@ fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<PathBuf>
                         }
                     }
                 }
-                if lab.get("dnsInfo").map(|v| !v.is_null()).unwrap_or(false) {
+                if lab.dns_info.is_some() {
                     let dns_ip = std::process::Command::new("docker")
                         .args([
                             "inspect",
@@ -518,8 +502,8 @@ async fn status(ctx: &CataContext, name: &str) -> Result<()> {
 
 fn load_cluster_spec(ctx: &CataContext, name: &str) -> Result<ClusterSpec> {
     let lab_name = ctx.resolve_lab_name(None)?;
-    let lab = crate::io::nix::get_lab_config(ctx, &lab_name)?;
-    crate::io::nix::get_cluster_spec_from_lab(&lab, name)
+    let lab = crate::io::nix::get_lab_spec(ctx, &lab_name)?;
+    lab.cluster(name).cloned()
 }
 
 async fn kubeconfig(ctx: &CataContext, args: KubeconfigArgs) -> Result<()> {
@@ -540,23 +524,32 @@ async fn kubeconfig_sync(
 ) -> Result<()> {
     let mgmt_name = ctx.resolve_cluster_name(management.as_deref())?;
     let lab_name = ctx.resolve_lab_name(None)?;
-    let lab = crate::io::nix::get_lab_config(ctx, &lab_name)?;
-    let config = crate::io::nix::get_cluster_config_from_lab(&lab, &mgmt_name)?;
-    let kube_context = kube_context_in(&lab, &mgmt_name)?.to_string();
+    let lab = crate::io::nix::get_lab_spec(ctx, &lab_name)?;
+    let mgmt = lab.cluster(&mgmt_name)?;
+    let kube_context = lab.kube_context(&mgmt_name)?.to_string();
 
     if !io::kubectl::api_reachable(&kube_context) {
         bail!("Cannot reach management cluster (context: {kube_context}). Is it running?");
     }
 
-    let namespace = config
-        .pointer("/components/cluster-api/namespace")
-        .and_then(|v| v.as_str())
-        .unwrap_or("capi-system");
+    let capi = mgmt.floes.get("cluster-api").ok_or_else(|| {
+        anyhow::anyhow!("cluster '{mgmt_name}' does not enable the cluster-api floe")
+    })?;
+    let namespace = capi.namespace.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("the cluster-api floe on '{mgmt_name}' declares no namespace")
+    })?;
 
-    let clusters = config.pointer("/components/cluster-api/clusters");
-    let clusters_map = clusters
+    let clusters_map = capi
+        .extra
+        .get("clusters")
         .and_then(|v| v.as_object())
-        .ok_or_else(|| anyhow::anyhow!("No CAPI clusters defined in config"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "the cluster-api floe declares no `clusters`, so there is nothing to \
+                 sync kubeconfigs for. No floe in the tree offers that option today, \
+                 which means this command cannot currently succeed."
+            )
+        })?;
 
     if clusters_map.is_empty() {
         println!("{} No CAPI clusters defined", style(">>>").yellow());

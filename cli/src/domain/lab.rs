@@ -254,19 +254,6 @@ mod tests {
     }
 
     #[test]
-    fn the_typed_and_untyped_accessors_cannot_disagree() {
-        let json = lab_json();
-        let lab = LabSpec::from_value(json.clone()).unwrap();
-        for cluster in ["app", "missing"] {
-            assert_eq!(
-                lab.kube_context(cluster).map_err(|e| e.to_string()),
-                kube_context_in(&json, cluster).map_err(|e| e.to_string()),
-                "the two ways into runtimeContexts must answer alike for '{cluster}'"
-            );
-        }
-    }
-
-    #[test]
     fn an_unknown_cluster_names_the_ones_that_exist() {
         let lab = LabSpec::from_value(lab_json()).unwrap();
         let err = lab

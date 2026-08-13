@@ -1,9 +1,8 @@
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Result, bail};
 use clap::Args;
 use console::style;
 
 use crate::config::Context as CataContext;
-use crate::domain::lab::kube_context_in;
 use crate::domain::{ClusterSpec, FloeSpec};
 use crate::io;
 
@@ -38,53 +37,33 @@ pub async fn run(ctx: &CataContext, args: DiagnoseArgs) -> Result<()> {
     }
 
     let lab_name = ctx.resolve_lab_name(None)?;
-    let lab = crate::io::nix::get_lab_config(ctx, &lab_name)?;
+    let lab = crate::io::nix::get_lab_spec(ctx, &lab_name)?;
 
     let cluster_name = match &args.cluster {
         Some(name) => name.clone(),
-        None => {
-            let names: Vec<String> = lab["clusterNames"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if names.len() == 1 {
-                names[0].clone()
-            } else {
-                bail!(
-                    "Multiple clusters in lab. Specify one: {} (or use --all)",
-                    names.join(", ")
-                );
-            }
-        }
+        None => match lab.cluster_names.as_slice() {
+            [only] => only.clone(),
+            names => bail!(
+                "Multiple clusters in lab. Specify one: {} (or use --all)",
+                names.join(", ")
+            ),
+        },
     };
 
-    let cluster_config = crate::io::nix::get_cluster_config_from_lab(&lab, &cluster_name)?;
-    let context = kube_context_in(&lab, &cluster_name)?.to_string();
+    let spec = lab.cluster(&cluster_name)?;
+    let context = lab.kube_context(&cluster_name)?;
 
-    diagnose_cluster(ctx, &cluster_name, &context, &cluster_config, &args).await
+    diagnose_cluster(ctx, &cluster_name, context, spec, &args).await
 }
 
 async fn diagnose_all(ctx: &CataContext, args: &DiagnoseArgs) -> Result<()> {
     let lab_name = ctx.resolve_lab_name(None)?;
-    let lab = crate::io::nix::get_lab_config(ctx, &lab_name)?;
+    let lab = crate::io::nix::get_lab_spec(ctx, &lab_name)?;
 
-    let cluster_names: Vec<String> = lab["clusterNames"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    for cluster_name in &cluster_names {
-        let cluster_config = crate::io::nix::get_cluster_config_from_lab(&lab, cluster_name)?;
-        let context = kube_context_in(&lab, cluster_name)?.to_string();
-        diagnose_cluster(ctx, cluster_name, &context, &cluster_config, args).await?;
+    for cluster_name in &lab.cluster_names {
+        let spec = lab.cluster(cluster_name)?;
+        let context = lab.kube_context(cluster_name)?;
+        diagnose_cluster(ctx, cluster_name, context, spec, args).await?;
         println!();
     }
 
@@ -95,7 +74,7 @@ async fn diagnose_cluster(
     _ctx: &CataContext,
     cluster_name: &str,
     kube_context: &str,
-    cluster_config: &serde_json::Value,
+    cluster: &ClusterSpec,
     args: &DiagnoseArgs,
 ) -> Result<()> {
     println!(
@@ -120,7 +99,7 @@ async fn diagnose_cluster(
 
     print_kapp_status(kube_context)?;
 
-    print_component_health(kube_context, cluster_config)?;
+    print_floe_health(kube_context, cluster);
 
     print_unhealthy_pods(kube_context, args.tail)?;
 
@@ -201,13 +180,11 @@ fn print_kapp_status(context: &str) -> Result<()> {
     Ok(())
 }
 
-fn print_component_health(context: &str, config: &serde_json::Value) -> Result<()> {
-    let spec =
-        ClusterSpec::from_value(config.clone()).context("parsing the evaluated cluster config")?;
-    let enabled: Vec<(&String, &FloeSpec)> = spec.enabled_floes().collect();
+fn print_floe_health(context: &str, cluster: &ClusterSpec) {
+    let enabled: Vec<(&String, &FloeSpec)> = cluster.enabled_floes().collect();
 
     if enabled.is_empty() {
-        return Ok(());
+        return;
     }
 
     println!();
@@ -245,8 +222,6 @@ fn print_component_health(context: &str, config: &serde_json::Value) -> Result<(
             );
         }
     }
-
-    Ok(())
 }
 
 enum NamespaceHealth {
