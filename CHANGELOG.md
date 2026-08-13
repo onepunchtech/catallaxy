@@ -250,6 +250,29 @@ The format is based on
   `"deployment"` and every caller that passed `"deploy"` had been agreeing
   by accident: both fell through to the same arm, and so would a typo.
 
+- **A step kind the executor cannot run is a compile error.** Dispatch was
+  six functions chained through `Option`, each ending in `_ => return None`,
+  so a new `StepParams` variant compiled cleanly and failed at run time with
+  "not valid in direction" once the plan was already part-way through. The
+  six collapse into one exhaustive match, which is the shape the typed step
+  params were for.
+
+  Dispatch no longer takes a direction. It never needed one: `load_steps`
+  refuses a step that cannot run in the direction it was found in, for the
+  whole plan, before anything executes. Checking again per step meant every
+  arm carried a direction it had already been guaranteed, and the two
+  functions between them restated `StepKind::runs_in` as a second table.
+
+  It caught something immediately: `cross-cluster-secret-copy` has a `name`
+  param that the old `..` was discarding without anyone deciding to.
+
+  `too-many-lines-threshold` goes to 300 in a new `cli/clippy.toml`, because
+  the table is 252 lines and the lint would otherwise force it back into
+  pieces that cannot be checked. This is a real loosening and worth saying
+  plainly: nothing else in the crate exceeds 120 lines, so the band between
+  is now unguarded. Giving each variant a named params struct would let the
+  arms be one line each and the threshold go back down.
+
 - **`cata docs` and `cata generate` moved to a `cata-build` binary.** They
   render the book and regenerate Kubernetes types from OpenAPI specs: build
   steps for this repository, invoked from `pkgs/default.nix` and the

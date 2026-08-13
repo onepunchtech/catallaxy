@@ -63,7 +63,7 @@ pub async fn execute(
 
     let total = steps.len();
     for (i, step) in steps.iter().enumerate() {
-        run_one(&step_ctx, i, total, step, direction).await?;
+        run_one(&step_ctx, i, total, step).await?;
         if let Some(idx) = stop_after
             && i == idx
         {
@@ -100,7 +100,6 @@ async fn run_one(
     index: usize,
     total: usize,
     step: &PlannedStep,
-    direction: Direction,
 ) -> Result<()> {
     println!();
     println!(
@@ -141,7 +140,7 @@ async fn run_one(
             tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
         }
 
-        match dispatch(sctx, step, direction).await {
+        match dispatch(sctx, step).await {
             Ok(()) => return Ok(()),
             Err(e) => last_err = Some(e),
         }
@@ -149,138 +148,51 @@ async fn run_one(
     Err(last_err.expect("attempts >= 1 always sets last_err on failure"))
 }
 
-async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep, direction: Direction) -> Result<()> {
-    if let Some(result) = dispatch_deploy(sctx, step, direction).await {
-        return result;
-    }
-    if let Some(result) = dispatch_teardown(sctx, step, direction).await {
-        return result;
-    }
-    bail!(
-        "step '{}' is not valid in {} direction",
-        step.type_tag(),
-        direction.label(),
-    );
-}
-
-async fn dispatch_deploy(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    if let Some(result) = dispatch_host(sctx, step, direction).await {
-        return Some(result);
-    }
-    if let Some(result) = dispatch_cluster(sctx, step, direction).await {
-        return Some(result);
-    }
-    dispatch_gitops(sctx, step, direction).await
-}
-
-async fn dispatch_host(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    Some(match (direction, &step.params) {
-        (
-            Direction::Deploy,
-            StepParams::DockerNetworkCreate {
-                name,
-                subnet,
-                gateway,
-                ..
-            },
-        ) => steps::docker_network_create::run(sctx, name, subnet, gateway).await,
-        (Direction::Deploy, StepParams::CertGenerate { zone, .. }) => {
-            steps::cert_generate::run(sctx, zone).await
+async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep) -> Result<()> {
+    match &step.params {
+        StepParams::SetupServices {} => steps::setup_services::run(sctx).await,
+        StepParams::DockerNetworkCreate {
+            name,
+            subnet,
+            gateway,
+        } => steps::docker_network_create::run(sctx, name, subnet, gateway).await,
+        StepParams::CertGenerate { zone } => steps::cert_generate::run(sctx, zone).await,
+        StepParams::TrustBundle {} => steps::trust_bundle::run(sctx),
+        StepParams::HostTrustInstall {} => steps::host_trust_install::run(sctx).await,
+        StepParams::DnsSetup { host, port, zone } => {
+            steps::dns_setup::run(sctx, host, *port, zone).await
         }
-        (Direction::Deploy, StepParams::TrustBundle { .. }) => steps::trust_bundle::run(sctx),
-        (Direction::Deploy, StepParams::HostTrustInstall { .. }) => {
-            steps::host_trust_install::run(sctx).await
+        StepParams::DnsTeardown { zone } => steps::dns_teardown::run(sctx, zone).await,
+        StepParams::ColimaNetworkRoute { subnet, profile } => {
+            steps::colima_network_route::run(sctx, subnet, profile).await
         }
-        (
-            Direction::Deploy,
-            StepParams::DnsSetup {
-                host, port, zone, ..
-            },
-        ) => steps::dns_setup::run(sctx, host, *port, zone).await,
-        (Direction::Teardown, StepParams::DnsTeardown { zone, .. }) => {
-            steps::dns_teardown::run(sctx, zone).await
+        StepParams::RegistrySetup {
+            port,
+            upstreams,
+            zone,
+        } => steps::registry_setup::run(sctx, *port, upstreams, zone).await,
+        StepParams::WarmCache {} => steps::warm_cache::run(sctx).await,
+        StepParams::CreateCluster { name, provisioner } => {
+            steps::create_cluster::run(sctx, name, provisioner).await
         }
-        (
-            Direction::Deploy,
-            StepParams::ColimaNetworkRoute {
-                subnet, profile, ..
-            },
-        ) => steps::colima_network_route::run(sctx, subnet, profile).await,
-        (
-            Direction::Deploy,
-            StepParams::RegistrySetup {
-                port,
-                upstreams,
-                zone,
-                ..
-            },
-        ) => steps::registry_setup::run(sctx, *port, upstreams, zone).await,
-        (Direction::Deploy, StepParams::SetupServices { .. }) => {
-            steps::setup_services::run(sctx).await
-        }
-        (Direction::Deploy, StepParams::WarmCache { .. }) => steps::warm_cache::run(sctx).await,
-        _ => return None,
-    })
-}
-
-async fn dispatch_cluster(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    if let Some(result) = dispatch_cluster_lifecycle(sctx, step, direction).await {
-        return Some(result);
-    }
-    dispatch_cluster_workloads(sctx, step, direction).await
-}
-
-async fn dispatch_cluster_lifecycle(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    Some(match (direction, &step.params) {
-        (
-            Direction::Deploy,
-            StepParams::CreateCluster {
-                name, provisioner, ..
-            },
-        ) => steps::create_cluster::run(sctx, name, provisioner).await,
-        (Direction::Deploy, StepParams::EnsureSecrets { stores, .. }) => {
-            steps::ensure_secrets::run(sctx, stores)
-        }
-        (
-            Direction::Deploy,
-            StepParams::DeployManifests {
-                target,
-                bootstrap,
-                kube_context,
-                ..
-            },
-        ) => steps::deploy_manifests::run(sctx, target, *bootstrap, kube_context.as_deref()).await,
-        (
-            Direction::Deploy,
-            StepParams::CrossClusterSecretCopy {
-                source_cluster,
-                source_namespace,
-                source_secret,
-                target_cluster,
-                target_namespace,
-                target_secret,
-                secret_type,
-                source_context,
-                target_context,
-                ..
-            },
-        ) => {
+        StepParams::EnsureSecrets { stores } => steps::ensure_secrets::run(sctx, stores),
+        StepParams::DeployManifests {
+            target,
+            bootstrap,
+            kube_context,
+        } => steps::deploy_manifests::run(sctx, target, *bootstrap, kube_context.as_deref()).await,
+        StepParams::CrossClusterSecretCopy {
+            name: _,
+            source_cluster,
+            source_namespace,
+            source_secret,
+            target_cluster,
+            target_namespace,
+            target_secret,
+            secret_type,
+            source_context,
+            target_context,
+        } => {
             steps::cross_cluster_secret_copy::run(
                 sctx,
                 steps::cross_cluster_secret_copy::SecretCopy {
@@ -297,34 +209,12 @@ async fn dispatch_cluster_lifecycle(
             )
             .await
         }
-        _ => return None,
-    })
-}
-
-async fn dispatch_cluster_workloads(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    Some(match (direction, &step.params) {
-        (
-            Direction::Deploy,
-            StepParams::PublishImages {
-                source_cluster,
-                images,
-                ..
-            },
-        ) => steps::publish_images::run(sctx, source_cluster, images),
-        (
-            Direction::Deploy,
-            StepParams::WaitForResources {
-                target,
-                resources,
-                wait_timeout_seconds,
-                kube_context,
-                ..
-            },
-        ) => {
+        StepParams::WaitForResources {
+            target,
+            resources,
+            wait_timeout_seconds,
+            kube_context,
+        } => {
             steps::wait_for_resources::run(
                 sctx,
                 target,
@@ -334,25 +224,17 @@ async fn dispatch_cluster_workloads(
             )
             .await
         }
-        (
-            Direction::Deploy,
-            StepParams::SyncKubeconfig {
-                target,
-                clusters,
-                kube_context,
-                ..
-            },
-        ) => steps::sync_kubeconfig::run(sctx, target, clusters, kube_context.as_deref()),
-        (
-            Direction::Deploy,
-            StepParams::Pivot {
-                cluster,
-                bootstrap_context,
-                target_context,
-                provisioner,
-                ..
-            },
-        ) => {
+        StepParams::SyncKubeconfig {
+            target,
+            clusters,
+            kube_context,
+        } => steps::sync_kubeconfig::run(sctx, target, clusters, kube_context.as_deref()),
+        StepParams::Pivot {
+            cluster,
+            bootstrap_context,
+            target_context,
+            provisioner,
+        } => {
             steps::pivot::run(
                 sctx,
                 cluster,
@@ -362,49 +244,29 @@ async fn dispatch_cluster_workloads(
             )
             .await
         }
-        (
-            Direction::Deploy,
-            StepParams::DestroyCluster {
-                name,
-                provisioner,
-                skip_if_missing,
-                ..
-            },
-        ) => {
-            steps::destroy_cluster::run(sctx, name, provisioner, skip_if_missing.unwrap_or(false))
-                .await
-        }
-        _ => return None,
-    })
-}
-
-async fn dispatch_gitops(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    if let Some(result) = dispatch_gitops_repo(sctx, step, direction).await {
-        return Some(result);
-    }
-    dispatch_gitops_argocd(sctx, step, direction).await
-}
-
-async fn dispatch_gitops_repo(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    Some(match (direction, &step.params) {
-        (
-            Direction::Deploy,
-            StepParams::BootstrapForgejoRepos {
-                target,
-                namespace,
-                job_label_selector,
-                kube_context,
-                ..
-            },
-        ) => {
+        StepParams::PublishImages {
+            source_cluster,
+            images,
+        } => steps::publish_images::run(sctx, source_cluster, images),
+        StepParams::PublishManifests {} => steps::publish_manifests::run(sctx).await,
+        StepParams::ApplyRootApplication {
+            target,
+            namespace,
+            manifest_path,
+            kube_context,
+        } => steps::apply_root_application::run(
+            sctx,
+            target,
+            namespace.as_deref(),
+            manifest_path.as_deref(),
+            kube_context.as_deref(),
+        ),
+        StepParams::BootstrapForgejoRepos {
+            target,
+            namespace,
+            job_label_selector,
+            kube_context,
+        } => {
             steps::bootstrap_forgejo_repos::run(
                 sctx,
                 target,
@@ -414,47 +276,14 @@ async fn dispatch_gitops_repo(
             )
             .await
         }
-        (Direction::Deploy, StepParams::PublishManifests { .. }) => {
-            steps::publish_manifests::run(sctx).await
-        }
-        _ => return None,
-    })
-}
-
-async fn dispatch_gitops_argocd(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    Some(match (direction, &step.params) {
-        (
-            Direction::Deploy,
-            StepParams::ApplyRootApplication {
-                target,
-                namespace,
-                manifest_path,
-                kube_context,
-                ..
-            },
-        ) => steps::apply_root_application::run(
-            sctx,
+        StepParams::BootstrapArgocdKubectlSsa {
             target,
-            namespace.as_deref(),
-            manifest_path.as_deref(),
-            kube_context.as_deref(),
-        ),
-        (
-            Direction::Deploy,
-            StepParams::BootstrapArgocdKubectlSsa {
-                target,
-                kube_context,
-                manifest_root,
-                field_manager,
-                namespace,
-                wait_timeout_seconds,
-                ..
-            },
-        ) => steps::bootstrap_argocd_kubectl_ssa::run(
+            manifest_root,
+            kube_context,
+            field_manager,
+            namespace,
+            wait_timeout_seconds,
+        } => steps::bootstrap_argocd_kubectl_ssa::run(
             sctx,
             target,
             kube_context.as_deref(),
@@ -463,18 +292,15 @@ async fn dispatch_gitops_argocd(
             namespace.as_deref(),
             *wait_timeout_seconds,
         ),
-        (
-            Direction::Deploy,
-            StepParams::BootstrapArgocdHelm {
-                target,
-                kube_context,
-                values_path,
-                chart_ref,
-                release_name,
-                namespace,
-                ..
-            },
-        ) => steps::bootstrap_argocd_helm::run(
+        StepParams::BootstrapArgocdHelm {
+            target,
+            values_path,
+            chart_ref,
+            release_name,
+            kube_context,
+            namespace,
+            wait_timeout_seconds: _,
+        } => steps::bootstrap_argocd_helm::run(
             sctx,
             steps::bootstrap_argocd_helm::ArgocdHelm {
                 target,
@@ -485,29 +311,21 @@ async fn dispatch_gitops_argocd(
                 namespace: namespace.as_deref(),
             },
         ),
-        (
-            Direction::Deploy,
-            StepParams::VerifyArgocdReachable {
-                target,
-                kube_context,
-                namespace,
-                ..
-            },
-        ) => steps::verify_argocd_reachable::run(
+        StepParams::VerifyArgocdReachable {
+            target,
+            kube_context,
+            namespace,
+        } => steps::verify_argocd_reachable::run(
             sctx,
             target,
             kube_context.as_deref(),
             namespace.as_deref(),
         ),
-        (
-            Direction::Deploy | Direction::Teardown,
-            StepParams::RunScript {
-                bin,
-                env,
-                kube_context,
-                ..
-            },
-        ) => steps::run_script::run(
+        StepParams::RunScript {
+            bin,
+            env,
+            kube_context,
+        } => steps::run_script::run(
             sctx,
             bin,
             Some(step.name.as_str()),
@@ -515,42 +333,21 @@ async fn dispatch_gitops_argocd(
             kube_context.as_deref(),
             step.continues_on_failure(),
         ),
-
-        _ => return None,
-    })
-}
-
-async fn dispatch_teardown(
-    sctx: &StepContext<'_>,
-    step: &PlannedStep,
-    direction: Direction,
-) -> Option<Result<()>> {
-    Some(match (direction, &step.params) {
-        (
-            Direction::Teardown,
-            StepParams::ReleaseClusterCloudResources {
-                target,
-                kube_context,
-                wait_timeout_seconds,
-                ..
-            },
-        ) => steps::release_cluster_cloud_resources::run(
-            sctx,
+        StepParams::DestroyCluster {
+            name,
+            provisioner,
+            skip_if_missing,
+        } => {
+            steps::destroy_cluster::run(sctx, name, provisioner, skip_if_missing.unwrap_or(false))
+                .await
+        }
+        StepParams::ReconcileManagedResource {
             target,
-            kube_context.as_deref(),
-            wait_timeout_seconds.unwrap_or(600),
-        ),
-        (
-            Direction::Teardown,
-            StepParams::ReconcileManagedResource {
-                target,
-                resource_kind,
-                resource_name,
-                kube_context,
-                external_name_discovery_bin,
-                ..
-            },
-        ) => steps::reconcile_managed_resource::run(
+            resource_kind,
+            resource_name,
+            kube_context,
+            external_name_discovery_bin,
+        } => steps::reconcile_managed_resource::run(
             sctx,
             target,
             resource_kind,
@@ -558,18 +355,15 @@ async fn dispatch_teardown(
             kube_context.as_deref(),
             external_name_discovery_bin.as_deref(),
         ),
-        (
-            Direction::Teardown,
-            StepParams::DeleteManagedResource {
-                target,
-                resource_kind,
-                resource_name,
-                wait,
-                wait_timeout_seconds,
-                kube_context,
-                ..
-            },
-        ) => steps::delete_managed_resource::run(
+        StepParams::DeleteManagedResource {
+            target,
+            resource_kind,
+            resource_name,
+            wait,
+            wait_timeout_seconds,
+            kube_context,
+            external_name_discovery_bin: _,
+        } => steps::delete_managed_resource::run(
             sctx,
             target,
             resource_kind,
@@ -578,17 +372,13 @@ async fn dispatch_teardown(
             wait_timeout_seconds.unwrap_or(1200),
             kube_context.as_deref(),
         ),
-        (
-            Direction::Teardown,
-            StepParams::WaitForClusterGone {
-                target,
-                kube_context,
-                resource_kind,
-                resource_name,
-                wait_timeout_seconds,
-                ..
-            },
-        ) => steps::wait_for_cluster_gone::run(
+        StepParams::WaitForClusterGone {
+            target,
+            kube_context,
+            resource_kind,
+            resource_name,
+            wait_timeout_seconds,
+        } => steps::wait_for_cluster_gone::run(
             sctx,
             target.as_deref(),
             kube_context.as_deref(),
@@ -596,27 +386,19 @@ async fn dispatch_teardown(
             resource_name.as_deref(),
             wait_timeout_seconds.unwrap_or(600),
         ),
-        (
-            Direction::Teardown,
-            StepParams::DestroyCluster {
-                name,
-                provisioner,
-                skip_if_missing,
-                ..
-            },
-        ) => {
-            steps::destroy_cluster::run(sctx, name, provisioner, skip_if_missing.unwrap_or(false))
-                .await
-        }
-        (Direction::Teardown, StepParams::RemoveServices { .. }) => {
-            steps::remove_services::run(sctx)
-        }
-        (Direction::Teardown, StepParams::RemoveNetwork { .. }) => {
-            steps::remove_network::run(sctx).await
-        }
-
-        _ => return None,
-    })
+        StepParams::ReleaseClusterCloudResources {
+            target,
+            kube_context,
+            wait_timeout_seconds,
+        } => steps::release_cluster_cloud_resources::run(
+            sctx,
+            target,
+            kube_context.as_deref(),
+            wait_timeout_seconds.unwrap_or(600),
+        ),
+        StepParams::RemoveNetwork {} => steps::remove_network::run(sctx).await,
+        StepParams::RemoveServices {} => steps::remove_services::run(sctx),
+    }
 }
 
 fn should_skip_if_reachable(step: &PlannedStep) -> bool {
