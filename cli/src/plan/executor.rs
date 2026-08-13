@@ -3,26 +3,11 @@ use console::style;
 
 use crate::config::Context as CataContext;
 use crate::domain::LabSpec;
-use crate::domain::plan::{PlannedStep, StepParams};
+use crate::domain::plan::{Direction, PlannedStep, StepParams};
 use crate::io;
 
 use super::StepContext;
 use super::steps;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Direction {
-    Deploy,
-    Teardown,
-}
-
-impl Direction {
-    fn label(self) -> &'static str {
-        match self {
-            Direction::Deploy => "deployment",
-            Direction::Teardown => "teardown",
-        }
-    }
-}
 
 pub async fn execute(
     ctx: &CataContext,
@@ -642,16 +627,7 @@ fn load_steps(lab: &LabSpec, direction: Direction) -> Result<Vec<PlannedStep>> {
         Direction::Teardown => &lab.teardown_plan,
     };
     for (i, step) in steps.iter().enumerate() {
-        if !step.runs_in(direction.label()) {
-            bail!(
-                "{} plan step {} is '{}', which the executor only runs in the \
-                 other direction. Refusing to start: aborting part-way through \
-                 would leave the lab half-built.",
-                direction.label(),
-                i + 1,
-                step.type_tag(),
-            );
-        }
+        step.refuse_wrong_direction(direction, i)?;
     }
     Ok(steps.clone())
 }
@@ -741,6 +717,7 @@ fn resolve_stop_after(
 
 #[cfg(test)]
 mod tests {
+    use crate::domain::Direction;
     use crate::domain::step_kind::StepKind;
 
     fn kind(tag: &str) -> StepKind {
@@ -782,21 +759,21 @@ mod tests {
 
     #[test]
     fn a_teardown_only_kind_is_refused_in_the_deploy_plan() {
-        assert!(!kind("remove-network").runs_in("deployment"));
-        assert!(kind("remove-network").runs_in("teardown"));
+        assert!(!kind("remove-network").runs_in(Direction::Deploy));
+        assert!(kind("remove-network").runs_in(Direction::Teardown));
     }
 
     #[test]
     fn a_deploy_only_kind_is_refused_in_the_teardown_plan() {
-        assert!(kind("create-cluster").runs_in("deployment"));
-        assert!(!kind("create-cluster").runs_in("teardown"));
+        assert!(kind("create-cluster").runs_in(Direction::Deploy));
+        assert!(!kind("create-cluster").runs_in(Direction::Teardown));
     }
 
     #[test]
     fn bidirectional_kinds_run_in_both() {
         for tag in ["run-script", "destroy-cluster"] {
             assert!(
-                kind(tag).runs_in("deployment") && kind(tag).runs_in("teardown"),
+                kind(tag).runs_in(Direction::Deploy) && kind(tag).runs_in(Direction::Teardown),
                 "{tag}"
             );
         }

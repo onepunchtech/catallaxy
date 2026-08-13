@@ -1,4 +1,4 @@
-use super::plan::Idempotency;
+use super::plan::{Direction, Idempotency};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepKind {
@@ -145,7 +145,7 @@ impl StepKind {
         }
     }
 
-    pub fn runs_in(self, direction: &str) -> bool {
+    pub fn runs_in(self, direction: Direction) -> bool {
         let (deploy, teardown) = match self {
             StepKind::RunScript | StepKind::DestroyCluster => (true, true),
             StepKind::DeleteManagedResource
@@ -179,8 +179,8 @@ impl StepKind {
             | StepKind::VerifyArgocdReachable => (true, false),
         };
         match direction {
-            "teardown" => teardown,
-            _ => deploy,
+            Direction::Deploy => deploy,
+            Direction::Teardown => teardown,
         }
     }
 
@@ -245,7 +245,7 @@ mod tests {
     fn every_kind_runs_in_at_least_one_direction() {
         for kind in StepKind::ALL {
             assert!(
-                kind.runs_in("deployment") || kind.runs_in("teardown"),
+                kind.runs_in(Direction::Deploy) || kind.runs_in(Direction::Teardown),
                 "{kind:?} can never be dispatched"
             );
         }

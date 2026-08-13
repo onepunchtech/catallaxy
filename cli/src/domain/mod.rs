@@ -11,5 +11,5 @@ pub use cluster::{
 };
 pub use diagnostic::{Diagnostic, Severity};
 pub use lab::{BootstrapTool, CdConfig, DnsInfo, LabSpec, NetworkInfo};
-pub use plan::{PlannedStep, StepParams};
+pub use plan::{Direction, PlannedStep, StepParams};
 pub use secrets::{Backend, HostProjection, SecretsCache, SecretsSpec, StoreValues};

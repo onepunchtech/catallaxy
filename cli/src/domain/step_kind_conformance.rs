@@ -5,7 +5,7 @@ mod tests {
     use serde::Deserialize;
     use serde_json::{Map, Value};
 
-    use crate::domain::plan::{Idempotency, StepParams};
+    use crate::domain::plan::{Direction, Idempotency, StepParams};
     use crate::domain::step_kind::StepKind;
 
     #[derive(Debug, Deserialize)]
@@ -114,12 +114,12 @@ mod tests {
         for (kind, schema) in registry() {
             let step_kind = StepKind::from_tag(&kind).expect("kind list already checked");
             assert_eq!(
-                step_kind.runs_in("deploy"),
+                step_kind.runs_in(Direction::Deploy),
                 schema.directions.iter().any(|d| d == "deploy"),
                 "deploy-direction drift on kind '{kind}'"
             );
             assert_eq!(
-                step_kind.runs_in("teardown"),
+                step_kind.runs_in(Direction::Teardown),
                 schema.directions.iter().any(|d| d == "teardown"),
                 "teardown-direction drift on kind '{kind}'"
             );

@@ -163,6 +163,24 @@ The format is based on
 
 ### Changed
 
+- **`cata lab plan` refuses a step the executor would refuse.** The command
+  and the executor each parsed the plan their own way, and only the executor
+  checked that a step can run in the direction it was found in. A teardown
+  step sitting in the deploy plan printed as a normal line and then failed
+  at `lab up`, which is the one thing "read the plan first" is supposed to
+  rule out. Both now call the same check, so what prints is what runs.
+
+  The check applies only when the plan came from a lab. `--from-file` takes
+  the plan as a bare array, and `--teardown` then selects nothing: there is
+  no direction in the file to check a step against, so asserting one would
+  reject a plan that is perfectly valid in the direction it was exported
+  from.
+
+  `Direction` moved to `domain` and `runs_in` takes it, rather than a `&str`
+  matched as `"teardown" => …, _ => deploy`. Every caller that passed
+  `"deployment"` and every caller that passed `"deploy"` had been agreeing
+  by accident: both fell through to the same arm, and so would a typo.
+
 - **The host-side modules moved out of `commands/` into `host/`.**
   `services.rs`, `pki.rs`, `state.rs` and `dns.rs` sat under
   `commands/lab/`, but their callers were plan steps and the verifier, not

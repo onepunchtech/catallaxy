@@ -1,6 +1,21 @@
 use serde::Deserialize;
 
 use super::step_kind::StepKind;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Deploy,
+    Teardown,
+}
+
+impl Direction {
+    pub fn label(self) -> &'static str {
+        match self {
+            Direction::Deploy => "deployment",
+            Direction::Teardown => "teardown",
+        }
+    }
+}
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -96,8 +111,22 @@ impl PlannedStep {
         self.kind().tag()
     }
 
-    pub fn runs_in(&self, direction: &str) -> bool {
+    pub fn runs_in(&self, direction: Direction) -> bool {
         self.kind().runs_in(direction)
+    }
+
+    pub fn refuse_wrong_direction(&self, direction: Direction, index: usize) -> anyhow::Result<()> {
+        if self.runs_in(direction) {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "{} plan step {} is '{}', which the executor only runs in the \
+             other direction. Refusing to start: aborting part-way through \
+             would leave the lab half-built.",
+            direction.label(),
+            index + 1,
+            self.type_tag(),
+        )
     }
 
     pub fn dry_run_safe(&self) -> bool {

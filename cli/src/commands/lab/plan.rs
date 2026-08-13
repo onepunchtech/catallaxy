@@ -8,7 +8,7 @@ use console::style;
 use serde_json::Value;
 
 use crate::config::Context as CataContext;
-use crate::domain::{PlannedStep, StepParams};
+use crate::domain::{Direction, PlannedStep, StepParams};
 
 pub async fn run(
     ctx: &CataContext,
@@ -20,8 +20,16 @@ pub async fn run(
 ) -> Result<()> {
     let stable = stable || diff.is_some();
 
-    let steps = load_steps(ctx, name, teardown, from_file.as_deref())?;
-    let parsed = parse_steps(&steps, teardown)?;
+    let direction = if teardown {
+        Direction::Teardown
+    } else {
+        Direction::Deploy
+    };
+    let steps = load_steps(ctx, name, direction, from_file.as_deref())?;
+    let parsed = parse_steps(&steps, direction)?;
+    if from_file.is_none() {
+        refuse_steps_in_the_wrong_direction(&parsed, direction)?;
+    }
 
     if stable {
         let text = format_stable(&steps);
@@ -42,13 +50,12 @@ pub async fn run(
 fn load_steps(
     ctx: &CataContext,
     name: Option<&str>,
-    teardown: bool,
+    direction: Direction,
     from_file: Option<&Path>,
 ) -> Result<Vec<Value>> {
-    let plan_key = if teardown {
-        "teardownPlan"
-    } else {
-        "deploymentPlan"
+    let plan_key = match direction {
+        Direction::Teardown => "teardownPlan",
+        Direction::Deploy => "deploymentPlan",
     };
 
     if let Some(path) = from_file {
@@ -101,16 +108,22 @@ fn extract_plan_array(v: &Value, plan_key: &str) -> Result<Vec<Value>> {
     bail!("no plan array found");
 }
 
-fn parse_steps(steps: &[Value], teardown: bool) -> Result<Vec<PlannedStep>> {
-    let label = if teardown { "teardown" } else { "deployment" };
+fn parse_steps(steps: &[Value], direction: Direction) -> Result<Vec<PlannedStep>> {
     steps
         .iter()
         .enumerate()
         .map(|(i, v)| {
             serde_json::from_value(v.clone())
-                .with_context(|| format!("parsing {label} plan step {}", i + 1))
+                .with_context(|| format!("parsing {} plan step {}", direction.label(), i + 1))
         })
         .collect()
+}
+
+fn refuse_steps_in_the_wrong_direction(steps: &[PlannedStep], direction: Direction) -> Result<()> {
+    for (i, step) in steps.iter().enumerate() {
+        step.refuse_wrong_direction(direction, i)?;
+    }
+    Ok(())
 }
 
 fn format_stable(steps: &[Value]) -> String {
@@ -495,9 +508,25 @@ mod tests {
     fn a_step_the_cli_cannot_dispatch_is_refused_rather_than_rendered() {
         let steps = vec![step("deploy-manifests", json!({}))];
         assert!(
-            parse_steps(&steps, false).is_err(),
+            parse_steps(&steps, Direction::Deploy).is_err(),
             "deploy-manifests without a target must not reach the executor"
         );
+    }
+
+    #[test]
+    fn a_teardown_only_step_in_the_deploy_plan_is_refused_before_it_prints() {
+        let parsed = parse_steps(&[step("remove-network", json!({}))], Direction::Deploy)
+            .expect("it parses fine; it is the direction that is wrong");
+        let err = refuse_steps_in_the_wrong_direction(&parsed, Direction::Deploy)
+            .expect_err("the plan you read is the plan that would run");
+        assert!(err.to_string().contains("other direction"), "got: {err}");
+    }
+
+    #[test]
+    fn a_plan_read_from_a_file_carries_no_direction_to_check_against() {
+        let parsed = parse_steps(&[step("remove-network", json!({}))], Direction::Deploy)
+            .expect("a bare plan array parses whichever way it was produced");
+        assert_eq!(parsed.len(), 1);
     }
 
     #[test]
