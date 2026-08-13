@@ -90,41 +90,6 @@ pub fn get_kubeconfig(
     run_capture(&mut cmd, ctx)
 }
 
-pub fn wait_cluster_ready(
-    ctx: &CataContext,
-    kube_context: &str,
-    cluster_name: &str,
-    namespace: &str,
-    timeout: &str,
-) -> Result<()> {
-    println!(
-        "{} Waiting for cluster '{}' to be ready...",
-        style(">>>").cyan(),
-        cluster_name
-    );
-
-    let mut cmd = Command::new("kubectl");
-    cmd.args([
-        "--context",
-        kube_context,
-        "wait",
-        "--for=condition=Ready",
-        &format!("cluster/{cluster_name}"),
-        "-n",
-        namespace,
-        &format!("--timeout={timeout}"),
-    ]);
-
-    run_streaming(&mut cmd, ctx)?;
-
-    println!(
-        "{} Cluster '{}' is ready",
-        style(">>>").green(),
-        cluster_name
-    );
-    Ok(())
-}
-
 pub fn wait_control_plane_initialized(
     ctx: &CataContext,
     kube_context: &str,
@@ -153,28 +118,4 @@ pub fn wait_control_plane_initialized(
 
     println!("{} Control plane initialized", style(">>>").green());
     Ok(())
-}
-
-pub fn is_cluster_ready(kube_context: &str, cluster_name: &str, namespace: &str) -> bool {
-    use std::process::Stdio;
-    let output = Command::new("kubectl")
-        .args([
-            "--context",
-            kube_context,
-            "get",
-            "cluster",
-            cluster_name,
-            "-n",
-            namespace,
-            "-o",
-            "jsonpath={.status.conditions[?(@.type==\"Ready\")].status}",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim() == "True",
-        _ => false,
-    }
 }

@@ -148,6 +148,7 @@ If you have older notes:
 | `cata lab trust --setup`                  | `cata lab ops -- trust setup`         |
 | `cata lab trust --teardown`               | `cata lab ops -- trust teardown`      |
 | `cata lab trust --export`                 | `cata lab ops -- trust export`        |
-| `cata kubeconfig sync`                    | `cata cluster kubeconfig sync`        |
+| `cata kubeconfig sync`                    | removed. The planner syncs them       |
+| `cata cluster kubeconfig sync`            | removed. The planner syncs them       |
 | `cata lab up --phase/--component/--force` | removed. They were parsed and ignored |
 | `cata apply --sequential`                 | removed. It was parsed and ignored    |

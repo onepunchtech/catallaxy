@@ -128,6 +128,25 @@ The format is based on
 
 ### Removed
 
+- **`cata cluster kubeconfig sync` is gone.** It read its list of workload
+  clusters from `floes.cluster-api.clusters`, an option that does not exist:
+  the cluster-api floe describes the shape of a workload cluster
+  (`controlPlane`, `workers`, CIDRs) and never carried a list of them. The
+  lookup missed every time, so the command could only ever fail. It was the
+  last remnant of CAPI as a provisioner, a concept `cluster.provisioner`
+  dropped when it settled on `k3d | talos | crossplane | external`, and the
+  same vestige as the `Capi` variant removed from the CLI's provisioner enum
+  above.
+
+  Nothing replaces it because nothing needs to: the planner already emits a
+  `sync-kubeconfig` step per provisioning cluster, with the target list
+  derived from the provisioner graph rather than hand-written, ordered after
+  provisioning and skipped when the cluster already answers.
+  `io::kubectl::get_capi_kubeconfig`, `io::clusterctl::is_cluster_ready` and
+  `io::clusterctl::wait_cluster_ready` went with it, having had no other
+  caller, as did a `--timeout` parser that turned anything it could not read
+  (`5h`, say) into ten minutes without saying so.
+
 - **`cata lab ops -- trust init-ca` and `trust init-intermediate` are
   gone**, replaced by the two `cata secrets` commands above. `trust setup`,
   `browser`, `teardown` and `export` are unchanged. A CA minted by the old

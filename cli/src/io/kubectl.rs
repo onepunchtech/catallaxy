@@ -366,59 +366,6 @@ fn parse_timeout(timeout: &str) -> std::time::Duration {
     }
 }
 
-pub fn get_capi_kubeconfig(
-    kube_context: &str,
-    cluster_name: &str,
-    namespace: &str,
-) -> Result<String> {
-    let secret_name = format!("{cluster_name}-kubeconfig");
-
-    let output = Command::new("kubectl")
-        .args([
-            "--context",
-            kube_context,
-            "get",
-            "secret",
-            &secret_name,
-            "-n",
-            namespace,
-            "-o",
-            "jsonpath={.data.value}",
-        ])
-        .output()
-        .context("Failed to run kubectl")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Failed to get kubeconfig secret: {stderr}");
-    }
-
-    let encoded = String::from_utf8_lossy(&output.stdout);
-    if encoded.is_empty() {
-        bail!("Kubeconfig secret '{secret_name}' is empty or not found");
-    }
-
-    let mut decode = Command::new("base64")
-        .args(["--decode"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("Failed to spawn base64 decode")?;
-
-    if let Some(stdin) = decode.stdin.as_mut() {
-        use std::io::Write;
-        stdin.write_all(encoded.as_bytes())?;
-    }
-
-    let decode_output = decode.wait_with_output()?;
-    if !decode_output.status.success() {
-        bail!("Failed to decode kubeconfig");
-    }
-
-    Ok(String::from_utf8_lossy(&decode_output.stdout).to_string())
-}
-
 pub fn merge_kubeconfig(kubeconfig_path: &Path, context_name: &str) -> Result<()> {
     println!(
         "{} Merging kubeconfig for context '{context_name}'...",

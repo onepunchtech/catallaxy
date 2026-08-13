@@ -1,9 +1,8 @@
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::path::PathBuf;
 
 use anyhow::{Result, bail};
-use clap::{Args, Subcommand};
+use clap::Subcommand;
 use console::style;
 
 use crate::config::Context as CataContext;
@@ -52,39 +51,6 @@ pub enum ClusterCommands {
         #[arg(help = CLUSTER_NAME_HELP)]
         name: Option<String>,
     },
-
-    #[command(about = "Manage kubeconfigs for CAPI-managed clusters")]
-    Kubeconfig(KubeconfigArgs),
-}
-
-#[derive(Args)]
-pub struct KubeconfigArgs {
-    #[command(subcommand)]
-    pub command: KubeconfigCommands,
-}
-
-#[derive(Subcommand)]
-pub enum KubeconfigCommands {
-    #[command(about = "Fetch kubeconfigs for CAPI-managed clusters")]
-    Sync {
-        #[arg(
-            long,
-            value_name = "NAME",
-            help = "Management cluster to fetch from. Defaults to the flake fragment"
-        )]
-        management: Option<String>,
-
-        #[arg(help = "Workload cluster to fetch. Defaults to all of them")]
-        cluster: Option<String>,
-
-        #[arg(
-            long,
-            default_value = "10m",
-            value_name = "DURATION",
-            help = "How long to wait for a cluster to become ready"
-        )]
-        timeout: String,
-    },
 }
 
 pub async fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
@@ -111,7 +77,6 @@ pub async fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
             status(ctx, &name).await
         }
-        ClusterCommands::Kubeconfig(args) => kubeconfig(ctx, args).await,
     }
 }
 
@@ -504,223 +469,6 @@ fn load_cluster_spec(ctx: &CataContext, name: &str) -> Result<ClusterSpec> {
     let lab_name = ctx.resolve_lab_name(None)?;
     let lab = crate::io::nix::get_lab_spec(ctx, &lab_name)?;
     lab.cluster(name).cloned()
-}
-
-async fn kubeconfig(ctx: &CataContext, args: KubeconfigArgs) -> Result<()> {
-    match args.command {
-        KubeconfigCommands::Sync {
-            management,
-            cluster,
-            timeout,
-        } => kubeconfig_sync(ctx, management, cluster, &timeout).await,
-    }
-}
-
-async fn kubeconfig_sync(
-    ctx: &CataContext,
-    management: Option<String>,
-    cluster: Option<String>,
-    timeout: &str,
-) -> Result<()> {
-    let mgmt_name = ctx.resolve_cluster_name(management.as_deref())?;
-    let lab_name = ctx.resolve_lab_name(None)?;
-    let lab = crate::io::nix::get_lab_spec(ctx, &lab_name)?;
-    let mgmt = lab.cluster(&mgmt_name)?;
-    let kube_context = lab.kube_context(&mgmt_name)?.to_string();
-
-    if !io::kubectl::api_reachable(&kube_context) {
-        bail!("Cannot reach management cluster (context: {kube_context}). Is it running?");
-    }
-
-    let capi = mgmt.floes.get("cluster-api").ok_or_else(|| {
-        anyhow::anyhow!("cluster '{mgmt_name}' does not enable the cluster-api floe")
-    })?;
-    let namespace = capi.namespace.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("the cluster-api floe on '{mgmt_name}' declares no namespace")
-    })?;
-
-    let clusters_map = capi
-        .extra
-        .get("clusters")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "the cluster-api floe declares no `clusters`, so there is nothing to \
-                 sync kubeconfigs for. No floe in the tree offers that option today, \
-                 which means this command cannot currently succeed."
-            )
-        })?;
-
-    if clusters_map.is_empty() {
-        println!("{} No CAPI clusters defined", style(">>>").yellow());
-        return Ok(());
-    }
-
-    println!(
-        "{} Syncing kubeconfigs from management cluster '{}'",
-        style("catallaxy").cyan().bold(),
-        mgmt_name
-    );
-    println!();
-
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let kube_dir = PathBuf::from(&home).join(".kube");
-
-    if let Some(ref target_cluster) = cluster {
-        if !clusters_map.contains_key(target_cluster) {
-            bail!(
-                "Cluster '{}' not found in CAPI clusters config",
-                target_cluster
-            );
-        }
-
-        sync_single_cluster(
-            &kube_context,
-            target_cluster,
-            namespace,
-            &kube_dir,
-            timeout,
-            true,
-        )?;
-    } else {
-        for (cluster_name, cluster_config) in clusters_map {
-            let enabled = cluster_config
-                .get("enable")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-
-            if !enabled {
-                continue;
-            }
-
-            sync_single_cluster(
-                &kube_context,
-                cluster_name,
-                namespace,
-                &kube_dir,
-                timeout,
-                false,
-            )?;
-        }
-    }
-
-    Ok(())
-}
-
-fn sync_single_cluster(
-    kube_context: &str,
-    cluster_name: &str,
-    namespace: &str,
-    kube_dir: &Path,
-    timeout: &str,
-    wait: bool,
-) -> Result<()> {
-    if wait {
-        println!(
-            "{} Waiting for cluster '{}' to be ready...",
-            style(">>>").cyan(),
-            cluster_name
-        );
-
-        let timeout_duration = parse_timeout(timeout);
-        let start = Instant::now();
-
-        loop {
-            if io::clusterctl::is_cluster_ready(kube_context, cluster_name, namespace) {
-                break;
-            }
-
-            if start.elapsed() > timeout_duration {
-                bail!(
-                    "Timed out waiting for cluster '{}' to be ready",
-                    cluster_name
-                );
-            }
-
-            std::thread::sleep(Duration::from_secs(5));
-            print!(".");
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-        }
-        println!();
-
-        println!("{} Waiting for kubeconfig secret...", style(">>>").cyan());
-
-        loop {
-            match io::kubectl::get_capi_kubeconfig(kube_context, cluster_name, namespace) {
-                Ok(_) => break,
-                Err(e) => {
-                    let err_str = e.to_string();
-                    if !err_str.contains("NotFound") && !err_str.contains("not found") {
-                        return Err(e);
-                    }
-                }
-            }
-
-            if start.elapsed() > timeout_duration {
-                bail!(
-                    "Timed out waiting for kubeconfig secret for '{}'",
-                    cluster_name
-                );
-            }
-
-            std::thread::sleep(Duration::from_secs(2));
-            print!(".");
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-        }
-        println!();
-    } else {
-        if !io::clusterctl::is_cluster_ready(kube_context, cluster_name, namespace) {
-            println!(
-                "  {} Cluster '{}' not ready yet, skipping",
-                style("-").yellow(),
-                cluster_name
-            );
-            return Ok(());
-        }
-    }
-
-    let kubeconfig_content =
-        match io::kubectl::get_capi_kubeconfig(kube_context, cluster_name, namespace) {
-            Ok(content) => content,
-            Err(e) => {
-                let err_str = e.to_string();
-                if err_str.contains("NotFound") || err_str.contains("not found") {
-                    println!(
-                        "  {} Cluster '{}' ready but kubeconfig not available yet, skipping",
-                        style("-").yellow(),
-                        cluster_name
-                    );
-                    return Ok(());
-                }
-                return Err(e);
-            }
-        };
-
-    let kubeconfig_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
-    fs::write(&kubeconfig_path, &kubeconfig_content)?;
-
-    let context_name = format!("{cluster_name}-admin");
-    io::kubectl::merge_kubeconfig(&kubeconfig_path, &context_name)?;
-
-    println!(
-        "  {} Kubeconfig synced for '{}' (context: {})",
-        style("+").green(),
-        cluster_name,
-        context_name
-    );
-
-    Ok(())
-}
-
-fn parse_timeout(timeout: &str) -> Duration {
-    let s = timeout.trim_end_matches('m').trim_end_matches('s');
-    if timeout.ends_with('m') {
-        Duration::from_secs(s.parse::<u64>().unwrap_or(10) * 60)
-    } else {
-        Duration::from_secs(s.parse::<u64>().unwrap_or(600))
-    }
 }
 
 fn provision_k3d(
