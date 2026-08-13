@@ -21,6 +21,7 @@
 // import ./cli-lints.nix { inherit pkgs self; }
 // import ./lib-tests.nix { inherit lib pkgs e2eLabs; }
 // import ./step-kinds.nix { inherit lib pkgs system; }
+// import ./host-dns.nix { inherit lib pkgs self; }
 // import ./docs.nix {
   inherit pkgs;
   inherit (packages) optionDocs stepKindDocs;

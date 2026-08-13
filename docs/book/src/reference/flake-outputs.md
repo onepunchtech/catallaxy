@@ -11,6 +11,27 @@ guessing, most of the wrong incantations in circulation are variations on
 The whole module tree. `mkLab` uses it for you. You would only import it
 directly to build a lab without `mkLab`.
 
+### `nixosModules.hostDns`
+
+A NixOS module that resolves a lab's zone through the lab's DNS container,
+by writing the same systemd-resolved drop-in `cata lab dns --setup` writes
+with sudo. Use it on a machine NixOS manages, where a `nixos-rebuild` would
+otherwise revert what the command wrote.
+
+```nix
+imports = [ catallaxy.nixosModules.hostDns ];
+services.resolved.enable = true;
+services.catallaxy.hostDns = {
+  enable = true;
+  zones."minimal.test" = { host = "127.0.0.1"; port = 5354; };
+};
+```
+
+`cata lab dns` prints this filled in for the lab, next to the sudo and
+dnsmasq routes. Pick one: run `cata lab dns --teardown` before switching to
+the module, so the file the command wrote does not sit beside the one Nix
+manages.
+
 ### `lib`
 
 ```

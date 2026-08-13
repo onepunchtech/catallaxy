@@ -60,6 +60,16 @@ pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> 
     }
     println!();
 
+    println!("{}", style("NixOS (survives a rebuild):").bold());
+    println!("  imports = [ catallaxy.nixosModules.hostDns ];");
+    println!("  services.resolved.enable = true;");
+    println!("  services.catallaxy.hostDns = {{");
+    println!("    enable = true;");
+    println!("    zones.\"{zone}\" = {{ host = \"{host}\"; port = {port}; }};");
+    println!("  }};");
+    println!("  (the sudo routes above are reverted by the next nixos-rebuild)");
+    println!();
+
     println!("{}", style("Linux (dnsmasq):").bold());
     println!("  Add to /etc/dnsmasq.conf:");
     println!("  server=/{}/{}#{}", zone, host, port);
@@ -70,8 +80,8 @@ pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> 
     println!();
 
     println!("{}", style("Auto-configure:").bold());
-    println!("  cata lab dns --setup     # Configure resolver (requires sudo)");
-    println!("  cata lab dns --teardown  # Remove configuration");
+    println!("  cata lab dns --setup     # Write it now with sudo");
+    println!("  cata lab dns --teardown  # Remove what --setup wrote");
 
     Ok(())
 }

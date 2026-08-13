@@ -9,6 +9,23 @@ The format is based on
 
 ### Added
 
+- **`nixosModules.hostDns` resolves a lab's zone declaratively.** On a
+  machine NixOS manages, `cata lab dns --setup` and the machine's own
+  configuration were fighting over the same files: the command writes a
+  systemd-resolved drop-in with sudo, and the next `nixos-rebuild` reverts
+  it. The module writes the same drop-in from the system configuration, so
+  it survives.
+
+  Neither replaces the other, because neither fits every machine.
+  `cata lab dns` with no flags prints all three routes filled in for the
+  lab, the sudo one, the dnsmasq one and now the module, and says which
+  reverts which. `--setup` is still there for a host NixOS does not manage.
+
+  `host-dns` checks the module the way the CLI's tests check the CLI: it
+  evaluates it and compares the drop-ins it produces, that a zone declared
+  without `enable` writes nothing, and that turning it on without
+  `services.resolved` asserts rather than silently doing nothing.
+
 - **The cloud teardown path has a plan snapshot.** Nothing exercised it:
   none of the five example labs provision a cluster from another, `e2eLabs`
   is those same five, and `lib/tests/plan-graph.nix` checks `topoSort`

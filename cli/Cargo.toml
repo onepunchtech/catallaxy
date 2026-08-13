@@ -2,6 +2,7 @@
 name = "cata"
 version = "0.7.0"
 edition = "2024"
+default-run = "cata"
 description = "CLI for catallaxy - declarative Kubernetes platform management"
 authors = ["Catallaxy Contributors"]
 license = "MIT"

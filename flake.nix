@@ -40,6 +40,8 @@
           imports = [ ./modules ];
         };
 
+      nixosModules.hostDns = ./nix/nixos/host-dns.nix;
+
       lib = pureLib;
 
       templates.consumer = {
