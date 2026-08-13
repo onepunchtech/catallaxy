@@ -37,21 +37,12 @@ pub fn extract_static(lab: &LabSpec) -> LabTopology {
 fn extract_services(lab: &LabSpec) -> BTreeMap<String, LabService> {
     let mut services = BTreeMap::new();
     for (name, svc) in &lab.services {
-        let ports = svc["ports"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
-
         services.insert(
             name.clone(),
             LabService {
-                description: svc["description"].as_str().unwrap_or("").to_string(),
-                container: svc["container"].as_str().unwrap_or("").to_string(),
-                ports,
+                description: svc.description.clone(),
+                container: svc.container.clone(),
+                ports: svc.ports.clone(),
                 running: None,
             },
         );

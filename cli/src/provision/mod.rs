@@ -293,8 +293,8 @@ pub fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<Path
         }
 
         for (svc_name, svc) in &lab.services {
-            if let Err(e) = crate::host::services::start_service(ctx, lab_name, svc_name, svc) {
-                let description = svc["description"].as_str().unwrap_or(svc_name);
+            if let Err(e) = crate::host::services::start_service(lab_name, svc_name, svc) {
+                let description = svc.description.as_str();
                 println!(
                     "{} Failed to start {}: {}",
                     style("Warning:").yellow(),

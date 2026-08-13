@@ -10,6 +10,9 @@ pub use cluster::{
     ClusterSpec, DeploySpec, DeployStrategy, ExposedHost, FloeSpec, ProvisionerKind,
 };
 pub use diagnostic::{Diagnostic, Severity};
-pub use lab::{BootstrapTool, CdConfig, DnsInfo, LabSpec, NetworkInfo};
+pub use lab::{
+    BootstrapTool, CdConfig, DnsInfo, ExtraMount, HostService, LabSpec, NetworkInfo, ReadyProbe,
+    ServiceVolume,
+};
 pub use plan::{Direction, PlannedStep, StepParams};
 pub use secrets::{Backend, HostProjection, SecretsCache, SecretsSpec, StoreValues};

@@ -79,10 +79,12 @@ impl VerifyContext<'_> {
     }
 
     pub fn ingress(&self) -> Option<(&'static str, u16)> {
-        let published: Vec<u16> = self.lab.services.get("proxy")?["ports"]
-            .as_array()?
+        let published: Vec<u16> = self
+            .lab
+            .services
+            .get("proxy")?
+            .ports
             .iter()
-            .filter_map(|p| p.as_str())
             .filter_map(|p| p.split(':').next()?.parse().ok())
             .collect();
 
@@ -291,7 +293,10 @@ mod tests {
     #[test]
     fn the_ingress_follows_the_proxy_ports() {
         let plain = with(json!({
-            "services": { "proxy": { "ports": ["80:80"] } },
+            "services": { "proxy": {
+                "container": "catallaxy-proxy", "description": "proxy", "image": "haproxy",
+                "ports": ["80:80"], "volumes": {},
+            } },
         }));
         let ctx = VerifyContext {
             lab_name: "l",
@@ -302,7 +307,10 @@ mod tests {
         assert_eq!(ctx.ingress(), Some(("http", 80)));
 
         let tls = with(json!({
-            "services": { "proxy": { "ports": ["80:80", "443:443"] } },
+            "services": { "proxy": {
+                "container": "catallaxy-proxy", "description": "proxy", "image": "haproxy",
+                "ports": ["80:80", "443:443"], "volumes": {},
+            } },
         }));
         let ctx = VerifyContext {
             lab_name: "l",

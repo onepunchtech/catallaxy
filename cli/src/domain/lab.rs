@@ -42,7 +42,7 @@ pub struct LabSpec {
 
     pub runtime_contexts: BTreeMap<String, String>,
 
-    pub services: BTreeMap<String, Value>,
+    pub services: BTreeMap<String, HostService>,
 
     pub self_contained: SelfContained,
 
@@ -261,4 +261,67 @@ mod tests {
             .expect_err("unknown cluster errors");
         assert!(err.to_string().contains("not found in lab"));
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostService {
+    pub container: String,
+    pub description: String,
+    pub image: String,
+    pub ports: Vec<String>,
+    pub volumes: BTreeMap<String, ServiceVolume>,
+
+    #[serde(default)]
+    pub networks: Vec<String>,
+    #[serde(default)]
+    pub command: Vec<String>,
+    #[serde(default)]
+    pub extra_mounts: Vec<ExtraMount>,
+    #[serde(default)]
+    pub ready_probe: Option<ReadyProbe>,
+
+    #[serde(default)]
+    pub link: Option<String>,
+    #[serde(default)]
+    pub network_mode: Option<String>,
+    #[serde(default)]
+    pub cap_add: Vec<String>,
+    #[serde(default)]
+    pub network_config: Value,
+    #[serde(default)]
+    pub dns_containers: Value,
+
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtraMount {
+    pub host: String,
+    pub container: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceVolume {
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub persist: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadyProbe {
+    pub kind: String,
+    pub host: String,
+    pub port: u16,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub expected_status: Option<u16>,
+    #[serde(default)]
+    pub timeout: Option<String>,
 }

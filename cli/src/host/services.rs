@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail};
 use console::style;
 
-use crate::config::Context as CataContext;
+use crate::domain::{HostService, ServiceVolume};
 use crate::io;
 
 use crate::host::state::{lab_state_dir, service_state_dir};
@@ -50,7 +50,7 @@ server = "https://registry.{zone}"
 fn prepare_volumes(
     lab_name: &str,
     svc_name: &str,
-    volumes: &serde_json::Map<String, serde_json::Value>,
+    volumes: &std::collections::BTreeMap<String, ServiceVolume>,
 ) -> Result<(Vec<(String, String)>, bool)> {
     let state_dir = service_state_dir(lab_name, svc_name);
     fs::create_dir_all(&state_dir)
@@ -60,7 +60,7 @@ fn prepare_volumes(
     let mut content_changed = false;
 
     for (container_path, vol) in volumes {
-        if let Some(content) = vol["content"].as_str() {
+        if let Some(content) = vol.content.as_deref() {
             let filename = container_path.rsplit('/').next().unwrap_or("file");
             let host_path = state_dir.join(filename);
 
@@ -72,7 +72,7 @@ fn prepare_volumes(
             }
 
             mounts.push((host_path.display().to_string(), container_path.clone()));
-        } else if let Some(persist_name) = vol["persist"].as_str() {
+        } else if let Some(persist_name) = vol.persist.as_deref() {
             let host_path = state_dir.join(persist_name);
             fs::create_dir_all(&host_path)
                 .with_context(|| format!("Failed to create persist dir {}", host_path.display()))?;
@@ -88,15 +88,10 @@ fn prepare_volumes(
     Ok((mounts, content_changed))
 }
 
-pub fn start_service(
-    _ctx: &CataContext,
-    lab_name: &str,
-    svc_name: &str,
-    svc: &serde_json::Value,
-) -> Result<()> {
-    let container = svc["container"].as_str().unwrap_or("");
-    let image = svc["image"].as_str().unwrap_or("");
-    let description = svc["description"].as_str().unwrap_or(svc_name);
+pub fn start_service(lab_name: &str, svc_name: &str, svc: &HostService) -> Result<()> {
+    let container = svc.container.as_str();
+    let image = svc.image.as_str();
+    let description = svc.description.as_str();
 
     if container.is_empty() || image.is_empty() {
         println!(
@@ -107,11 +102,7 @@ pub fn start_service(
         return Ok(());
     }
 
-    let (mut volume_mounts, content_changed) = if let Some(volumes) = svc["volumes"].as_object() {
-        prepare_volumes(lab_name, svc_name, volumes)?
-    } else {
-        (Vec::new(), false)
-    };
+    let (mut volume_mounts, content_changed) = prepare_volumes(lab_name, svc_name, &svc.volumes)?;
 
     if io::docker::container_running(container) {
         if content_changed {
@@ -127,10 +118,7 @@ pub fn start_service(
         }
     }
 
-    let ports: Vec<&str> = svc["ports"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default();
+    let ports: Vec<&str> = svc.ports.iter().map(String::as_str).collect();
 
     add_extra_mounts(lab_name, svc, &mut volume_mounts);
 
@@ -139,11 +127,11 @@ pub fn start_service(
         .map(|(h, c)| (h.as_str(), c.as_str()))
         .collect();
 
-    let link = svc["link"].as_str();
-    let network_mode = svc["networkMode"].as_str();
-    let cap_add = string_list(svc, "capAdd");
-    let networks = string_list(svc, "networks");
-    let command = string_list(svc, "command");
+    let link = svc.link.as_deref();
+    let network_mode = svc.network_mode.as_deref();
+    let cap_add: Vec<String> = svc.cap_add.clone();
+    let networks: Vec<String> = svc.networks.clone();
+    let command: Vec<String> = svc.command.clone();
     let network_ips = network_ips(svc);
     let dns_ips = dns_container_ips(svc);
 
@@ -161,15 +149,21 @@ pub fn start_service(
             ports: &ports,
             volume_mounts: &mount_refs,
             link,
-            networks: &networks,
+            networks: &networks.iter().map(String::as_str).collect::<Vec<_>>(),
             dns_ips: &dns_ips,
-            command: &command,
+            command: &command.iter().map(String::as_str).collect::<Vec<_>>(),
             network_mode,
-            cap_add: &cap_add,
+            cap_add: &cap_add.iter().map(String::as_str).collect::<Vec<_>>(),
             network_ips: &network_ips,
         })?;
     } else {
-        io::docker::run_container(container, image, &ports, &mount_refs, &command)?;
+        io::docker::run_container(
+            container,
+            image,
+            &ports,
+            &mount_refs,
+            &command.iter().map(String::as_str).collect::<Vec<_>>(),
+        )?;
     }
 
     wait_for_service_ready(svc, description)?;
@@ -179,34 +173,19 @@ pub fn start_service(
     Ok(())
 }
 
-fn add_extra_mounts(
-    lab_name: &str,
-    svc: &serde_json::Value,
-    volume_mounts: &mut Vec<(String, String)>,
-) {
-    let Some(extra_mounts) = svc["extraMounts"].as_array() else {
-        return;
-    };
+fn add_extra_mounts(lab_name: &str, svc: &HostService, volume_mounts: &mut Vec<(String, String)>) {
     let state_dir = lab_state_dir(lab_name);
-    for mount in extra_mounts {
-        if let (Some(host), Some(container)) = (mount["host"].as_str(), mount["container"].as_str())
-        {
-            let resolved = host.replace("{{STATE_DIR}}", &state_dir.display().to_string());
-            volume_mounts.push((resolved, container.to_string()));
-        }
+    for mount in &svc.extra_mounts {
+        let resolved = mount
+            .host
+            .replace("{{STATE_DIR}}", &state_dir.display().to_string());
+        volume_mounts.push((resolved, mount.container.clone()));
     }
 }
 
-fn string_list<'a>(svc: &'a serde_json::Value, key: &str) -> Vec<&'a str> {
-    svc[key]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
-        .unwrap_or_default()
-}
-
-fn network_ips(svc: &serde_json::Value) -> HashMap<String, String> {
+fn network_ips(svc: &HostService) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    if let Some(net_cfg) = svc["networkConfig"].as_object() {
+    if let Some(net_cfg) = svc.network_config.as_object() {
         for (net_name, net_val) in net_cfg {
             if let Some(ip) = net_val["ip"].as_str() {
                 out.insert(net_name.clone(), ip.to_string());
@@ -216,8 +195,8 @@ fn network_ips(svc: &serde_json::Value) -> HashMap<String, String> {
     out
 }
 
-fn dns_container_ips(svc: &serde_json::Value) -> Vec<String> {
-    svc["dnsContainers"]
+fn dns_container_ips(svc: &HostService) -> Vec<String> {
+    svc.dns_containers
         .as_array()
         .map(|arr| {
             arr.iter()
@@ -238,18 +217,16 @@ fn parse_probe_timeout(s: &str) -> Duration {
     Duration::from_secs(secs.unwrap_or(60))
 }
 
-fn wait_for_service_ready(svc: &serde_json::Value, description: &str) -> Result<()> {
-    let Some(probe) = svc.get("readyProbe").filter(|p| !p.is_null()) else {
+fn wait_for_service_ready(svc: &HostService, description: &str) -> Result<()> {
+    let Some(probe) = svc.ready_probe.as_ref() else {
         return Ok(());
     };
-    let kind = probe["kind"].as_str().unwrap_or("tcp");
-    let host = probe["host"].as_str().unwrap_or("127.0.0.1");
-    let Some(port) = probe["port"].as_u64() else {
-        bail!("readyProbe for service '{description}' is missing 'port'");
-    };
-    let timeout = parse_probe_timeout(probe["timeout"].as_str().unwrap_or("60s"));
-    let path = probe["path"].as_str().unwrap_or("/");
-    let expected = probe["expectedStatus"].as_u64().unwrap_or(200);
+    let kind = probe.kind.as_str();
+    let host = probe.host.as_str();
+    let port = probe.port;
+    let timeout = parse_probe_timeout(probe.timeout.as_deref().unwrap_or("60s"));
+    let path = probe.path.as_deref().unwrap_or("/");
+    let expected = u64::from(probe.expected_status.unwrap_or(200));
 
     let addr = format!("{host}:{port}");
     let deadline = Instant::now() + timeout;
@@ -389,7 +366,31 @@ mod tests {
 
     #[test]
     fn absent_ready_probe_is_a_no_op() {
-        let svc = serde_json::json!({ "description": "no probe" });
+        let svc: HostService = serde_json::from_value(serde_json::json!({
+            "container": "c",
+            "description": "no probe",
+            "image": "i",
+            "ports": [],
+            "volumes": {},
+        }))
+        .expect("a service without a probe parses");
         assert!(wait_for_service_ready(&svc, "no probe").is_ok());
+    }
+
+    #[test]
+    fn a_persisted_volume_names_the_docker_volume_rather_than_flagging_one() {
+        let svc: HostService = serde_json::from_value(serde_json::json!({
+            "container": "registry",
+            "description": "registry",
+            "image": "zot",
+            "ports": ["5050:5000"],
+            "volumes": { "/var/lib/zot": { "persist": "data" } },
+        }))
+        .expect("a service with a persisted volume parses");
+        assert_eq!(
+            svc.volumes["/var/lib/zot"].persist.as_deref(),
+            Some("data"),
+            "persist carries the volume name, so a bool would have dropped it"
+        );
     }
 }

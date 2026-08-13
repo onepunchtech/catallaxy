@@ -8,7 +8,7 @@ pub fn run(ctx: &VerifyContext<'_>) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
 
     for (name, svc) in &ctx.lab.services {
-        let container = svc["container"].as_str().unwrap_or(name);
+        let container = svc.container.as_str();
         if !io::docker::container_running(container) {
             diags.push(diag(
                 Severity::Error,
@@ -20,18 +20,15 @@ pub fn run(ctx: &VerifyContext<'_>) -> Vec<Diagnostic> {
             continue;
         }
 
-        let Some(probe) = svc.get("readyProbe").filter(|p| !p.is_null()) else {
+        let Some(probe) = svc.ready_probe.as_ref() else {
             continue;
         };
-        let kind = probe["kind"].as_str().unwrap_or("tcp");
-        let host = probe["host"].as_str().unwrap_or("127.0.0.1");
-        let Some(port) = probe["port"].as_u64() else {
-            continue;
-        };
-        let path = probe["path"].as_str().unwrap_or("/");
-        let expected = probe["expectedStatus"].as_u64().unwrap_or(200);
+        let host = probe.host.as_str();
+        let port = probe.port;
+        let path = probe.path.as_deref().unwrap_or("/");
+        let expected = u64::from(probe.expected_status.unwrap_or(200));
 
-        if let Err(e) = probe_once(&format!("{host}:{port}"), kind, host, path, expected) {
+        if let Err(e) = probe_once(&format!("{host}:{port}"), &probe.kind, host, path, expected) {
             diags.push(diag(
                 Severity::Error,
                 CHECK,

@@ -68,7 +68,7 @@ pub async fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
         .services
         .iter()
         .map(|(svc_name, svc)| {
-            let container = svc["container"].as_str().unwrap_or("").to_string();
+            let container = svc.container.clone();
             ServiceState {
                 name: svc_name.clone(),
                 running: !container.is_empty() && io::docker::container_running(&container),
@@ -137,8 +137,8 @@ fn print_service_status(lab: &LabSpec) {
     if !lab.services.is_empty() {
         println!("{}", style("Services:").bold());
         for (svc_name, svc) in &lab.services {
-            let container = svc["container"].as_str().unwrap_or("");
-            let description = svc["description"].as_str().unwrap_or("");
+            let container = svc.container.as_str();
+            let description = svc.description.as_str();
             let running = if !container.is_empty() {
                 io::docker::container_running(container)
             } else {
@@ -150,15 +150,7 @@ fn print_service_status(lab: &LabSpec) {
                 style("stopped").red()
             };
 
-            let ports_str = svc["ports"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .unwrap_or_default();
+            let ports_str = svc.ports.join(", ");
 
             if ports_str.is_empty() {
                 println!(

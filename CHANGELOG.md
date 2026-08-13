@@ -250,6 +250,24 @@ The format is based on
   `"deployment"` and every caller that passed `"deploy"` had been agreeing
   by accident: both fell through to the same arm, and so would a typo.
 
+- **`lab.services` is typed.** It was the last part of `cliConfig` the CLI
+  read by indexing a `Value`, across five places that each re-supplied their
+  own defaults for the same fields.
+
+  Typing it corrected two things a sample would not have told you, and the
+  code had been right where a guess would have been wrong. A volume's
+  `persist` is the name of the Docker volume, not a flag, so a `bool` would
+  have silently dropped which volume to use. An `extraMounts` entry is a
+  `{host, container}` pair rather than a string. Both are pinned by tests
+  now.
+
+  Worth noting the Nix side declares these as `types.attrs`, so there is no
+  schema to conform to and the shape is whatever the host modules happen to
+  emit. `HostService` keeps a flattened `extra` for that reason: unknown
+  keys are carried rather than dropped, because a strict struct over a
+  free-form option would quietly discard a field a floe added. Giving
+  `lab.services` a real option type in Nix would let the `extra` go.
+
 - **`commands/` is only commands now.** The step implementations had been
   calling up into it for the work itself: applying manifests, provisioning a
   cluster, loading the secret stores, publishing to git, warming the image
