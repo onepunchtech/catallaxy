@@ -26,6 +26,15 @@ The format is based on
   without `enable` writes nothing, and that turning it on without
   `services.resolved` asserts rather than silently doing nothing.
 
+- **The NixOS route for trusting the lab CA is documented.** No module: the
+  declarative answer is `security.pki.certificateFiles`, which NixOS already
+  has, and wrapping it would add a name without adding anything else. What
+  was missing is that `lab.trust.installIntoHostStore` writes the system
+  store with sudo and a rebuild reverts it, and that the CA has to be
+  committed rather than read from `~/.local/share`, since a flake cannot
+  evaluate that path purely and the file does not exist until the lab has
+  been up once. `using/tls.md` says so, with the export.
+
 - **The cloud teardown path has a plan snapshot.** Nothing exercised it:
   none of the five example labs provision a cluster from another, `e2eLabs`
   is those same five, and `lib/tests/plan-graph.nix` checks `topoSort`

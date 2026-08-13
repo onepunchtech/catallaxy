@@ -82,6 +82,7 @@ not anymore.
 | Your shell        | `eval "$(cata lab env <lab>)"`          | no         |
 | Your browsers     | `cata lab ops -- trust browser`         | no         |
 | The whole machine | `lab.trust.installIntoHostStore = true` | yes        |
+| A NixOS machine   | `security.pki.certificateFiles`         | rebuild    |
 
 `trust-bundle` concatenates your system roots with the lab CA into
 `~/.local/share/catallaxy/labs/<lab>/trust/bundle.crt`, then hands it to
@@ -106,6 +107,30 @@ while Firefox's store is per profile. `--firefox-profile <dir>` targets one
 profile and creates it if missing, which gives a demo a throwaway browser.
 
 Restart the browser afterwards. It reads the store at startup.
+
+### On NixOS
+
+`installIntoHostStore` writes into the system trust store with sudo, which
+the next `nixos-rebuild` reverts. The declarative equivalent is the one
+NixOS already has:
+
+```nix
+security.pki.certificateFiles = [ ./labs/mylab-ca.crt ];
+```
+
+A CA certificate is public, so commit it rather than reaching into the lab's
+state directory: a path under `~/.local/share` is not something a flake can
+evaluate purely, and the file does not exist until the lab has been up once.
+Export it after the first `cata lab up`:
+
+```bash
+cp ~/.local/share/catallaxy/labs/mylab.local/proxy/ca.crt labs/mylab-ca.crt
+```
+
+Rotating the CA means re-exporting it. If that trade is unwelcome, the shell
+and browser routes above need no system change at all and are what most
+operators want; the machine-wide store is for the case where something you
+do not launch through `cata` has to trust the lab.
 
 ## On macOS
 
