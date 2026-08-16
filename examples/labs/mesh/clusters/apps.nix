@@ -23,6 +23,22 @@
     };
   };
 
+  floes.external-secrets.enable = true;
+
+  secrets.projections.vault-token = {
+    source = "openbao-root-token";
+    namespace = "external-secrets";
+    keys.token.from = "token";
+  };
+
+  # mgmt's netbird operator mints this key; external-secrets carries it here.
+  # This lands it as Secret netbird/setup-key-cluster-router-apps, which is
+  # what agent.setupKeyRef below reads.
+  secrets.subscribe.setup-key-cluster-router-apps = {
+    from = "mgmt";
+    namespace = "netbird";
+  };
+
   floes.netbird = {
     enable = true;
     management.enable = false;

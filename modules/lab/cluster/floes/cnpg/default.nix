@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -261,6 +262,32 @@ in
     in
     {
       floes.cnpg.exports.operator.ready = "cnpg/operator/ready";
+
+      floes.cnpg.network = {
+
+        declared = true;
+
+        serves.webhook = {
+
+          port = 443;
+
+          fromApiServer = true;
+
+        };
+
+      };
+
+      floes.cnpg.imagesComplete = true;
+
+      floes.cnpg.images.operator = {
+
+        registry = "ghcr.io";
+
+        repository = "cloudnative-pg/cloudnative-pg";
+
+        tag = "1.25.0";
+
+      };
 
       bundles.cnpg = {
 

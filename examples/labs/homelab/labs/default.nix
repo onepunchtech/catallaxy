@@ -27,6 +27,36 @@ in
       };
   };
 
+  # A runtime store, for values only the running lab can produce. Harbor mints
+  # a robot account's credential through its own API after it comes up, so no
+  # amount of authoring ahead of time would have it.
+  #
+  # The lab hosts the store itself, on core. The address is read from the floe
+  # rather than restated, so moving OpenBao does not leave this pointing at
+  # where it used to be.
+  lab.secrets.stores.runtime = {
+    backend = "vault";
+    vault = {
+      # The address that works from obs too. The in-cluster one resolves
+      # only inside core, and an assertion refuses it once a second cluster
+      # uses the store.
+      server = config.lab.clusters.core.floes.openbao.exports.externalAddress;
+      tokenSecret.namespace = "external-secrets";
+    };
+  };
+
+  # The root token OpenBao runs with in dev mode. It is a value you write, so
+  # it is authored and projected like any other; it cannot live in the store
+  # it unlocks.
+  lab.secrets.stores.bootstrap.backend = "env";
+  lab.secrets.managed.openbao-root-token = {
+    store = "bootstrap";
+    # Arbitrary, so there is nothing to choose: `cata secrets generate` mints
+    # it. That is the difference between this and the netbird setup key, which
+    # some other system issues and a human has to go and fetch.
+    keys.token = { };
+  };
+
   lab.steps.verify-lab-dns = {
     kind = "run-script";
     direction = "deploy";
@@ -56,18 +86,21 @@ in
     scope = "per-cluster";
     format = "json";
     command = ''
-      find "$MANIFEST_DIR" -name '*.yaml' -print0 \
-        | xargs -0 yq -o=json -I0 '.. | select(has("image")) | .image' 2>/dev/null \
-        | grep -E ':latest"?$' \
-        | jq -R '{severity: "error", resource: ., message: "image uses the `latest` tag"}' \
+      # -L because a wave directory is a symlink into the store, and find does
+      # not descend into one without it.
+      images=$(find -L "$MANIFEST_DIR" -name '*.yaml' -print0 \
+        | xargs -0 -r yq -N -o=json -I0 '.. | select(has("image")) | .image')
+
+      printf '%s\n' "$images" \
+        | { grep -E ':latest"?$' || true; } \
+        | jq -R 'select(length > 0) | {severity: "error", resource: ., message: "image uses the `latest` tag"}' \
         | jq -s '.'
     '';
   };
 
-  lab.ops.commands = {
+  lab.ops.commands.database = {
     shell = {
       description = "Open a psql shell to the forgejo database";
-      category = "database";
       package = pkgs.writeShellApplication {
         name = "shell";
         runtimeInputs = [

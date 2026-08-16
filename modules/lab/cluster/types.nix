@@ -246,6 +246,57 @@ in
           default = false;
           description = "Generate default-deny NetworkPolicies for lab namespaces. Components add allow rules.";
         };
+
+        default = mkOption {
+          type = (import ../network-policy-types.nix { inherit lib; }).namespacePolicyType;
+          default = { };
+          description = ''
+            What every lab-managed namespace gets before any floe asks for
+            anything.
+          '';
+        };
+
+        namespaceOverrides = mkOption {
+          type = types.attrsOf (import ../network-policy-types.nix { inherit lib; }).namespacePolicyType;
+          default = { };
+          example = lib.literalExpression ''
+            {
+              harbor.egress.internet.ports = [ 443 ];
+            }
+          '';
+          description = ''
+            Per-namespace configuration, used instead of `default` rather
+            than merged into it, so what a namespace ends up with reads in
+            one place.
+
+            `dns`, `apiServer` and `sameNamespace` still default to true
+            here. Replacing the rest of `default` is a reasonable thing to
+            want; silently dropping name resolution because a line was not
+            restated is not, and unlike a missing flow nothing downstream
+            would catch it.
+          '';
+        };
+
+        apiServerCidrs = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          example = [ "172.19.0.0/16" ];
+          description = ''
+            Address ranges the API server answers on, used only when the
+            cluster has no CNI that can name it.
+
+            A plain `NetworkPolicy` cannot say "the API server": the service
+            IP resolves to a host-network node address, so the only way to
+            permit it is an address range that covers the control plane. On a
+            local lab that is the docker bridge the nodes sit on, which is
+            what this defaults to. Cilium names the API server outright and
+            ignores this.
+
+            Widening it widens what every pod in the lab may reach on the API
+            ports, so it is worth setting to the control plane rather than
+            leaving it at something generous.
+          '';
+        };
       };
 
       auditLogging = {

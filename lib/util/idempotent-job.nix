@@ -11,6 +11,8 @@ rec {
       contentInputs,
       podSpec,
 
+      behaviourVersion ? 1,
+
       extraLabels ? { },
 
       argoCDSyncWave ? "10",
@@ -18,9 +20,23 @@ rec {
       jobAnnotations ? { },
     }:
     let
+      # The hash covers what you declared, not how you implemented it.
+      # Reformatting the payload's script or bumping its base image is not a
+      # change of desired state and must not re-run the Job against a live
+      # API; adding a repository to a list is, and does.
+      #
+      # `behaviourVersion` is the escape hatch for the case declarations
+      # cannot express: you changed what the payload *does* without changing
+      # anything it was given. Bump it and the Job runs again.
       hash = hashContent {
-        inherit contentInputs podSpec;
+        inherit contentInputs behaviourVersion;
       };
+
+      # The implementation's own hash, recorded but not acted on. It is what
+      # lets a reader, or a check, see that a payload changed while its
+      # declared inputs did not — which is either a cosmetic edit or a
+      # forgotten `behaviourVersion` bump, and the difference matters.
+      implementationHash = hashContent { inherit podSpec; };
       jobName = "${name}-${hash}";
       ownerName = "${name}-runs";
 
@@ -58,6 +74,8 @@ rec {
           };
           annotations = {
 
+            "catallaxy.io/implementation-hash" = implementationHash;
+
             "argocd.argoproj.io/sync-wave" = argoCDSyncWave;
 
             "kapp.k14s.io/update-strategy" = "fallback-on-replace";
@@ -81,6 +99,13 @@ rec {
     {
       inherit hash;
       name = jobName;
+
+      # Selects this generation and no other. Waiting on
+      # `component=<name>` alone also selects every earlier hash, and on the
+      # server-side-apply path nothing prunes them, so one failed Job from a
+      # previous render makes the wait fail forever.
+      selector = "app.kubernetes.io/component=${name},catallaxy.io/idempotent-job-hash=${hash}";
+
       resources = {
 
         "${ownerName}" = ownerConfigMap;

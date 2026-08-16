@@ -17,9 +17,22 @@ let
     { lib, ... }:
     {
       config._module.freeformType = lib.types.attrs;
+      # Null capabilities, which `refs.needs` reads as "this peer provides
+      # nothing", so a floe evaluated on its own still has a resolvable
+      # `requires`.
       options.floes.gateway.exports = lib.mkOption {
         type = lib.types.attrs;
-        default = { };
+        default = {
+          routing = null;
+          internalGatewayName = "stub-internal";
+        };
+      };
+      options.floes.cert-manager.exports = lib.mkOption {
+        type = lib.types.attrs;
+        default = {
+          issuance = null;
+          caBundle = null;
+        };
       };
       options.floes.gateway.internalHostnames = lib.mkOption {
         type = lib.types.listOf lib.types.str;
@@ -104,6 +117,51 @@ let
     };
   };
 
+  # No lab in the repo configures harbor projects, so without this the
+  # conversion from generated shell to a JSON document would be unverified.
+  withProjects = evalFloe (
+    baseArgs
+    // {
+      floe = harbor;
+      cluster = {
+        imports = [ stubUpstream ];
+        floes.harbor = {
+          enable = true;
+          domain = "registry.test.local";
+          projects.team = {
+            public = false;
+            storageQuota = 1073741824;
+            members.developers = {
+              entityType = "group";
+              role = "developer";
+            };
+            immutableTagRules = [
+              {
+                disabled = false;
+                scope_selectors.repository = [
+                  {
+                    decoration = "repoMatches";
+                    kind = "doublestar";
+                    pattern = "**";
+                  }
+                ];
+              }
+            ];
+          };
+        };
+      };
+    }
+  );
+
+  projectsJson =
+    let
+      containers =
+        withProjects.config.bundles.harbor.resources.harbor-project-bootstrap.spec.template.spec.containers;
+      env = (builtins.head containers).env;
+      var = builtins.head (builtins.filter (e: e.name == "PROJECTS_JSON") env);
+    in
+    builtins.fromJSON var.value;
+
   oidcOff = mk {
     providers.kanidm.oauth2Clients.harbor = client [ ];
     oidc.enable = false;
@@ -147,4 +205,74 @@ lib.runTests {
     expr = fullyGranted.config.floes.harbor.oidc.client.clientSecretRef.name;
     expected = "harbor-kanidm-oauth2-credentials";
   };
+
+  # The script iterates this. It used to be a shell program Nix wrote per
+  # project, so the shape is now the contract between the two.
+  testProjectsAreRenderedAsData = {
+    expr =
+      let
+        p = builtins.head projectsJson;
+      in
+      [
+        (builtins.length projectsJson)
+        p.name
+        p.storageQuota
+        p.registry
+        p.retention
+        p.cveAllowlist
+        (builtins.length p.immutableRules)
+        p.members
+      ];
+    expected = [
+      1
+      "team"
+      1073741824
+      null
+      null
+      null
+      1
+      [
+        {
+          entity = "developers";
+          entityType = 2;
+          roleId = 2;
+        }
+      ]
+    ];
+  };
+
+  # The group suffix is applied to a group member's name and not to a user's.
+  # It was applied at the point the shell line was generated, so this is the
+  # same rule in the new place.
+  testAGroupMemberCarriesTheOidcSuffix = {
+    expr = (builtins.head (builtins.head projectsJson).members).entity;
+    expected = "developers";
+  };
+
+  # Harbor's admin password and secret key used to come from a Job that shelled
+  # out to /dev/urandom and skipped itself if the Secret already existed.
+  testTheMintJobIsGone = {
+    expr = builtins.attrNames (
+      lib.filterAttrs (
+        n: _: lib.hasInfix "admin-bootstrap" n
+      ) withProjects.config.bundles.harbor.resources
+    );
+    expected = [ ];
+  };
+
+  # The ServiceAccount and Role it ran under stay: the OIDC, robot and project
+  # Jobs are still bound to them.
+  testTheBootstrapRbacRemains = {
+    expr = map (n: withProjects.config.bundles.harbor.resources.${n}.kind) [
+      "harbor-admin-sa"
+      "harbor-admin-role"
+      "harbor-admin-rb"
+    ];
+    expected = [
+      "ServiceAccount"
+      "Role"
+      "RoleBinding"
+    ];
+  };
+
 }

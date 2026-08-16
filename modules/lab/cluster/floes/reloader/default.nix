@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -104,6 +105,24 @@ in
               };
             }
           ) workloads;
+      };
+
+      floes.reloader.network = {
+
+        declared = true;
+
+      };
+
+      floes.reloader.imagesComplete = true;
+
+      floes.reloader.images.controller = {
+
+        registry = "ghcr.io";
+
+        repository = "stakater/reloader";
+
+        tag = "v1.4.19";
+
       };
 
       bundles.reloader = {

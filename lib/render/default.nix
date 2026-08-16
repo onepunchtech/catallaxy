@@ -1,13 +1,30 @@
-{ lib, pkgs }:
+{
+  lib,
+  pkgs,
+  waitImages ? { },
+}:
 
 let
   yamlUtil = import ./yaml.nix { inherit lib pkgs; };
-  dirBuilder = import ./dir-builder.nix { inherit lib pkgs yamlUtil; };
+  dirBuilder = import ./dir-builder.nix {
+    inherit
+      lib
+      pkgs
+      yamlUtil
+      waitImages
+      ;
+  };
   prefixUtil = import ./prefix.nix { inherit lib pkgs; };
+  imageUtil = import ./images.nix { inherit lib pkgs; };
 
 in
 {
-  inherit yamlUtil dirBuilder prefixUtil;
+  inherit
+    yamlUtil
+    dirBuilder
+    prefixUtil
+    imageUtil
+    ;
 
   chainsaw = import ./chainsaw.nix { inherit lib pkgs; };
 
@@ -18,6 +35,7 @@ in
       dirBuilder
       yamlUtil
       prefixUtil
+      imageUtil
       ;
   };
   argocd = import ./argocd.nix {
@@ -27,6 +45,7 @@ in
       dirBuilder
       yamlUtil
       prefixUtil
+      imageUtil
       ;
   };
   fleet = import ./fleet.nix {
@@ -36,6 +55,7 @@ in
       dirBuilder
       yamlUtil
       prefixUtil
+      imageUtil
       ;
   };
 }

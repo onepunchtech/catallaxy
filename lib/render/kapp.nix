@@ -4,11 +4,16 @@
   dirBuilder,
   yamlUtil,
   prefixUtil,
+  imageUtil,
 }:
 
 {
   clusterName,
   prefix ? "",
+  imageLock ? { },
+  imageRegistry ? null,
+  imageExempt ? [ ],
+  imageOverrides ? { },
   labNamespaces ? [ ],
 
   packages,
@@ -30,6 +35,12 @@ pkgs.runCommand "kapp-${clusterName}"
     cp -r --no-preserve=mode ${bundleEntries}/. "$out/${clusterName}/"
 
     ${prefixUtil.applyToDir { inherit prefix labNamespaces; } "$out/${clusterName}"}
+    ${imageUtil.applyToDir {
+      lock = imageLock;
+      registry = imageRegistry;
+      exempt = imageExempt;
+      overrides = imageOverrides;
+    } "$out/${clusterName}"}
 
     echo "kapp" > "$out/${clusterName}/.deploy-strategy"
 

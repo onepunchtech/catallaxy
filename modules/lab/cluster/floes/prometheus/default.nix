@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -76,53 +77,24 @@ in
 
       host = "prometheus-kube-prometheus-prometheus.${cfg.namespace}.svc.cluster.local";
 
-      httpRouteResources = optionalAttrs (cfg.gateway.enable && cfg.gateway.domain != "") {
-        "prometheus-remote-write-httproute" = {
-          apiVersion = "gateway.networking.k8s.io/v1";
-          kind = "HTTPRoute";
-          metadata = {
-            name = "prometheus-remote-write";
-            namespace = cfg.namespace;
-          };
-          spec = {
-            parentRefs = [
-              (
-                {
-                  name =
-                    if cfg.gateway.tier == "internal" then
-                      config.floes.gateway.exports.internalGatewayName
-                    else
-                      cfg.gateway.gatewayRef;
-
-                  sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
-                }
-                // optionalAttrs (cfg.gateway.gatewayNamespace != null) {
-                  namespace = cfg.gateway.gatewayNamespace;
-                }
-              )
-            ];
-            hostnames = [ cfg.gateway.domain ];
-            rules = [
-              {
-                matches = [
-                  {
-                    path = {
-                      type = "PathPrefix";
-                      value = "/api/v1/write";
-                    };
-                  }
-                ];
-                backendRefs = [
-                  {
-                    name = "prometheus-kube-prometheus-prometheus";
-                    port = 9090;
-                  }
-                ];
-              }
-            ];
-          };
+      # Prometheus exposes only its remote-write endpoint, not a UI, so the
+      # route is path-scoped and there is no certificate: the Gateway's own
+      # wildcard terminates for it.
+      httpRouteResources = k8sHelpers.mkGatewayExposure {
+        name = "prometheus-remote-write";
+        routeName = "prometheus-remote-write-httproute";
+        namespace = cfg.namespace;
+        inherit (cfg.gateway) domain;
+        inherit (cfg) gateway;
+        inherit (config.floes.gateway.exports) internalGatewayName;
+        sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+        pathPrefix = "/api/v1/write";
+        backend = {
+          name = "prometheus-kube-prometheus-prometheus";
+          port = 9090;
         };
       };
+
     in
     {
 
@@ -166,6 +138,54 @@ in
           [ cfg.gateway.domain ]
         else
           [ ];
+
+      floes.prometheus.network = {
+
+        declared = true;
+
+        serves.api.port = 9090;
+
+        serves.operatorWebhook = {
+
+          port = 443;
+
+          fromApiServer = true;
+
+        };
+
+      };
+
+      floes.prometheus.imagesComplete = true;
+
+      floes.prometheus.images.operator = {
+
+        registry = "quay.io";
+
+        repository = "prometheus-operator/prometheus-operator";
+
+        tag = "v0.82.2";
+
+      };
+
+      floes.prometheus.images.nodeExporter = {
+
+        registry = "quay.io";
+
+        repository = "prometheus/node-exporter";
+
+        tag = "v1.9.1";
+
+      };
+
+      floes.prometheus.images.kubeStateMetrics = {
+
+        registry = "registry.k8s.io";
+
+        repository = "kube-state-metrics/kube-state-metrics";
+
+        tag = "v2.15.0";
+
+      };
 
       bundles.prometheus-crds.yamls = [ cataCharts.prometheus.crds ];
       bundles.prometheus-crds.provides = [ "prometheus/crds/established" ];

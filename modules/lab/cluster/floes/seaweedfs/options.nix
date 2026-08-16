@@ -15,12 +15,6 @@ in
       description = "Custom chart derivation. When null, uses nixhelm default.";
     };
 
-    imageName = mkOption {
-      type = types.str;
-      default = "chrislusf/seaweedfs";
-      description = "SeaweedFS image repository (without tag)";
-    };
-
     master = {
       replicas = mkOption {
         type = types.ints.positive;

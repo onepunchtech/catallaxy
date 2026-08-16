@@ -66,41 +66,44 @@ in
 
       labScopeSteps = mergeAttrsList [
 
-        (optionalAttrs (localClusters != [ ]) {
-          docker-network-create = {
-            kind = "docker-network-create";
-            provides = [ tokens.lab.network ];
+        (optionalAttrs (localClusters != [ ]) (
+          {
+            docker-network-create = {
+              kind = "docker-network-create";
+              provides = [ tokens.lab.network ];
 
-            after = [ (wants tokens.lab.preflightOk) ];
-            before = [
-              (wants tokens.lab.services)
-            ]
-            ++ (map (c: wants (tokens.cluster c.name).created) localClusters);
-            params = {
-              name = cfg.name;
-              subnet = cfg.network.dockerSubnet or "172.19.0.0/16";
-              gateway = gatewayOf (cfg.network.dockerSubnet or "172.19.0.0/16");
+              after = [ (wants tokens.lab.preflightOk) ];
+              before = [
+                (wants tokens.lab.services)
+              ]
+              ++ (map (c: wants (tokens.cluster c.name).created) localClusters);
+              params = {
+                name = cfg.name;
+                subnet = cfg.network.dockerSubnet or "172.19.0.0/16";
+                gateway = gatewayOf (cfg.network.dockerSubnet or "172.19.0.0/16");
+              };
+              description = "Create docker bridge network '${cfg.name}'";
             };
-            description = "Create docker bridge network '${cfg.name}'";
-          };
+          }
+          // optionalAttrs cfg.network.configureHostRoute {
+            colima-network-route = {
+              kind = "colima-network-route";
+              provides = [ tokens.lab.hostNetwork ];
+              after = [ (needs tokens.lab.network) ];
 
-          colima-network-route = {
-            kind = "colima-network-route";
-            provides = [ tokens.lab.hostNetwork ];
-            after = [ (needs tokens.lab.network) ];
-
-            before = [ (wants tokens.lab.services) ];
-            params = {
-              subnet = cfg.network.dockerSubnet or "172.19.0.0/16";
-              profile =
-                let
-                  first = builtins.head localClusters;
-                in
-                first.config.cluster.provisionerConfig.docker.colima.profile or "catallaxy";
+              before = [ (wants tokens.lab.services) ];
+              params = {
+                subnet = cfg.network.dockerSubnet or "172.19.0.0/16";
+                profile =
+                  let
+                    first = builtins.head localClusters;
+                  in
+                  first.config.cluster.provisionerConfig.docker.colima.profile or "catallaxy";
+              };
+              description = "Route lab subnet through Colima VM (macOS only)";
             };
-            description = "Route lab subnet through Colima VM (macOS only)";
-          };
-        })
+          }
+        ))
 
         (optionalAttrs (labProxyTls) {
           cert-generate = {
@@ -195,7 +198,13 @@ in
           ensure-secrets = {
             kind = "ensure-secrets";
             provides = [ tokens.lab.secrets ];
-            params.stores = lib.attrNames (cfg.secrets.stores or { });
+            # Authored stores only. A runtime store holds values the lab
+            # mints and is read by external-secrets from inside the cluster,
+            # so there is nothing for the CLI to check here and asking it to
+            # would fail on a backend it deliberately cannot open.
+            params.stores = lib.attrNames (
+              lib.filterAttrs (_: st: st.direction == "authored") (cfg.secrets.stores or { })
+            );
             description = "Ensure lab secrets are generated and available";
           };
         })

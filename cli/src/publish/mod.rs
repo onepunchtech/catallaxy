@@ -1,14 +1,7 @@
-use std::fs;
-use std::process::{Command, Stdio};
-
 use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::config::Context as CataContext;
-use crate::io::process::run_status;
-
-const COMMIT_IDENTITY_NAME: &str = "catallaxy";
-const COMMIT_IDENTITY_EMAIL: &str = "catallaxy@invalid";
 
 fn resolve_publish_auth(lab: &serde_json::Value) -> Option<(String, String)> {
     let cred = lab.pointer("/cd/git/credentialFromKubeSecret")?;
@@ -22,20 +15,11 @@ fn resolve_publish_auth(lab: &serde_json::Value) -> Option<(String, String)> {
     let username = cred.get("username")?.as_str()?.to_string();
 
     let jsonpath = format!("jsonpath={{.data.{key}}}");
-    let out = Command::new("kubectl")
-        .args([
-            "--context",
-            context,
-            "-n",
-            namespace,
-            "get",
-            "secret",
-            name,
-            "-o",
-            &jsonpath,
-        ])
-        .output()
-        .ok()?;
+    let out = crate::io::kubectl::output(
+        context,
+        &["-n", namespace, "get", "secret", name, "-o", &jsonpath],
+    )
+    .ok()?;
     if !out.status.success() {
         eprintln!(
             "{} could not read credential Secret {namespace}/{name} on '{context}': {}",
@@ -68,16 +52,6 @@ fn maybe_embed_publish_auth(repo: &str, lab: &serde_json::Value) -> String {
         }
         None => repo.to_string(),
     }
-}
-
-fn git() -> Command {
-    let mut cmd = Command::new("git");
-    crate::io::process::prepare_env(&mut cmd);
-    cmd.env("GIT_AUTHOR_NAME", COMMIT_IDENTITY_NAME)
-        .env("GIT_AUTHOR_EMAIL", COMMIT_IDENTITY_EMAIL)
-        .env("GIT_COMMITTER_NAME", COMMIT_IDENTITY_NAME)
-        .env("GIT_COMMITTER_EMAIL", COMMIT_IDENTITY_EMAIL);
-    cmd
 }
 
 pub async fn publish(
@@ -136,10 +110,7 @@ pub async fn publish(
         println!();
         println!("  Manifests: {}", manifests_src);
 
-        let status = Command::new("find")
-            .args([&manifests_src, "-type", "f", "-name", "*.yaml"])
-            .status();
-        let _ = status;
+        crate::io::fs::list_yaml_files(&manifests_src);
         return Ok(());
     }
 
@@ -188,20 +159,12 @@ fn clone_repo(
 ) -> Result<()> {
     println!("{} Cloning {}...", style(">>>").cyan(), repo);
 
-    let status = git()
-        .args(["clone", "--depth", "1", "--branch", branch, effective_repo])
-        .arg(clone_dir)
-        .stdout(Stdio::null())
-        .status()
+    let status = crate::io::git::clone_shallow(effective_repo, branch, clone_dir)
         .context("Failed to clone git repo")?;
 
     if !status.success() {
-        let status = git()
-            .args(["clone", effective_repo])
-            .arg(clone_dir)
-            .stdout(Stdio::null())
-            .status()
-            .context("Failed to clone git repo")?;
+        let status =
+            crate::io::git::clone(effective_repo, clone_dir).context("Failed to clone git repo")?;
 
         if !status.success() {
             bail!("Failed to clone {}", repo);
@@ -212,13 +175,7 @@ fn clone_repo(
 
 fn checkout_work_branch(clone_dir: &std::path::Path, name: &str) -> Result<String> {
     let branch_name = format!("catallaxy/{name}/{}", chrono_simple_timestamp());
-    let status = git()
-        .args(["-C"])
-        .arg(clone_dir)
-        .args(["checkout", "-b", &branch_name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
+    let status = crate::io::git::create_branch(clone_dir, &branch_name)?;
     if !status.success() {
         bail!("Failed to create branch {}", branch_name);
     }
@@ -232,25 +189,16 @@ fn copy_manifests(
 ) -> Result<()> {
     let manifests_target = target_dir.join("manifests");
     if manifests_target.exists() {
-        fs::remove_dir_all(&manifests_target)?;
+        crate::io::fs::remove_dir_all(&manifests_target)?;
     }
 
     println!("{} Copying manifests...", style(">>>").cyan());
 
-    let status = Command::new("cp")
-        .args(["-rL"])
-        .arg(manifests_src)
-        .arg(target_dir)
-        .status()
-        .context("Failed to copy manifests")?;
-
-    if !status.success() {
-        bail!("Failed to copy manifests to repo");
-    }
+    crate::io::fs::copy_tree_dereferencing(manifests_src, target_dir)?;
 
     let metadata_src = format!("{package_path}/metadata.json");
     if std::path::Path::new(&metadata_src).exists() {
-        fs::copy(&metadata_src, target_dir.join("metadata.json"))?;
+        crate::io::fs::copy(&metadata_src, target_dir.join("metadata.json"))?;
     }
     Ok(())
 }
@@ -263,20 +211,12 @@ fn commit_manifests(
     let commit_msg =
         message.unwrap_or_else(|| format!("chore(catallaxy): update manifests for lab '{name}'"));
 
-    let status = git()
-        .args(["-C"])
-        .arg(clone_dir)
-        .args(["add", "-A"])
-        .status()?;
+    let status = crate::io::git::stage_all(clone_dir)?;
     if !status.success() {
         bail!("git add failed");
     }
 
-    let diff_status = git()
-        .args(["-C"])
-        .arg(clone_dir)
-        .args(["diff", "--cached", "--quiet"])
-        .status()?;
+    let diff_status = crate::io::git::staged_tree_is_clean(clone_dir)?;
 
     if diff_status.success() {
         println!(
@@ -286,12 +226,7 @@ fn commit_manifests(
         return Ok(false);
     }
 
-    let status = git()
-        .args(["-C"])
-        .arg(clone_dir)
-        .args(["commit", "-m", &commit_msg])
-        .stdout(Stdio::null())
-        .status()?;
+    let status = crate::io::git::commit(clone_dir, &commit_msg)?;
     if !status.success() {
         bail!("git commit failed");
     }
@@ -307,11 +242,7 @@ fn push_manifests(clone_dir: &std::path::Path, repo: &str, push_branch: &str) ->
         push_branch
     );
 
-    let status = git()
-        .args(["-C"])
-        .arg(clone_dir)
-        .args(["push", "origin", push_branch])
-        .status()?;
+    let status = crate::io::git::push(clone_dir, "origin", push_branch)?;
     if !status.success() {
         bail!("git push failed");
     }
@@ -337,30 +268,20 @@ fn open_pull_request(
     let pr_body = format!("Automated manifest update from `cata lab publish`.\n\nLab: {name}");
 
     let pr_result = match provider {
-        "github" => run_status(Command::new("gh").args(["-C"]).arg(clone_dir).args([
-            "pr",
-            "create",
-            "--title",
+        "github" => crate::io::git::open_github_pull_request(
+            clone_dir,
             &pr_title,
-            "--body",
             &pr_body,
-            "--base",
             pr_base,
-            "--head",
             work_branch,
-        ])),
-        "gitlab" => run_status(Command::new("glab").args(["-C"]).arg(clone_dir).args([
-            "mr",
-            "create",
-            "--title",
+        ),
+        "gitlab" => crate::io::git::open_gitlab_merge_request(
+            clone_dir,
             &pr_title,
-            "--description",
             &pr_body,
-            "--target-branch",
             pr_base,
-            "--source-branch",
             work_branch,
-        ])),
+        ),
         _ => {
             println!(
                 "{} PR creation not yet supported for provider '{}'. Push succeeded, create PR manually.",

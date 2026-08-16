@@ -9,13 +9,14 @@
 let
   inherit (lib) mkOption mkEnableOption types;
   contracts = import ../../../../../lib/contracts { inherit lib; };
-  inherit (import ../../../../../lib/floe { inherit lib; }) refs;
+  inherit (import ../../../../../lib/floe { inherit lib; }) gatewayOptions refs;
 in
 {
   options.floes.harbor = {
     chart = mkOption {
       type = types.package;
       default = cataCharts.harbor.chart;
+      description = "Helm chart to install. Defaults to the chart catallaxy pins.";
     };
 
     domain = mkOption {
@@ -44,31 +45,31 @@ in
       '';
     };
 
-    bootstrapImage = mkOption {
-      type = types.str;
-      default = "alpine/k8s:1.32.4";
-      description = "Image for the bootstrap Jobs. Needs kubectl + curl + bash + coreutils + sed + jq.";
-    };
-
     tls = {
       issuerRef = mkOption {
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the issuer.";
+              };
               kind = mkOption {
                 type = types.str;
                 default = "ClusterIssuer";
+                description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
               };
             };
           }
         );
 
         default = config.floes.cert-manager.exports.defaultIssuerRef or null;
+        description = "Issuer that signs the serving certificate. Null mints none.";
       };
       secretName = mkOption {
         type = types.str;
         default = "harbor-tls";
+        description = "Secret the issued certificate lands in.";
       };
       caBundle = mkOption {
         type = refs.nullableMountableRef;
@@ -96,26 +97,32 @@ in
       storageClass = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "StorageClass for every claim below. Null takes the cluster default.";
       };
       registry.size = mkOption {
         type = types.str;
         default = "50Gi";
+        description = "Volume for image layers. This is the one that grows.";
       };
       jobLog.size = mkOption {
         type = types.str;
         default = "1Gi";
+        description = "Volume for job logs.";
       };
       database.size = mkOption {
         type = types.str;
         default = "5Gi";
+        description = "Volume for Harbor's database.";
       };
       redis.size = mkOption {
         type = types.str;
         default = "1Gi";
+        description = "Volume for Redis.";
       };
       trivy.size = mkOption {
         type = types.str;
         default = "5Gi";
+        description = "Volume for the Trivy vulnerability database.";
       };
     };
 
@@ -130,10 +137,12 @@ in
         type = types.str;
         default = "";
         example = "https://idm.example.com/oauth2/openid/harbor";
+        description = "OIDC issuer URL. Usually read from the identity floe's exports rather than written out.";
       };
       clientId = mkOption {
         type = types.str;
         default = "harbor";
+        description = "Client ID Harbor presents to the issuer.";
       };
       client = mkOption {
         type = contracts.oidc.nullableClient;
@@ -152,7 +161,10 @@ in
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the Secret holding the client secret.";
+              };
               namespace = mkOption {
                 type = types.nullOr types.str;
                 default = null;
@@ -161,6 +173,7 @@ in
               key = mkOption {
                 type = types.str;
                 default = "CLIENT_SECRET";
+                description = "Key within that Secret.";
               };
             };
           }
@@ -184,14 +197,17 @@ in
           "groups"
           "offline_access"
         ];
+        description = "Scopes requested at login. `groups` is what makes group-to-role mapping possible.";
       };
       groupsClaim = mkOption {
         type = types.str;
         default = "groups";
+        description = "Claim to read group membership from.";
       };
       userClaim = mkOption {
         type = types.str;
         default = "preferred_username";
+        description = "Claim to read the username from.";
       };
       adminGroup = mkOption {
         type = types.str;
@@ -218,6 +234,7 @@ in
       verifyCert = mkOption {
         type = types.bool;
         default = true;
+        description = "Verify the issuer's TLS certificate. Turning this off is for a lab whose CA the pod does not trust yet, and is worth fixing rather than keeping.";
       };
     };
 
@@ -236,6 +253,7 @@ in
               description = mkOption {
                 type = types.str;
                 default = "";
+                description = "Human-readable description, shown in Harbor's UI.";
               };
 
               duration = mkOption {
@@ -249,6 +267,7 @@ in
                   "project"
                 ];
                 default = "system";
+                description = "Scope of the robot account. `system` spans projects; `project` is confined to one.";
               };
               permissions = mkOption {
                 type = types.listOf types.attrs;
@@ -293,8 +312,8 @@ in
         Harbor robot accounts to provision after Harbor comes up. The
         bootstrap Job creates each via the Harbor API and writes the
         resulting dockerconfigjson into the named Secret in harbor's
-        namespace. Cross-cluster delivery is up to the consumer
-        (typically via a `lab.steps.xcs-*` entry).
+        namespace. A cluster that needs it too reads it from a secret store
+        rather than having it copied across.
       '';
     };
 
@@ -371,6 +390,7 @@ in
                       credentialUsername = mkOption {
                         type = types.nullOr types.str;
                         default = null;
+                        description = "Username Harbor should use for the replication credential. Null lets Harbor pick.";
                       };
                       credentialPasswordRef = mkOption {
                         type = types.nullOr (
@@ -388,6 +408,7 @@ in
                           }
                         );
                         default = null;
+                        description = "Secret holding the upstream registry's password, for a proxy cache that needs to authenticate.";
                       };
                     };
                   }
@@ -424,6 +445,7 @@ in
                             "limitedGuest"
                           ];
                           default = "developer";
+                          description = "Role granted to members of the mapped group.";
                         };
                       };
                     }
@@ -455,6 +477,7 @@ in
                   }
                 );
                 default = null;
+                description = "Tag retention policy for this project. Null keeps everything, which is the setting that eventually fills the volume.";
               };
 
               immutableTagRules = mkOption {
@@ -489,30 +512,11 @@ in
     metrics.enable = mkOption {
       type = types.bool;
       default = false;
+      description = "Expose Harbor's Prometheus metrics.";
     };
 
-    gateway = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      gatewayRef = mkOption {
-        type = types.str;
-        default = "default-gateway";
-      };
-      gatewayNamespace = mkOption {
-        type = types.nullOr types.str;
-        default = "kube-system";
-      };
-      tier = mkOption {
-        type = types.enum [
-          "public"
-          "internal"
-        ];
-
-        default = lab.policy.exposure.defaultTier or "public";
-        description = "Lab network tier (public | internal).";
-      };
+    gateway = gatewayOptions {
+      inherit lab;
     };
 
   };

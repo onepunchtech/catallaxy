@@ -1,10 +1,10 @@
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::domain::plan::BootstrapForgejoReposParams;
+use crate::io;
 use crate::plan::StepContext;
 
 const DEFAULT_NAMESPACE: &str = "forgejo";
@@ -48,10 +48,9 @@ pub async fn run(sctx: &StepContext<'_>, p: &BootstrapForgejoReposParams) -> Res
     let poll_start = Instant::now();
     let poll_max = Duration::from_secs(60);
     loop {
-        let out = Command::new("kubectl")
-            .args([
-                "--context",
-                kube_context,
+        let out = io::kubectl::output(
+            kube_context,
+            &[
                 "-n",
                 namespace,
                 "get",
@@ -59,8 +58,8 @@ pub async fn run(sctx: &StepContext<'_>, p: &BootstrapForgejoReposParams) -> Res
                 "-l",
                 selector,
                 "--no-headers",
-            ])
-            .output();
+            ],
+        );
         if out.as_ref().map(|o| !o.stdout.is_empty()).unwrap_or(false) {
             break;
         }
@@ -75,10 +74,9 @@ pub async fn run(sctx: &StepContext<'_>, p: &BootstrapForgejoReposParams) -> Res
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 
-    let status = Command::new("kubectl")
-        .args([
-            "--context",
-            kube_context,
+    let status = io::kubectl::status(
+        kube_context,
+        &[
             "-n",
             namespace,
             "wait",
@@ -87,9 +85,9 @@ pub async fn run(sctx: &StepContext<'_>, p: &BootstrapForgejoReposParams) -> Res
             "-l",
             selector,
             &format!("--timeout={WAIT_TIMEOUT_SECS}s"),
-        ])
-        .status()
-        .context("running kubectl wait for forgejo-bootstrap Job")?;
+        ],
+    )
+    .context("running kubectl wait for forgejo-bootstrap Job")?;
     if !status.success() {
         bail!(
             "forgejo-bootstrap Job did not reach Complete within \

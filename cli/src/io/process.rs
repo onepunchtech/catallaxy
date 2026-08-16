@@ -4,22 +4,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::error::{CataError, CataResult};
-
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 
 pub fn set_verbose(verbose: bool) {
     VERBOSE.store(verbose, Ordering::Relaxed);
 }
 
-pub fn check_tool(name: &str) -> CataResult<()> {
-    which::which(name).map_err(|_| CataError::ToolMissing {
-        name: name.to_string(),
-    })?;
+pub fn check_tool(name: &str) -> Result<()> {
+    which::which(name).with_context(|| format!("required tool `{name}` not found in PATH"))?;
     Ok(())
 }
 
-pub fn check_required_tools() -> CataResult<()> {
+pub fn check_required_tools() -> Result<()> {
     let tools = ["kubectl", "helm", "nix"];
     for tool in tools {
         check_tool(tool)?;
@@ -53,16 +49,29 @@ fn prepare(cmd: &mut Command) {
     }
 }
 
+pub fn describe(cmd: &Command) -> String {
+    let program = cmd.get_program().to_string_lossy();
+    let args: Vec<String> = cmd
+        .get_args()
+        .map(|a| a.to_string_lossy().to_string())
+        .collect();
+    if args.is_empty() {
+        program.to_string()
+    } else {
+        format!("{program} {}", args.join(" "))
+    }
+}
+
 pub fn run_streaming(cmd: &mut Command) -> Result<()> {
     prepare(cmd);
 
     let status = cmd
         .stdin(Stdio::null())
         .status()
-        .context("Failed to execute command")?;
+        .with_context(|| format!("could not run `{}`", describe(cmd)))?;
 
     if !status.success() {
-        bail!("Command failed with status: {status}");
+        bail!("`{}` exited {}", describe(cmd), status.code().unwrap_or(-1),);
     }
 
     Ok(())
@@ -71,21 +80,62 @@ pub fn run_streaming(cmd: &mut Command) -> Result<()> {
 pub fn run_interactive(cmd: &mut Command) -> Result<()> {
     prepare(cmd);
 
-    let status = cmd.status().context("Failed to execute command")?;
+    let status = cmd
+        .status()
+        .with_context(|| format!("could not run `{}`", describe(cmd)))?;
 
     if !status.success() {
-        bail!("Command failed with status: {status}");
+        bail!("`{}` exited {}", describe(cmd), status.code().unwrap_or(-1),);
     }
 
     Ok(())
+}
+
+pub fn run_with_stdin(cmd: &mut Command, input: &[u8]) -> Result<String> {
+    use std::io::Write;
+
+    prepare(cmd);
+
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("could not run `{}`", describe(cmd)))?;
+
+    child
+        .stdin
+        .take()
+        .context("stdin was piped but is missing")?
+        .write_all(input)
+        .with_context(|| format!("writing to the stdin of `{}`", describe(cmd)))?;
+
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("waiting for `{}`", describe(cmd)))?;
+
+    if !output.status.success() {
+        bail!(
+            "`{}` exited {}: {}",
+            describe(cmd),
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 pub fn run_capture(cmd: &mut Command) -> Result<String> {
     let output = run_output(cmd)?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("Command failed: {stderr}");
+        bail!(
+            "`{}` exited {}: {}",
+            describe(cmd),
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -97,6 +147,12 @@ pub fn run_output(cmd: &mut Command) -> Result<Output> {
     cmd.stdin(Stdio::null())
         .output()
         .context("Failed to execute command")
+}
+
+pub fn run_tool(bin: &str, args: &[String]) -> Result<ExitStatus> {
+    let mut cmd = Command::new(bin);
+    cmd.args(args);
+    run_status(&mut cmd)
 }
 
 pub fn run_status(cmd: &mut Command) -> Result<ExitStatus> {

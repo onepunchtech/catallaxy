@@ -1,10 +1,8 @@
-use std::process::Command;
-
 use anyhow::Result;
 use console::style;
 
 use crate::domain::plan::DestroyClusterParams;
-use crate::domain::{ClusterSpec, ProvisionerKind};
+use crate::domain::{ClusterSpec, ProvisionerKind, StepFailure};
 use crate::io;
 use crate::plan::StepContext;
 
@@ -32,6 +30,11 @@ pub async fn run(sctx: &StepContext<'_>, p: &DestroyClusterParams) -> Result<()>
                     e,
                 );
             }
+            if spec.provisioner == ProvisionerKind::K3d
+                && !verify_no_stragglers(spec.provisioner_config.k3d.cluster_name.as_str())
+            {
+                step_failed = true;
+            }
         }
         Err(e) => {
             step_failed = true;
@@ -44,10 +47,6 @@ pub async fn run(sctx: &StepContext<'_>, p: &DestroyClusterParams) -> Result<()>
         }
     }
 
-    if !verify_no_stragglers(sctx.lab_name, cluster_name) {
-        step_failed = true;
-    }
-
     if let Err(e) = crate::io::kubectl::cleanup_kubeconfig(cluster_name) {
         println!(
             "{} Failed to cleanup kubeconfig for '{}': {}",
@@ -58,9 +57,10 @@ pub async fn run(sctx: &StepContext<'_>, p: &DestroyClusterParams) -> Result<()>
     }
 
     if step_failed {
-        sctx.failures
-            .borrow_mut()
-            .push(format!("destroy-cluster {cluster_name}"));
+        sctx.failures.borrow_mut().push(StepFailure::new(
+            "destroy-cluster",
+            format!("'{cluster_name}' was not confirmed destroyed"),
+        ));
     }
     Ok(())
 }
@@ -84,19 +84,9 @@ fn k3d_already_gone(sctx: &StepContext<'_>, spec: &ClusterSpec) -> bool {
     true
 }
 
-fn verify_no_stragglers(lab_name: &str, cluster_name: &str) -> bool {
-    let container_prefix = format!("k3d-{lab_name}-{cluster_name}-");
-    let out = match Command::new("docker")
-        .args([
-            "ps",
-            "-a",
-            "--format",
-            "{{.Names}}",
-            "--filter",
-            &format!("name={container_prefix}"),
-        ])
-        .output()
-    {
+fn verify_no_stragglers(k3d_cluster_name: &str) -> bool {
+    let container_prefix = format!("k3d-{k3d_cluster_name}-");
+    let out = match io::docker::containers_named(&container_prefix) {
         Ok(o) if o.status.success() => o,
         Ok(o) => {
             println!(
@@ -127,13 +117,13 @@ fn verify_no_stragglers(lab_name: &str, cluster_name: &str) -> bool {
     println!(
         "{} '{}' left {} container(s) behind: {}",
         style("ERROR").red(),
-        cluster_name,
+        k3d_cluster_name,
         stragglers.len(),
         stragglers.join(", "),
     );
     for c in &stragglers {
         println!("{} docker rm -f {c}", style(">>>").yellow());
-        let _ = Command::new("docker").args(["rm", "-f", c]).status();
+        io::docker::force_remove_container(c);
     }
     false
 }

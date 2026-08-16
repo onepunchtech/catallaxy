@@ -8,20 +8,27 @@ let
     "1_32" = import ./k8s/1_32.nix { inherit lib; };
   };
 
-  loadCrds = k8sTypes: {
-    argocd = import ./crds/argocd.nix { inherit lib k8sTypes; };
-    capi_operator = import ./crds/capi_operator.nix { inherit lib k8sTypes; };
-    cert_manager = import ./crds/cert_manager.nix { inherit lib k8sTypes; };
-    cilium = import ./crds/cilium.nix { inherit lib k8sTypes; };
-    cnpg = import ./crds/cnpg.nix { inherit lib k8sTypes; };
-    crossplane = import ./crds/crossplane.nix { inherit lib k8sTypes; };
-    external_dns = import ./crds/external_dns.nix { inherit lib k8sTypes; };
-    external_secrets = import ./crds/external_secrets.nix { inherit lib k8sTypes; };
-    kaniop = import ./crds/kaniop.nix { inherit lib k8sTypes; };
-    prometheus = import ./crds/prometheus.nix { inherit lib k8sTypes; };
-    redis_operator = import ./crds/redis_operator.nix { inherit lib k8sTypes; };
-    velero = import ./crds/velero.nix { inherit lib k8sTypes; };
-  };
+  constructors = import ./constructors.nix { inherit lib; };
+
+  loadCrds =
+    versioned:
+    let
+      k8sTypes = versioned // constructors;
+    in
+    {
+      argocd = import ./crds/argocd.nix { inherit lib k8sTypes; };
+      capi_operator = import ./crds/capi_operator.nix { inherit lib k8sTypes; };
+      cert_manager = import ./crds/cert_manager.nix { inherit lib k8sTypes; };
+      cilium = import ./crds/cilium.nix { inherit lib k8sTypes; };
+      cnpg = import ./crds/cnpg.nix { inherit lib k8sTypes; };
+      crossplane = import ./crds/crossplane.nix { inherit lib k8sTypes; };
+      external_dns = import ./crds/external_dns.nix { inherit lib k8sTypes; };
+      external_secrets = import ./crds/external_secrets.nix { inherit lib k8sTypes; };
+      kaniop = import ./crds/kaniop.nix { inherit lib k8sTypes; };
+      prometheus = import ./crds/prometheus.nix { inherit lib k8sTypes; };
+      redis_operator = import ./crds/redis_operator.nix { inherit lib k8sTypes; };
+      velero = import ./crds/velero.nix { inherit lib k8sTypes; };
+    };
 
   reservedAttrs = [
     "version"

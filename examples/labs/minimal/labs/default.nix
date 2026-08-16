@@ -3,6 +3,13 @@
   lab.name = lib.mkDefault "minimal";
   lab.dns.zone = lib.mkDefault "minimal.test";
 
+  # Every image this lab renders is rewritten to the digest recorded beside
+  # it, so requiring one is something the lab can actually satisfy. Refresh
+  # with `cata images lock --name minimal.local --out
+  # examples/labs/minimal/images.lock.json` after bumping anything it pulls.
+  lab.images.lockFile = ../images.lock.json;
+  lab.images.requireDigest = true;
+
   lab.clusters.app =
 
     { lab, ... }:

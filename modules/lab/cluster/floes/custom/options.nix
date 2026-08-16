@@ -14,6 +14,7 @@ let
         enable = mkOption {
           type = types.bool;
           default = true;
+          description = "Render this app. Set false to keep the declaration and stop deploying it.";
         };
 
         namespace = mkOption {
@@ -25,6 +26,7 @@ let
         createNamespace = mkOption {
           type = types.bool;
           default = true;
+          description = "Create the namespace as part of this app's bundle, rather than expecting something else to.";
         };
 
         helmCharts = mkOption {
@@ -49,6 +51,7 @@ let
           enable = mkOption {
             type = types.bool;
             default = false;
+            description = "Attach the app to a Gateway, so it is reachable from outside the cluster.";
           };
           mode = mkOption {
             type = types.enum [
@@ -56,10 +59,12 @@ let
               "passthrough"
             ];
             default = "terminate";
+            description = "TLS handling. `terminate` ends TLS at the gateway and forwards plaintext; `passthrough` hands the connection to the backend, which then owns the certificate.";
           };
           domain = mkOption {
             type = types.str;
             default = "";
+            description = "Hostname to route. Empty renders no route.";
           };
           serviceName = mkOption {
             type = types.str;
@@ -69,14 +74,17 @@ let
           servicePort = mkOption {
             type = types.port;
             default = 80;
+            description = "Port on the app's Service that the route forwards to.";
           };
           gatewayRef = mkOption {
             type = types.str;
             default = "default-gateway";
+            description = "Name of the Gateway resource to attach to (public tier).";
           };
           gatewayNamespace = mkOption {
             type = types.nullOr types.str;
             default = "kube-system";
+            description = "Namespace of the Gateway resource.";
           };
           tier = mkOption {
             type = types.enum [

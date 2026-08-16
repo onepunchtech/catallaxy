@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -138,7 +139,7 @@ in
             (cfg.backupStorageLocation.provider == "aws" || cfg.backupStorageLocation.provider == "seaweedfs")
             {
               name = "velero-plugin-for-aws";
-              image = "velero/velero-plugin-for-aws:v1.11.1";
+              image = cfg.images.aws-plugin.ref;
               imagePullPolicy = "IfNotPresent";
               volumeMounts = [
                 {
@@ -224,7 +225,7 @@ in
                 containers = [
                   {
                     name = "aws-cli";
-                    image = "amazon/aws-cli:2.15.44";
+                    image = cfg.images.aws-cli.ref;
                     env = [
                       {
                         name = "AWS_ACCESS_KEY_ID";
@@ -289,8 +290,41 @@ in
         }
       ];
 
+      floes.velero.network = {
+
+        declared = true;
+
+        # Its bucket-init Job talks to the S3 endpoint, which on these labs
+        # is seaweedfs rather than something off-cluster.
+        reaches = [ "seaweedfs/s3" ];
+
+        egress.internet.ports = [ 443 ];
+
+      };
+
+      floes.velero.imagesComplete = true;
+
+      floes.velero.images.velero = {
+
+        repository = "velero/velero";
+
+        tag = "v1.16.0";
+
+      };
+
       bundles.velero-crds.yamls = [ cataCharts.velero.crds ];
       bundles.velero-crds.provides = [ "velero/crds/established" ];
+
+      floes.velero.images = {
+        aws-plugin = {
+          repository = "velero/velero-plugin-for-aws";
+          tag = "v1.11.1";
+        };
+        aws-cli = {
+          repository = "amazon/aws-cli";
+          tag = "2.15.44";
+        };
+      };
 
       bundles.velero = {
         includeInBootstrap = false;
@@ -324,9 +358,8 @@ in
         requires = [ "velero/backup/ready" ];
       };
 
-      ops.create = {
+      ops.backup.create = {
         description = "Create a Velero backup";
-        category = "backup";
         options.cluster = {
           type = "enum";
           values = [ config.cluster.name ];
@@ -350,9 +383,8 @@ in
         '';
       };
 
-      ops.list = {
+      ops.backup.list = {
         description = "List Velero backups";
-        category = "backup";
         options.cluster = {
           type = "enum";
           values = [ config.cluster.name ];
@@ -364,9 +396,8 @@ in
         '';
       };
 
-      ops.describe = {
+      ops.backup.describe = {
         description = "Describe a Velero backup";
-        category = "backup";
         options.cluster = {
           type = "enum";
           values = [ config.cluster.name ];
@@ -384,9 +415,8 @@ in
         '';
       };
 
-      ops.delete = {
+      ops.backup.delete = {
         description = "Delete a Velero backup";
-        category = "backup";
         options.cluster = {
           type = "enum";
           values = [ config.cluster.name ];
@@ -404,9 +434,8 @@ in
         '';
       };
 
-      ops.restore = {
+      ops.backup.restore = {
         description = "Restore from a Velero backup";
-        category = "backup";
         options.cluster = {
           type = "enum";
           values = [ config.cluster.name ];
@@ -424,9 +453,8 @@ in
         '';
       };
 
-      ops.schedules = {
+      ops.backup.schedules = {
         description = "List Velero backup schedules";
-        category = "backup";
         options.cluster = {
           type = "enum";
           values = [ config.cluster.name ];
@@ -438,9 +466,8 @@ in
         '';
       };
 
-      ops.trigger = {
+      ops.backup.trigger = {
         description = "Trigger a backup schedule manually";
-        category = "backup";
         options.cluster = {
           type = "enum";
           values = [ config.cluster.name ];

@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -18,6 +19,17 @@ in
   module =
     { cfg, ... }:
     {
+      floes.openebs.network = {
+        declared = true;
+      };
+
+      floes.openebs.imagesComplete = true;
+
+      floes.openebs.images.localPathProvisioner = {
+        repository = "rancher/local-path-provisioner";
+        tag = "v0.0.28";
+      };
+
       bundles.openebs = {
         includeInBootstrap = false;
         helmCharts.openebs = {

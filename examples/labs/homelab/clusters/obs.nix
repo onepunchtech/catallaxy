@@ -20,6 +20,15 @@ in
     workers = 0;
   };
 
+  # The registry credential core publishes. It is minted at runtime, so it
+  # cannot be authored and projected the way a pre-existing secret would be.
+  floes.external-secrets.enable = true;
+
+  secrets.subscribe.harbor-obs-puller = {
+    from = "core";
+    namespace = "default";
+  };
+
   floes.otel-collector = {
     enable = true;
     agent.enable = true;

@@ -1,4 +1,3 @@
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -6,6 +5,7 @@ use console::style;
 use serde_json::Value;
 
 use crate::domain::plan::WaitForResourcesParams;
+use crate::io;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>, p: &WaitForResourcesParams) -> Result<()> {
@@ -40,7 +40,7 @@ fn wait_kubectl(target: &str, context: &str, resource: &Value) -> Result<()> {
     let name = resource["name"].as_str();
     let selector = resource["labelSelector"].as_str();
 
-    let mut args: Vec<String> = vec!["--context".into(), context.to_string(), "wait".into()];
+    let mut args: Vec<String> = vec!["wait".into()];
     if let Some(ns) = namespace {
         args.push("-n".into());
         args.push(ns.into());
@@ -73,9 +73,8 @@ fn wait_kubectl(target: &str, context: &str, resource: &Value) -> Result<()> {
         condition,
     );
 
-    let status = Command::new("kubectl")
-        .args(&args)
-        .status()
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let status = io::kubectl::status(context, &args)
         .with_context(|| format!("running kubectl wait for {kind}/{descr}"))?;
     if !status.success() {
         bail!("Timed out or failed waiting for {kind}/{descr} on '{target}'");
@@ -93,18 +92,17 @@ async fn wait_crossplane_managed(context: &str, resource: &Value, timeout_secs: 
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
     loop {
-        let output = Command::new("kubectl")
-            .args([
-                "--context",
-                context,
+        let output = io::kubectl::output(
+            context,
+            &[
                 "get",
                 "managed",
                 "--field-selector",
                 &format!("metadata.name={res_name}"),
                 "-o",
                 "jsonpath={.items[0].status.conditions[?(@.type==\"Ready\")].status}",
-            ])
-            .output();
+            ],
+        );
         if let Ok(ref o) = output
             && String::from_utf8_lossy(&o.stdout).trim() == "True"
         {

@@ -26,12 +26,12 @@ pub async fn run(sctx: &StepContext<'_>, p: &DeployManifestsParams) -> Result<()
     let cluster_manifests = format!("{}/{subdir}/{target}", sctx.lab_package);
 
     if !Path::new(&cluster_manifests).exists() {
-        println!(
-            "{} No manifests for '{}', skipping",
-            style(">>>").yellow(),
-            target
+        anyhow::bail!(
+            "the deploy step for '{target}' found nothing at {cluster_manifests}.\n\
+             The lab package has no '{subdir}' tree for this cluster, which means the \
+             deploy strategy and what the package actually built disagree. Deploying \
+             nothing and reporting success would leave the cluster empty and green."
         );
-        return Ok(());
     }
 
     if sctx.bootstrap == BootstrapTool::KubectlSsa {

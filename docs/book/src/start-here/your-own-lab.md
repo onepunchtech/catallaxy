@@ -49,6 +49,10 @@ floes/hello-world/options.nix      its option surface
           labs."my-platform" = lab.config.lab.out.cliConfig;
           labPackages."my-platform" = lab.config.lab.out.package;
         };
+
+        checks = catallaxy.legacyPackages.${system}.mkLabChecks {
+          labs."my-platform" = lab;
+        };
       });
 }
 ```
@@ -157,22 +161,54 @@ machinery.
 
 [`examples/labs/homelab`](https://github.com/onepunchtech/catallaxy/tree/master/examples/labs/homelab).
 
-## Add checks early
+## The checks you get
 
-The scaffold ships one:
+One line in the scaffold:
 
 ```nix
-checks.lab-eval =
-  let forced = builtins.toJSON lab.config.lab.out.manifests;
-  in pkgs.runCommand "lab-eval" { } ''
-    cat > /dev/null <<'JSON'
-    ${forced}
-    JSON
-    echo "my-platform evaluated" > $out
-  '';
+checks = catallaxy.legacyPackages.${system}.mkLabChecks {
+  labs."my-platform" = lab;
+};
 ```
 
-Forcing the manifest tree touches every option, so an unmet `requires`, a
-bad `exports` read, or a broken anchor fails in CI rather than at `lab up`.
-Add [plan snapshots](../understanding/how-it-works.md) next, they turn any
-change in deploy ordering into a reviewable diff.
+That is the same function catallaxy runs against its own example labs, so
+your lab is held to what the framework holds itself to. It gives you:
+
+| Check                          | Catches                                                                 |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| `<lab>-eval`                   | anything that fails evaluation                                          |
+| `<lab>-lint`                   | the rendered manifests, through every [lint rule](../reference/lint.md) |
+| `lab-subnets`                  | two labs claiming overlapping docker subnets                            |
+| `lab-routed-hosts-are-proxied` | a hostname routed in-cluster the host proxy cannot reach                |
+| `lab-mesh-ports`               | two host netbird clients sharing a port or interface                    |
+
+`<lab>-eval` forces the manifest tree, which touches every option, so an
+unmet `requires`, a bad `exports` read, a broken anchor or a failed
+assertion fails here rather than at `lab up`. `<lab>-lint` reads what the
+lab actually renders, so it sees Helm output too.
+
+Pass several labs to check them together, which is what makes the cross-lab
+entries meaningful:
+
+```nix
+checks = catallaxy.legacyPackages.${system}.mkLabChecks {
+  labs = {
+    "my-platform.local" = localLab;
+    "my-platform.prod" = prodLab;
+  };
+};
+```
+
+Add plan snapshots once the ordering matters to you. Point `snapshotDir` at
+a directory of committed fixtures and every change in deploy ordering
+becomes a reviewable diff:
+
+```nix
+checks = catallaxy.legacyPackages.${system}.mkLabChecks {
+  labs."my-platform" = lab;
+  snapshotDir = ./tests/plan-snapshots;
+};
+```
+
+The check tells you the command to refresh a fixture when the diff is
+intended.

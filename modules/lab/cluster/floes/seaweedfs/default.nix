@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -40,14 +41,33 @@ in
     let
       inherit (lib) optionalAttrs;
 
-      versionedImage = "${cfg.imageName}:${cfg.version}";
+      versionedImage = cfg.images.seaweedfs.ref;
     in
     {
+      floes.seaweedfs.images.seaweedfs = {
+        repository = "chrislusf/seaweedfs";
+        tag = cfg.version;
+      };
+
       floes.seaweedfs.exports = {
         inherit (cfg) namespace;
         s3Endpoint = "http://seaweedfs-s3.${cfg.namespace}.svc.cluster.local:${toString cfg.s3.port}";
         filerEndpoint = "http://seaweedfs-filer.${cfg.namespace}.svc.cluster.local:8888";
       };
+
+      floes.seaweedfs.network = {
+
+        declared = true;
+
+        serves.s3.port = 8333;
+
+        serves.filer.port = 8888;
+
+        serves.master.port = 9333;
+
+      };
+
+      floes.seaweedfs.imagesComplete = true;
 
       bundles.seaweedfs = {
         helmCharts.seaweedfs = {

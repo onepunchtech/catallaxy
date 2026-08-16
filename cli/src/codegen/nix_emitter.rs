@@ -188,6 +188,9 @@ in"#,
         );
         parts.push(self.arena.hardline());
         parts.push(self.arena.hardline());
+        parts.push(self.arena.text("  inherit mkTypedSubmodule mkResource;"));
+        parts.push(self.arena.hardline());
+        parts.push(self.arena.hardline());
 
         for (group, versions) in &grouped {
             parts.push(self.arena.text(format!("  {} = {{", group)));

@@ -33,6 +33,44 @@ fn top_level_subcommands_and_global_flags_are_described() {
 }
 
 #[test]
+fn verify_refuses_a_check_name_it_does_not_have() {
+    cata()
+        .args(["lab", "verify", "--check", "declared"])
+        .assert()
+        .failure()
+        .stderr(contains("chainsaw"));
+}
+
+#[test]
+fn verify_accepts_every_check_it_advertises() {
+    for check in cata::verify::CHECK_NAMES {
+        cata()
+            .args(["lab", "verify", "--check", check, "--help"])
+            .assert()
+            .success();
+    }
+}
+
+#[test]
+fn topology_refuses_a_format_it_cannot_render() {
+    cata()
+        .args(["lab", "topology", "--format", "jsno"])
+        .assert()
+        .failure()
+        .stderr(contains("json"));
+}
+
+#[test]
+fn destroy_offers_the_same_safety_controls_as_up() {
+    cata()
+        .args(["lab", "destroy", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--dry-run"))
+        .stdout(contains("--up-to"));
+}
+
+#[test]
 fn version_prints_a_semver_string() {
     cata()
         .arg("--version")
@@ -92,6 +130,29 @@ fn images_help_lists_subcommands() {
         .assert()
         .success()
         .stdout(contains("list").or(contains("warm")).or(contains("mirror")));
+}
+
+// What a lab rendered and what its clusters are running are different
+// questions, and only one of them sees what an operator created. Both have to
+// be reachable or the second one is a thing nobody finds.
+#[test]
+fn images_offers_both_the_rendered_and_the_running_list() {
+    cata()
+        .args(["images", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("list"))
+        .stdout(contains("actual"));
+}
+
+#[test]
+fn images_actual_can_be_narrowed_to_one_cluster_and_to_surprises() {
+    cata()
+        .args(["images", "actual", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("--cluster"))
+        .stdout(contains("--undeclared"));
 }
 
 #[test]

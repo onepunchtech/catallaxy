@@ -15,6 +15,7 @@
 - [The Model](./understanding/model.md)
 - [How It Works](./understanding/how-it-works.md)
 - [Bootstrap and Pivot](./understanding/pivot.md)
+- [Runtime Effects](./understanding/runtime-effects.md)
 
 # Using Catallaxy
 
@@ -23,6 +24,7 @@
 - [Secrets](./using/secrets.md)
 - [DNS for the Lab](./using/dns.md)
 - [TLS and the Lab CA](./using/tls.md)
+- [Backup and Restore](./using/backup.md)
 
 # Reference
 
@@ -48,6 +50,7 @@
     - [kaniop](./reference/options/floes/kaniop.md)
     - [loki](./reference/options/floes/loki.md)
     - [netbird](./reference/options/floes/netbird.md)
+    - [openbao](./reference/options/floes/openbao.md)
     - [openebs](./reference/options/floes/openebs.md)
     - [otel-collector](./reference/options/floes/otel-collector.md)
     - [prometheus](./reference/options/floes/prometheus.md)
@@ -67,6 +70,7 @@
 - [Nix Helpers](./reference/helpers.md)
 - [Images and Registries](./reference/images.md)
 - [Cluster Security](./reference/security.md)
+- [Client Certificates](./reference/pki.md)
 - [Flake Outputs](./reference/flake-outputs.md)
 - [Glossary](./reference/glossary.md)
 

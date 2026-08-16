@@ -232,37 +232,13 @@ enum NamespaceHealth {
 }
 
 fn check_namespace_health(context: &str, namespace: &str) -> NamespaceHealth {
-    use std::process::{Command, Stdio};
-
-    let output = Command::new("kubectl")
-        .args([
-            "--context",
-            context,
-            "get",
-            "pods",
-            "-n",
-            namespace,
-            "-o",
-            "json",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
-
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return NamespaceHealth::Error,
+    let Some(items) = crate::io::kubectl::pods_in_namespace(context, namespace, None) else {
+        return NamespaceHealth::Error;
     };
-
-    let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
-        Ok(v) => v,
-        Err(_) => return NamespaceHealth::Error,
-    };
-
-    let items = match json["items"].as_array() {
-        Some(items) if !items.is_empty() => items,
-        _ => return NamespaceHealth::NoPods,
-    };
+    if items.is_empty() {
+        return NamespaceHealth::NoPods;
+    }
+    let items = &items;
 
     let total = items.len();
     let ready = items

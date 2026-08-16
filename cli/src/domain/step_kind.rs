@@ -15,7 +15,6 @@ pub enum StepKind {
     CreateCluster,
     EnsureSecrets,
     DeployManifests,
-    CrossClusterSecretCopy,
     WaitForResources,
     SyncKubeconfig,
     Pivot,
@@ -37,7 +36,7 @@ pub enum StepKind {
 }
 
 impl StepKind {
-    pub const ALL: [StepKind; 32] = [
+    pub const ALL: [StepKind; 31] = [
         StepKind::SetupServices,
         StepKind::DockerNetworkCreate,
         StepKind::CertGenerate,
@@ -51,7 +50,6 @@ impl StepKind {
         StepKind::CreateCluster,
         StepKind::EnsureSecrets,
         StepKind::DeployManifests,
-        StepKind::CrossClusterSecretCopy,
         StepKind::WaitForResources,
         StepKind::SyncKubeconfig,
         StepKind::Pivot,
@@ -91,7 +89,6 @@ impl StepKind {
             StepKind::CreateCluster => "create-cluster",
             StepKind::EnsureSecrets => "ensure-secrets",
             StepKind::DeployManifests => "deploy-manifests",
-            StepKind::CrossClusterSecretCopy => "cross-cluster-secret-copy",
             StepKind::WaitForResources => "wait-for-resources",
             StepKind::SyncKubeconfig => "sync-kubeconfig",
             StepKind::Pivot => "pivot",
@@ -132,7 +129,6 @@ impl StepKind {
             | StepKind::WarmCache
             | StepKind::EnsureSecrets
             | StepKind::DeployManifests
-            | StepKind::CrossClusterSecretCopy
             | StepKind::WaitForResources
             | StepKind::SyncKubeconfig
             | StepKind::PublishImages
@@ -171,7 +167,6 @@ impl StepKind {
             | StepKind::CreateCluster
             | StepKind::EnsureSecrets
             | StepKind::DeployManifests
-            | StepKind::CrossClusterSecretCopy
             | StepKind::WaitForResources
             | StepKind::SyncKubeconfig
             | StepKind::Pivot
@@ -207,7 +202,6 @@ impl StepKind {
             | StepKind::CreateCluster
             | StepKind::EnsureSecrets
             | StepKind::DeployManifests
-            | StepKind::CrossClusterSecretCopy
             | StepKind::SyncKubeconfig
             | StepKind::Pivot
             | StepKind::PublishImages

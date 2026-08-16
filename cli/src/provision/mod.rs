@@ -1,7 +1,6 @@
-use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::config::Context as CataContext;
@@ -47,14 +46,12 @@ fn run_pre_provision_hooks(name: &str, spec: &ClusterSpec) -> Result<()> {
 
         println!("{} [{name}] {}...", style(">>>").cyan(), hook.description);
 
-        let status = std::process::Command::new(&hook.bin)
-            .status()
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to exec preProvision hook `{}` for cluster `{name}`: {e}",
-                    hook.bin
-                )
-            })?;
+        let status = io::hook::run(&hook.bin, &[], None).map_err(|e| {
+            anyhow::anyhow!(
+                "failed to exec preProvision hook `{}` for cluster `{name}`: {e}",
+                hook.bin
+            )
+        })?;
 
         if !status.success() {
             bail!(
@@ -194,12 +191,27 @@ fn provision_k3d(
             style(">>>").green()
         );
         io::k3d::kubeconfig_merge(cluster_name, docker_host.as_deref())?;
+        report_cluster_drift(name, spec);
         return Ok(());
     }
 
     let k3d = &spec.provisioner_config.k3d;
     let auto_deploy = resolve_auto_deploy(ctx, name, spec, lab_package);
     let port_refs: Vec<&str> = k3d.ports.iter().map(String::as_str).collect();
+
+    let lab_name = ctx.resolve_lab_name(None)?;
+    let state_dir = crate::host::state::lab_state_dir(&lab_name);
+    let extra_volumes: Vec<(String, String)> = k3d
+        .extra_volumes
+        .iter()
+        .map(|v| {
+            (
+                resolve_placeholders(&v.host_path, &state_dir, name),
+                v.container_path.clone(),
+            )
+        })
+        .collect();
+    refuse_missing_mounts(name, &extra_volumes)?;
 
     let registries_yaml_str = registries_yaml.map(|p| p.to_string_lossy().to_string());
     let registry_dir = registries_yaml.and_then(|p| p.parent().map(|d| d.to_path_buf()));
@@ -230,9 +242,131 @@ fn provision_k3d(
         auto_deploy_manifests: &auto_deploy,
         ports: &port_refs,
         network: k3d.network.as_deref(),
+        extra_api_server_args: &k3d.extra_api_server_args,
+        extra_volumes: &extra_volumes,
     })?;
 
+    wait_until_answering(
+        &spec.kube_context,
+        &spec.provisioner_config.docker.wait_timeout,
+    )?;
+
     Ok(())
+}
+
+fn wait_until_answering(kube_context: &str, wait_timeout: &str) -> Result<()> {
+    let timeout = crate::io::kubectl::parse_timeout(wait_timeout).with_context(|| {
+        format!("provisioner.docker.waitTimeout is '{wait_timeout}', which is not a duration")
+    })?;
+
+    let answered = crate::io::poll::poll_while_time_remains(
+        timeout,
+        std::time::Duration::from_secs(2),
+        || io::kubectl::api_reachable(kube_context).then_some(()),
+    );
+    if answered.is_some() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "cluster was created but '{kube_context}' did not answer within {}. \
+         Raise provisioner.docker.waitTimeout if the machine is slow, or check \
+         `docker logs` for the server node.",
+        wait_timeout,
+    )
+}
+
+fn normalize_k3s_version(version: &str) -> String {
+    version.replace('+', "-")
+}
+
+pub fn describe_cluster_drift(
+    declared_workers: u32,
+    actual_workers: u32,
+    declared_image: Option<&str>,
+    actual_version: Option<&str>,
+) -> Vec<String> {
+    let mut drift = Vec::new();
+
+    if declared_workers != actual_workers {
+        drift.push(format!(
+            "cluster.kubernetes.workers is {declared_workers}, the cluster has {actual_workers}"
+        ));
+    }
+
+    if let (Some(image), Some(version)) = (declared_image, actual_version) {
+        let declared_version = image.rsplit(':').next().unwrap_or(image);
+        if !declared_version.is_empty()
+            && normalize_k3s_version(version) != normalize_k3s_version(declared_version)
+        {
+            drift.push(format!(
+                "provisioner.k3d.image asks for {declared_version}, the nodes run {version}"
+            ));
+        }
+    }
+
+    drift
+}
+
+fn report_cluster_drift(name: &str, spec: &ClusterSpec) {
+    let Some(nodes) = io::kubectl::node_summary(&spec.kube_context) else {
+        return;
+    };
+
+    let drift = describe_cluster_drift(
+        spec.kubernetes.workers,
+        nodes.workers,
+        spec.provisioner_config.k3d.image.as_deref(),
+        nodes.kubelet_version.as_deref(),
+    );
+
+    if drift.is_empty() {
+        return;
+    }
+
+    println!(
+        "{} '{name}' no longer matches what the lab declares:",
+        style("Warning:").yellow(),
+    );
+    for line in &drift {
+        println!("    - {line}");
+    }
+    println!(
+        "    `lab up` only creates a cluster that is missing; it does not reshape one \
+         that exists.\n    Recreate it to converge:  cata lab destroy && cata lab up"
+    );
+}
+
+fn refuse_missing_mounts(cluster_name: &str, volumes: &[(String, String)]) -> Result<()> {
+    let missing: Vec<&str> = volumes
+        .iter()
+        .filter(|(host_path, _)| !std::path::Path::new(host_path).exists())
+        .map(|(host_path, _)| host_path.as_str())
+        .collect();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "cluster '{cluster_name}' declares volume mounts whose host paths do not exist:\n  {}\n\
+         Docker would create empty directories there and the apiserver would fail to start \
+         reading them as files. Nothing was created.\n\
+         A client CA comes from `cata pki init {cluster_name}`. An audit policy file has no \
+         generator yet, so cluster.security.auditLogging cannot work on k3d.",
+        missing.join("\n  "),
+    )
+}
+
+fn resolve_placeholders(path: &str, state_dir: &std::path::Path, cluster_name: &str) -> String {
+    path.replace("{{STATE_DIR}}", &state_dir.display().to_string())
+        .replace(
+            "{{PKI_DIR}}",
+            &crate::host::state::cluster_pki_dir(cluster_name)
+                .display()
+                .to_string(),
+        )
+        .replace("{{CLUSTER_NAME}}", cluster_name)
 }
 
 fn resolve_auto_deploy(
@@ -306,54 +440,34 @@ pub fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<Path
 
         if let Some(port) = lab.registry_port {
             let state_dir = crate::host::state::service_state_dir(lab_name, "registry");
-            if fs::create_dir_all(&state_dir).is_ok() {
+            if io::fs::create_dir_all(&state_dir).is_ok() {
                 let path = state_dir.join("registries.yaml");
                 let registry_yaml =
                     crate::host::services::generate_registries_yaml(port, &lab.registry_upstreams);
                 if let Some(zone) = lab.dns_info.as_ref().map(|d| d.zone.as_str()) {
                     let host_dir = state_dir.join("certs.d").join(format!("registry.{zone}"));
-                    if fs::create_dir_all(&host_dir).is_ok() {
-                        let _ = fs::write(
+                    if io::fs::create_dir_all(&host_dir).is_ok() {
+                        let _ = io::fs::write(
                             host_dir.join("hosts.toml"),
                             crate::host::services::generate_registry_hosts_toml(zone),
                         );
                         let ca_src =
                             crate::host::state::service_state_dir(lab_name, "proxy").join("ca.crt");
                         if ca_src.exists() {
-                            let _ = fs::copy(&ca_src, host_dir.join("ca.crt"));
+                            let _ = io::fs::copy(&ca_src, host_dir.join("ca.crt"));
                         }
                     }
                 }
                 if lab.dns_info.is_some() {
-                    let dns_ip = std::process::Command::new("docker")
-                        .args([
-                            "inspect",
-                            "--format",
-                            "{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}",
-                            "catallaxy-dns",
-                        ])
-                        .output()
-                        .ok()
-                        .filter(|o| o.status.success())
-                        .and_then(|o| {
-                            String::from_utf8(o.stdout).ok().and_then(|s| {
-                                s.lines()
-                                    .map(|l| l.trim().to_string())
-                                    .find(|l| !l.is_empty())
-                            })
-                        });
+                    let dns_ip = lab.dns_container().and_then(io::docker::first_network_ip);
                     if let Some(dns_ip) = dns_ip {
-                        let resolv = format!(
-                            "# Auto-generated by catallaxy.\n\
-                             nameserver {dns_ip}\n\
-                             nameserver 1.1.1.1\n\
-                             nameserver 8.8.8.8\n\
-                             options timeout:1 attempts:1\n"
+                        let _ = io::fs::write(
+                            state_dir.join("lab-resolv.conf"),
+                            crate::host::services::lab_resolv_conf(&dns_ip),
                         );
-                        let _ = fs::write(state_dir.join("lab-resolv.conf"), resolv);
                     }
                 }
-                if fs::write(&path, registry_yaml).is_ok() {
+                if io::fs::write(&path, registry_yaml).is_ok() {
                     return Some(path);
                 }
             }
@@ -361,4 +475,38 @@ pub fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<Path
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_matching_cluster_reports_no_drift() {
+        assert!(
+            describe_cluster_drift(2, 2, Some("rancher/k3s:v1.31.2-k3s1"), Some("v1.31.2+k3s1"))
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_worker_count_change_is_drift() {
+        let drift = describe_cluster_drift(3, 0, None, None);
+        assert_eq!(drift.len(), 1, "{drift:?}");
+        assert!(drift[0].contains("workers is 3"), "{drift:?}");
+        assert!(drift[0].contains("has 0"), "{drift:?}");
+    }
+
+    #[test]
+    fn a_k3s_version_change_is_drift() {
+        let drift =
+            describe_cluster_drift(0, 0, Some("rancher/k3s:v1.32.0-k3s1"), Some("v1.31.2+k3s1"));
+        assert_eq!(drift.len(), 1, "{drift:?}");
+        assert!(drift[0].contains("v1.32.0-k3s1"), "{drift:?}");
+    }
+
+    #[test]
+    fn an_unknown_running_version_is_not_reported_as_drift() {
+        assert!(describe_cluster_drift(0, 0, Some("rancher/k3s:v1.32.0-k3s1"), None).is_empty());
+    }
 }

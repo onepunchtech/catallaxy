@@ -8,10 +8,10 @@ use super::{ClusterMetadata, ImagePolicy, LabMetadata};
 
 pub mod assertions;
 pub mod crd_schema;
-pub mod cross_cluster_secret;
 pub mod identity;
 pub mod image_pin;
 pub mod missing_crd;
+pub mod network_policy;
 pub mod plan;
 pub mod prefix;
 pub mod ready_probe;
@@ -22,7 +22,7 @@ pub mod selector;
 pub struct CheckContext<'a> {
     pub resources: &'a [K8sResource],
     pub cluster: &'a str,
-    pub manifest_dir: &'a std::path::Path,
+    pub wave_meta: Option<&'a crate::io::ssa::WaveMeta>,
     pub prefix: &'a str,
     pub lab_namespaces: &'a [String],
     pub projection_names: &'a HashSet<String>,
@@ -47,6 +47,7 @@ pub fn cluster_rules() -> Vec<Box<dyn CheckRule>> {
         Box::new(crd_schema::CrdSchema),
         Box::new(missing_crd::MissingCrd),
         Box::new(ready_probe::ReadyProbeTargets),
+        Box::new(network_policy::NetworkPolicies),
         Box::new(assertions::Assertions),
     ]
 }
@@ -63,10 +64,7 @@ pub trait LabCheckRule {
 }
 
 pub fn lab_rules() -> Vec<Box<dyn LabCheckRule>> {
-    vec![
-        Box::new(cross_cluster_secret::CrossClusterSecret),
-        Box::new(plan::Plan),
-    ]
+    vec![Box::new(plan::Plan)]
 }
 
 #[cfg(test)]

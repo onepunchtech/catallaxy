@@ -1,4 +1,5 @@
 {
+  lab,
   lib,
   config,
   cataCharts,
@@ -8,17 +9,19 @@
 let
   inherit (lib) mkOption mkEnableOption types;
   contracts = import ../../../../../lib/contracts { inherit lib; };
-  inherit (import ../../../../../lib/floe { inherit lib; }) refs;
+  inherit (import ../../../../../lib/floe { inherit lib; }) gatewayOptions refs;
 in
 {
   options.floes.zot = {
     chart = mkOption {
       type = types.package;
       default = cataCharts.zot.chart;
+      description = "Helm chart to install. Defaults to the chart catallaxy pins.";
     };
     domain = mkOption {
       type = types.str;
       default = "";
+      description = "Hostname zot is served on. Empty disables the HTTPRoute, which is what a lab wants when the registry is reached only from inside the cluster.";
     };
 
     tls = {
@@ -26,19 +29,25 @@ in
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the issuer.";
+              };
               kind = mkOption {
                 type = types.str;
                 default = "ClusterIssuer";
+                description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
               };
             };
           }
         );
         default = null;
+        description = "Issuer that signs the serving certificate. Null means no certificate is minted and TLS is somebody else's problem.";
       };
       secretName = mkOption {
         type = types.str;
         default = "zot-tls";
+        description = "Secret the issued certificate lands in.";
       };
       caBundle = mkOption {
         type = refs.nullableMountableRef;
@@ -56,18 +65,22 @@ in
       rootDirectory = mkOption {
         type = types.str;
         default = "/var/lib/zot";
+        description = "Path inside the container that zot writes blobs and metadata to.";
       };
       size = mkOption {
         type = types.str;
         default = "50Gi";
+        description = "Size of the volume claimed for that path.";
       };
       storageClass = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "StorageClass for the claim. Null takes the cluster default.";
       };
       dedupe = mkOption {
         type = types.bool;
         default = true;
+        description = "Store one copy of a blob shared by several images. Saves space and costs write throughput.";
       };
     };
 
@@ -75,10 +88,12 @@ in
       enable = mkOption {
         type = types.bool;
         default = false;
+        description = "Require credentials from an htpasswd file. Independent of `oidc`, which authenticates humans.";
       };
       htpasswdSecret = mkOption {
         type = types.str;
         default = "zot-htpasswd";
+        description = "Secret holding the htpasswd file.";
       };
     };
 
@@ -96,10 +111,12 @@ in
       issuerUrl = mkOption {
         type = types.str;
         default = "";
+        description = "OIDC issuer URL. Usually read from the identity floe's exports rather than written out.";
       };
       clientId = mkOption {
         type = types.str;
         default = "zot";
+        description = "Client ID zot presents to the issuer.";
       };
       client = mkOption {
         type = contracts.oidc.nullableClient;
@@ -118,15 +135,20 @@ in
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the Secret.";
+              };
               key = mkOption {
                 type = types.str;
                 default = "client-secret";
+                description = "Key within that Secret.";
               };
             };
           }
         );
         default = null;
+        description = "Secret holding the OIDC client secret.";
       };
       scopes = mkOption {
         type = types.listOf types.str;
@@ -135,22 +157,27 @@ in
           "email"
           "groups"
         ];
+        description = "Scopes requested at login. `openid` alone identifies the user; `groups` is what makes the group options below do anything.";
       };
       usernameClaim = mkOption {
         type = types.str;
         default = "preferred_username";
+        description = "Claim to read the username from.";
       };
       groupsClaim = mkOption {
         type = types.str;
         default = "groups";
+        description = "Claim to read group membership from.";
       };
       adminGroups = mkOption {
         type = types.listOf types.str;
         default = [ ];
+        description = "Groups whose members administer the registry.";
       };
       readOnlyGroups = mkOption {
         type = types.listOf types.str;
         default = [ ];
+        description = "Groups whose members may pull but not push.";
       };
     };
 
@@ -158,38 +185,31 @@ in
       enable = mkOption {
         type = types.bool;
         default = true;
+        description = "Serve the built-in web UI.";
       };
     };
     ui = {
       enable = mkOption {
         type = types.bool;
         default = true;
+        description = "Expose the registry as a Service.";
       };
     };
     http = {
       port = mkOption {
         type = types.port;
         default = 5000;
+        description = "Port that Service listens on.";
       };
     };
     replicas = mkOption {
       type = types.ints.positive;
       default = 1;
+      description = "How many zot replicas to run. Above one needs storage that supports shared access.";
     };
 
-    gateway = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      gatewayRef = mkOption {
-        type = types.str;
-        default = "default-gateway";
-      };
-      gatewayNamespace = mkOption {
-        type = types.nullOr types.str;
-        default = "kube-system";
-      };
+    gateway = gatewayOptions {
+      inherit lab;
     };
   };
 }

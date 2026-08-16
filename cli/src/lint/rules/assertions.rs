@@ -81,13 +81,14 @@ mod tests {
     #[test]
     fn failed_cluster_assertion_becomes_error() {
         let meta = ClusterMetadata {
+            network_policies: Default::default(),
             projections: Default::default(),
+            lint: Default::default(),
             assertions: vec![AssertionMetadata {
                 assertion: false,
                 message: "nope".into(),
             }],
             runtime_materialised: Vec::new(),
-            copied_in_secrets: Vec::new(),
             warnings: vec![],
         };
         let diags = check_cluster("c", &meta);
@@ -99,10 +100,11 @@ mod tests {
     #[test]
     fn cluster_warning_becomes_warning_diagnostic() {
         let meta = ClusterMetadata {
+            network_policies: Default::default(),
             projections: Default::default(),
+            lint: Default::default(),
             assertions: vec![],
             runtime_materialised: Vec::new(),
-            copied_in_secrets: Vec::new(),
             warnings: vec!["heads up".into()],
         };
         let diags = check_cluster("c", &meta);
@@ -113,13 +115,14 @@ mod tests {
     #[test]
     fn passing_cluster_assertion_is_silent() {
         let meta = ClusterMetadata {
+            network_policies: Default::default(),
             projections: Default::default(),
+            lint: Default::default(),
             assertions: vec![AssertionMetadata {
                 assertion: true,
                 message: "unused".into(),
             }],
             runtime_materialised: Vec::new(),
-            copied_in_secrets: Vec::new(),
             warnings: vec![],
         };
         assert!(check_cluster("c", &meta).is_empty());

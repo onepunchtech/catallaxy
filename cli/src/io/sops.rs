@@ -56,3 +56,31 @@ pub fn decrypt_store(path: &Path) -> Result<StoreValues> {
     let data: StoreValues = serde_yaml::from_str(&yaml_str)?;
     Ok(data)
 }
+
+pub fn edit(file: &str) -> Result<std::process::ExitStatus> {
+    Command::new("sops")
+        .arg(file)
+        .status()
+        .context("Failed to run sops")
+}
+
+pub fn encrypt_to(file: &str, output: &str) -> Result<std::process::ExitStatus> {
+    Command::new("sops")
+        .args(["--encrypt", file, "--output", output])
+        .status()
+        .context("Failed to run sops")
+}
+
+pub fn decrypt_to_stdout(file: &str) -> Result<std::process::Output> {
+    Command::new("sops")
+        .args(["--decrypt", file])
+        .output()
+        .context("Failed to run sops")
+}
+
+pub fn rotate_in_place(file: &str) -> Result<std::process::ExitStatus> {
+    Command::new("sops")
+        .args(["rotate", "--in-place", file])
+        .status()
+        .context("Failed to run sops")
+}

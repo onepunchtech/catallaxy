@@ -38,33 +38,126 @@ let
     };
   };
 
-  storeType = types.submodule {
-    options = {
-      backend = mkOption {
-        type = types.enum [
-          "sops"
-          "env"
-          "vault"
-          "external"
-        ];
-        default = "sops";
-        description = ''
-          Storage backend:
-          - sops: encrypted YAML files in git, at
-            `secrets/<lab-name>/<store-name>.enc.yaml`
-          - env: one environment variable per key, named
-            `CATA_SECRET_<STORE>__<SECRET>__<KEY>`, uppercased with every
-            character that is not a letter or a digit replaced by an
-            underscore. Store `app`, secret `session-key`, key `secret` is
-            `CATA_SECRET_APP__SESSION_KEY__SECRET`. The name is derived, so
-            there is nothing to declare and nothing to keep in sync. See
-            `lab.secrets.envFile` for where the values come from.
-          - vault: HashiCorp Vault (future)
-          - external: managed outside catallaxy
-        '';
+  # Which backends a cluster can write back into. This is what decides how a
+  # secret can travel between clusters, so it is derived from the backend
+  # rather than declared, and cannot disagree with it.
+  runtimeBackends = [
+    "vault"
+    "external"
+  ];
+
+  storeType = types.submodule (
+    { config, ... }:
+    {
+      options = {
+        backend = mkOption {
+          type = types.enum [
+            "sops"
+            "env"
+            "vault"
+            "external"
+          ];
+          default = "sops";
+          description = ''
+            Storage backend:
+            - sops: encrypted YAML files in git, at
+              `secrets/<lab-name>/<store-name>.enc.yaml`
+            - env: one environment variable per key, named
+              `CATA_SECRET_<STORE>__<SECRET>__<KEY>`, uppercased with every
+              character that is not a letter or a digit replaced by an
+              underscore. Store `app`, secret `session-key`, key `secret` is
+              `CATA_SECRET_APP__SESSION_KEY__SECRET`. The name is derived, so
+              there is nothing to declare and nothing to keep in sync. See
+              `lab.secrets.envFile` for where the values come from.
+            - vault: HashiCorp Vault or OpenBao
+            - external: managed outside catallaxy
+          '';
+        };
+
+        direction = mkOption {
+          type = types.enum [
+            "authored"
+            "runtime"
+          ];
+          readOnly = true;
+          default = if builtins.elem config.backend runtimeBackends then "runtime" else "authored";
+          description = ''
+            Whether a cluster can publish into this store, derived from
+            `backend`.
+
+            `authored` stores are read-only and top-down. You write the value,
+            catallaxy decrypts it at deploy and projects it into every cluster
+            that needs it. A cluster cannot write back: for `sops` that would
+            mean committing to your repository.
+
+            `runtime` stores can be written to, so a secret a cluster mints at
+            runtime can reach other clusters through external-secrets.
+
+            The distinction decides how a secret can travel. A value that
+            exists before the lab does belongs in an `authored` store and is
+            distributed; a value some component mints needs a `runtime` one.
+          '';
+        };
+
+        vault = {
+          server = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "https://vault.internal";
+            description = ''
+              Address of the Vault or OpenBao server, as the clusters reach
+              it. Required on a `runtime` store that anything publishes to or
+              subscribes from, because it is what the generated
+              `ClusterSecretStore` dials.
+            '';
+          };
+
+          path = mkOption {
+            type = types.str;
+            default = "secret";
+            description = "KV mount path.";
+          };
+
+          version = mkOption {
+            type = types.enum [
+              "v1"
+              "v2"
+            ];
+            default = "v2";
+            description = "KV engine version.";
+          };
+
+          tokenSecret = {
+            name = mkOption {
+              type = types.str;
+              default = "vault-token";
+              description = ''
+                Secret each cluster holds a Vault token in. It is an ordinary
+                Secret, so the usual way to get one there is a projection
+                from an `authored` store: sops holds the credential for the
+                store, and the store holds the runtime values.
+              '';
+            };
+
+            key = mkOption {
+              type = types.str;
+              default = "token";
+              description = "Key within that Secret.";
+            };
+
+            namespace = mkOption {
+              type = types.str;
+              default = "external-secrets";
+              description = ''
+                Namespace the token Secret lives in. A ClusterSecretStore is
+                cluster-scoped, so it has to be told.
+              '';
+            };
+          };
+        };
       };
-    };
-  };
+    }
+  );
 
   managedSecretType = types.submodule (
     { config, ... }:
@@ -187,9 +280,18 @@ in
       type = types.listOf (
         types.submodule {
           options = {
-            secretName = mkOption { type = types.str; };
-            store = mkOption { type = types.str; };
-            key = mkOption { type = types.str; };
+            secretName = mkOption {
+              type = types.str;
+              description = "Managed secret the value comes from.";
+            };
+            store = mkOption {
+              type = types.str;
+              description = "Store that secret lives in.";
+            };
+            key = mkOption {
+              type = types.str;
+              description = "Key within the secret.";
+            };
             hostPath = mkOption {
               type = types.str;
               description = "Absolute path or path containing $LAB_STATE_DIR (resolved by the CLI at apply time).";
@@ -200,6 +302,10 @@ in
                 "ca"
               ];
               default = "value";
+              description = ''
+                Carried through from the managed secret, because a `ca` is
+                written with different permissions than an opaque value.
+              '';
             };
           };
         }

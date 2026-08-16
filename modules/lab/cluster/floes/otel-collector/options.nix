@@ -44,20 +44,24 @@ in
           cpu = mkOption {
             type = types.str;
             default = "50m";
+            description = "CPU each agent is guaranteed. Agents run on every node, so this is multiplied by node count.";
           };
           memory = mkOption {
             type = types.str;
             default = "128Mi";
+            description = "Memory each agent is guaranteed.";
           };
         };
         limits = {
           cpu = mkOption {
             type = types.str;
             default = "200m";
+            description = "CPU ceiling for an agent.";
           };
           memory = mkOption {
             type = types.str;
             default = "256Mi";
+            description = "Memory ceiling for an agent.";
           };
         };
       };
@@ -69,6 +73,7 @@ in
       replicas = mkOption {
         type = types.ints.positive;
         default = 1;
+        description = "How many gateway replicas to run.";
       };
 
       external = {
@@ -76,25 +81,32 @@ in
         domain = mkOption {
           type = types.nullOr types.str;
           default = null;
+          description = "Hostname the gateway accepts OTLP on from outside the cluster. Null keeps it internal.";
         };
         tls = {
           issuerRef = mkOption {
             type = types.nullOr (
               types.submodule {
                 options = {
-                  name = mkOption { type = types.str; };
+                  name = mkOption {
+                    type = types.str;
+                    description = "Name of the issuer.";
+                  };
                   kind = mkOption {
                     type = types.str;
                     default = "ClusterIssuer";
+                    description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
                   };
                 };
               }
             );
             default = null;
+            description = "Issuer that signs the gateway's serving certificate. Null mints none.";
           };
           secretName = mkOption {
             type = types.str;
             default = "otel-gateway-tls";
+            description = "Secret the issued certificate lands in.";
           };
         };
         tier = mkOption {
@@ -104,6 +116,7 @@ in
           ];
 
           default = lab.policy.exposure.defaultTier or "public";
+          description = "Lab network tier to attach to. `internal` keeps the endpoint off the public gateway.";
         };
       };
 
@@ -112,20 +125,24 @@ in
           cpu = mkOption {
             type = types.str;
             default = "100m";
+            description = "CPU the gateway is guaranteed.";
           };
           memory = mkOption {
             type = types.str;
             default = "256Mi";
+            description = "Memory the gateway is guaranteed.";
           };
         };
         limits = {
           cpu = mkOption {
             type = types.str;
             default = "500m";
+            description = "CPU ceiling for the gateway.";
           };
           memory = mkOption {
             type = types.str;
             default = "512Mi";
+            description = "Memory ceiling. Batching and retry buffers are what push this.";
           };
         };
       };
@@ -135,29 +152,35 @@ in
       otlp.endpoint = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "Where the gateway forwards traces and metrics over OTLP gRPC. Null forwards nowhere.";
       };
       otlphttp.endpoint = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "Same, over OTLP HTTP.";
       };
       prometheus = {
         enable = mkOption {
           type = types.bool;
           default = false;
+          description = "Forward logs to Loki.";
         };
         endpoint = mkOption {
           type = types.str;
           default = "";
+          description = "Loki push endpoint.";
         };
       };
       loki = {
         enable = mkOption {
           type = types.bool;
           default = false;
+          description = "Expose metrics for Prometheus to scrape.";
         };
         endpoint = mkOption {
           type = types.str;
           default = "";
+          description = "Endpoint Prometheus scrapes.";
         };
       };
     };
@@ -166,14 +189,17 @@ in
       otlpGrpc = mkOption {
         type = types.port;
         default = 4317;
+        description = "Port the collector accepts OTLP gRPC on.";
       };
       otlpHttp = mkOption {
         type = types.port;
         default = 4318;
+        description = "Port it accepts OTLP HTTP on.";
       };
       prometheus = mkOption {
         type = types.port;
         default = 8889;
+        description = "Port it serves its own Prometheus metrics on.";
       };
     };
 

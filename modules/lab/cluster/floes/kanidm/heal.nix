@@ -167,7 +167,7 @@ let
     containers = [
       {
         name = "heal";
-        image = cfg.image;
+        image = kanidmCfg.images.heal.ref;
         command = [
           "bash"
           "-c"
@@ -186,7 +186,7 @@ let
       namespace = kanidmCfg.namespace;
       contentInputs = {
         inherit script;
-        image = cfg.image;
+        image = kanidmCfg.images.heal.ref;
         secretName = secretName;
         kanidmSvc = kanidmSvc;
       };
@@ -263,14 +263,14 @@ in
         for large labs where drift is rare and node load matters.
       '';
     };
-    image = mkOption {
-      type = types.str;
-      default = "alpine/k8s:1.32.4";
-      description = "Container image (needs kubectl + curl + coreutils).";
-    };
   };
 
   config = mkIf (kanidmCfg.enable && cfg.enable) {
+    floes.kanidm.images.heal = {
+      repository = "alpine/k8s";
+      tag = "1.32.4";
+    };
+
     bundles.kanidm-admin-heal = {
       resources = rbac // bootstrapJobResource // cronJobResource;
 

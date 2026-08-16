@@ -26,15 +26,25 @@ let
     k8s-helpers = testsDir + "/k8s-helpers.nix";
     idempotent-job = testsDir + "/util-idempotent-job.nix";
     wait-helpers = testsDir + "/util-wait.nix";
+    hcl = testsDir + "/util-hcl.nix";
+    image-types = testsDir + "/image-types.nix";
+    netpol = testsDir + "/netpol.nix";
     drift-lowering = testsDir + "/drift.nix";
     plan-graph = testsDir + "/plan-graph.nix";
     manifest-graph = testsDir + "/manifest-graph.nix";
     manifest-autoedges = testsDir + "/manifest-autoedges.nix";
     manifest-projections = testsDir + "/manifest-projections.nix";
+    secret-sharing = testsDir + "/secret-sharing.nix";
+    secret-stores = testsDir + "/secret-stores.nix";
+    bundle-provenance = testsDir + "/floe/bundle-provenance.nix";
+    cluster-lint = testsDir + "/cluster-lint.nix";
   };
 
   withPkgs = {
+    secret-generate = testsDir + "/secret-generate.nix";
+    manifest-waves = testsDir + "/manifest-waves.nix";
     mk-floe = testsDir + "/floe/mk-floe.nix";
+    render-images = testsDir + "/render-images.nix";
   };
 
   floeTests = [
@@ -53,6 +63,7 @@ let
     "kaniop"
     "loki"
     "netbird"
+    "openbao"
     "openebs"
     "prometheus"
     "redis-operator"

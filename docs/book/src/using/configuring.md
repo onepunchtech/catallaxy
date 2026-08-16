@@ -51,8 +51,9 @@ _presence_ does not: anything naming a disabled floe in `requires` fails
 evaluation with `floe 'x' requires floe 'y' to be enabled`.
 
 Across clusters, use the `lab` argument. That gives you the right _address_
-for something elsewhere, but moves no data. Copying an actual Secret between
-clusters is a `cross-cluster-secret-copy` plan step.
+for something elsewhere, but moves no data. A Secret two clusters both need
+is authored once in a store and projected into each of them, rather than
+transported from one to the other.
 
 ## `overrides`
 
@@ -97,16 +98,16 @@ A lab is then a base plus an environment:
 
 Beyond floes, a lab can add:
 
-| Option                         | For                                                                            |
-| ------------------------------ | ------------------------------------------------------------------------------ |
-| `floes.custom.apps.<n>`        | a few resources and a route, with no option surface worth naming               |
-| `lab.steps.<n>`                | work the plan must do that is not applying a manifest                          |
-| `cluster.lifecycle.*`          | per-cluster hooks around provisioning, deploy and teardown                     |
-| `lab.ops.commands.<n>`         | an operator command, as `cata lab ops <category> <name>`, never part of a plan |
-| `lab.lint.checks.<n>`          | a rule about your rendered manifests, run beside the built-in ones             |
-| `bundles.<n>`                  | one odd resource that needs a position in the install graph                    |
-| `cluster.drift.declarations`   | a field something other than your CD tool writes                               |
-| `lab.policy.*`, `lab.images.*` | lab-wide defaults every floe inherits                                          |
+| Option                            | For                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------- |
+| `floes.custom.apps.<n>`           | a few resources and a route, with no option surface worth naming            |
+| `lab.steps.<n>`                   | work the plan must do that is not applying a manifest                       |
+| `cluster.lifecycle.*`             | per-cluster hooks around provisioning, deploy and teardown                  |
+| `lab.ops.commands.<category>.<n>` | an operator command, as `cata lab ops <category> <n>`, never part of a plan |
+| `lab.lint.checks.<n>`             | a rule about your rendered manifests, run beside the built-in ones          |
+| `bundles.<n>`                     | one odd resource that needs a position in the install graph                 |
+| `cluster.drift.declarations`      | a field something other than your CD tool writes                            |
+| `lab.policy.*`, `lab.images.*`    | lab-wide defaults every floe inherits                                       |
 
 The one thing needing a change to catallaxy itself is a new _built-in_ lint
 rule; those are a hardcoded list in Rust. `lab.lint.checks` runs in the same

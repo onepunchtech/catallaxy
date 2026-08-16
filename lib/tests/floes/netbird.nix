@@ -373,9 +373,25 @@ lib.runTests {
     expected = [ ];
   };
 
-  testPeerOnlyDefersAgentRollout = {
+  # A peer cluster used to defer this, because its setup key arrived after
+  # the deploy via a copy step. The key is projected during the deploy now,
+  # so the peer waits like anything else.
+  testPeerOnlyAwaitsAgentRollout = {
     expr = peerOnlyResult.config.bundles.netbird-agent.awaitRollout or null;
-    expected = false;
+    expected = true;
+  };
+
+  # And the wait is on the key itself, not merely on the Deployment, on both
+  # kinds of cluster.
+  testAgentGatesOnItsSetupKeySecret = {
+    expr = map (r: r.resource) [
+      peerOnlyResult.config.bundles.netbird-agent.readyProbe
+      enabledResult.config.bundles.netbird-agent.readyProbe
+    ];
+    expected = [
+      "secret/setup-key-cluster-router"
+      "secret/setup-key-cluster-router"
+    ];
   };
 
   testManagementAwaitsAgentRollout = {
@@ -518,5 +534,21 @@ lib.runTests {
   testMoreThanOneCallbackPortIsOffered = {
     expr = builtins.length mgmtRedirectUrls >= 2;
     expected = true;
+  };
+
+  # The relay secret and the datastore encryption key used to come from two
+  # Jobs that shelled out to /dev/urandom and skipped themselves if the Secret
+  # already existed. They are generated now, so the prechart bundle carries
+  # only the RBAC the other bootstrap Jobs run under.
+  testTheMintJobsAreGone = {
+    expr = lib.filter (lib.hasInfix "mint") (
+      builtins.attrNames (enabledResult.config.bundles.netbird-prechart.resources or { })
+    );
+    expected = [ ];
+  };
+
+  testThePrechartBundleStillProvidesItsToken = {
+    expr = enabledResult.config.bundles.netbird-prechart.provides or [ ];
+    expected = [ "netbird/prechart/ready" ];
   };
 }

@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::config::Context as CataContext;
@@ -61,9 +61,76 @@ pub async fn execute(
 
     let stop_after = resolve_stop_after(&steps, up_to, direction)?;
 
+    let outcome = run_steps(&step_ctx, &steps, stop_after, up_to).await;
+    let failures = step_ctx.failures.into_inner();
+
+    if direction == Direction::Teardown
+        && let Some(report) = crate::domain::teardown::report(&failures, &lab.destroy.rescue_hints)
+    {
+        println!();
+        println!("{} {}", style("Warning:").yellow(), report);
+    }
+
+    if let Err(e) = outcome {
+        if direction == Direction::Deploy {
+            println!();
+            println!(
+                "{} Steps are idempotent, so re-running picks up where this stopped: \
+                 fix the cause above and run `cata lab up` again. \
+                 `--up-to=<kind>` stops after the last step of a kind if you want to \
+                 go one stage at a time.",
+                style(">>>").yellow(),
+            );
+        }
+        return Err(e);
+    }
+
+    if direction == Direction::Teardown && !failures.is_empty() {
+        bail!(
+            "teardown left {} failure(s) unresolved; cloud resources may still exist",
+            failures.len(),
+        );
+    }
+
+    if direction == Direction::Deploy {
+        print_how_to_reach_it(lab_name, &lab);
+    }
+
+    Ok(())
+}
+
+fn print_how_to_reach_it(lab_name: &str, lab: &LabSpec) {
+    let Some(dns) = lab.dns_info.as_ref() else {
+        return;
+    };
+
+    println!();
+    println!("{} Reaching *.{}", style(">>>").green(), dns.zone);
+
+    if crate::io::trust::lab_ca_path(lab_name).exists() {
+        println!(
+            "      cata --flake .#{lab_name} lab ops -- trust browser   \
+             # trust the lab CA in your browsers, no sudo"
+        );
+    }
+
+    println!(
+        "      cata --flake .#{lab_name} lab dns                    \
+         # how to resolve the zone from this machine"
+    );
+}
+
+async fn run_steps(
+    step_ctx: &StepContext<'_>,
+    steps: &[PlannedStep],
+    stop_after: Option<usize>,
+    up_to: Option<&str>,
+) -> Result<()> {
     let total = steps.len();
     for (i, step) in steps.iter().enumerate() {
-        run_one(&step_ctx, i, total, step).await?;
+        run_one(step_ctx, i, total, step)
+            .await
+            .with_context(|| format!("step {}/{} failed: {}", i + 1, total, step.label()))?;
         if let Some(idx) = stop_after
             && i == idx
         {
@@ -71,27 +138,13 @@ pub async fn execute(
             println!(
                 "{} Stopped at --up-to={} (step {}/{})",
                 style(">>>").green(),
-                up_to.unwrap(),
+                up_to.unwrap_or_default(),
                 i + 1,
                 total,
             );
             return Ok(());
         }
     }
-
-    let failures = step_ctx.failures.into_inner();
-    if direction == Direction::Teardown && !failures.is_empty() {
-        println!();
-        println!(
-            "{} Teardown finished with {} non-fatal failure(s):",
-            style("Warning:").yellow(),
-            failures.len()
-        );
-        for f in &failures {
-            println!("  - {}", f);
-        }
-    }
-
     Ok(())
 }
 
@@ -163,9 +216,6 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep) -> Result<()> {
         StepParams::CreateCluster(p) => steps::create_cluster::run(sctx, p).await,
         StepParams::EnsureSecrets(p) => steps::ensure_secrets::run(sctx, p),
         StepParams::DeployManifests(p) => steps::deploy_manifests::run(sctx, p).await,
-        StepParams::CrossClusterSecretCopy(p) => {
-            steps::cross_cluster_secret_copy::run(sctx, p).await
-        }
         StepParams::WaitForResources(p) => steps::wait_for_resources::run(sctx, p).await,
         StepParams::SyncKubeconfig(p) => steps::sync_kubeconfig::run(sctx, p),
         StepParams::Pivot(p) => steps::pivot::run(sctx, p).await,

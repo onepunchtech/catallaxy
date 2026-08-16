@@ -261,7 +261,7 @@ in
     extraVolumes =
       lib.optionals pkiCfg.enable [
         {
-          hostPath = "{{STATE_DIR}}/pki/{{CLUSTER_NAME}}/ca.crt";
+          hostPath = "{{PKI_DIR}}/ca.crt";
           containerPath = pkiCfg.out.clientCaPath;
         }
       ]

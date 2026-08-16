@@ -1,8 +1,7 @@
 use std::collections::HashSet;
-use std::path::Path;
 
 use crate::domain::diagnostic::{Diagnostic, Severity};
-use crate::io::ssa::WaveMeta;
+use crate::io::ssa::{WaveBundle, WaveMeta};
 use crate::lint::manifest::K8sResource;
 
 use super::{CheckContext, CheckRule};
@@ -14,7 +13,10 @@ impl CheckRule for ReadyProbeTargets {
         "ready-probe"
     }
     fn check(&self, ctx: &CheckContext<'_>) -> Vec<Diagnostic> {
-        check(ctx.resources, ctx.cluster, ctx.manifest_dir)
+        match ctx.wave_meta {
+            Some(meta) => check(ctx.resources, ctx.cluster, meta, ctx.projection_names),
+            None => Vec::new(),
+        }
     }
 }
 
@@ -45,15 +47,23 @@ fn normalise_kind(k: &str) -> String {
     k.to_string()
 }
 
-fn check(resources: &[K8sResource], cluster: &str, manifest_dir: &Path) -> Vec<Diagnostic> {
-    let wave_meta_path = manifest_dir.join(".wave-meta");
-    let Ok(raw) = std::fs::read_to_string(&wave_meta_path) else {
-        return Vec::new();
-    };
-    let Ok(meta) = serde_json::from_str::<WaveMeta>(&raw) else {
-        return Vec::new();
-    };
+/// Bundles that satisfy any of `requires`, via the provides index. A probe may
+/// legitimately wait on something a bundle we are ordered after produces at
+/// runtime; that is the whole reason `requires` exists.
+fn required_bundles<'a>(bundle: &WaveBundle, meta: &'a WaveMeta) -> Vec<&'a WaveBundle> {
+    meta.waves
+        .iter()
+        .flat_map(|w| w.bundles.iter())
+        .filter(|b| b.provides.iter().any(|t| bundle.requires.contains(t)))
+        .collect()
+}
 
+fn check(
+    resources: &[K8sResource],
+    cluster: &str,
+    meta: &WaveMeta,
+    projection_names: &HashSet<String>,
+) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
 
     for wave in &meta.waves {
@@ -82,6 +92,13 @@ fn check(resources: &[K8sResource], cluster: &str, manifest_dir: &Path) -> Vec<D
                 continue;
             }
 
+            // A projected Secret never appears in the rendered tree: the value
+            // is decrypted and applied at deploy. The projection machinery
+            // already asserts it lands no later than its consumer.
+            if want_kind == "secret" && projection_names.contains(name) {
+                continue;
+            }
+
             if !kinds_with_name.is_empty() {
                 let mut found: Vec<&str> = kinds_with_name.iter().map(String::as_str).collect();
                 found.sort_unstable();
@@ -97,23 +114,26 @@ fn check(resources: &[K8sResource], cluster: &str, manifest_dir: &Path) -> Vec<D
                 continue;
             }
 
-            let bundle_mints = resources
+            let mut minting_dirs = vec![bundle.dir.as_str()];
+            let required = required_bundles(bundle, meta);
+            minting_dirs.extend(required.iter().map(|b| b.dir.as_str()));
+
+            let something_mints = resources
                 .iter()
                 .filter(|r| {
-                    r.source_file
-                        .to_string_lossy()
-                        .contains(bundle.dir.as_str())
+                    let file = r.source_file.to_string_lossy().to_string();
+                    minting_dirs.iter().any(|d| file.contains(d))
                 })
                 .any(mints_at_runtime);
 
-            if !bundle_mints {
+            if !something_mints {
                 diags.push(diag(
                     cluster,
                     &bundle.key,
                     format!(
-                        "readyProbe waits on '{target}', which nothing in this bundle renders \
-                         and nothing here can mint after apply — the probe blocks until its \
-                         timeout and then fails the deploy"
+                        "readyProbe waits on '{target}', which nothing renders and nothing \
+                         this bundle requires can mint after apply — the probe blocks until \
+                         its timeout and then fails the deploy"
                     ),
                 ));
             }

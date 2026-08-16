@@ -53,24 +53,6 @@ in
 
   options.floes.netbird = {
 
-    managementImage = mkOption {
-      type = types.str;
-      default = "netbirdio/management:${cfg.version}";
-      defaultText = lib.literalExpression ''"netbirdio/management:''${config.floes.netbird.version}"'';
-    };
-
-    signalImage = mkOption {
-      type = types.str;
-      default = "netbirdio/signal:${cfg.version}";
-      defaultText = lib.literalExpression ''"netbirdio/signal:''${config.floes.netbird.version}"'';
-    };
-
-    relayImage = mkOption {
-      type = types.str;
-      default = "netbirdio/relay:${cfg.version}";
-      defaultText = lib.literalExpression ''"netbirdio/relay:''${config.floes.netbird.version}"'';
-    };
-
     versionCheck = mkOption {
       type = types.bool;
       default = true;
@@ -291,14 +273,10 @@ in
       };
     };
 
-    bootstrapImage = mkOption {
-      type = types.str;
-      default = "alpine/k8s:1.32.4";
-    };
-
     domain = mkOption {
       type = types.str;
       default = "vpn.example.com";
+      description = "Hostname the management API and dashboard are served on.";
     };
 
     signal.domain = mkOption {
@@ -332,20 +310,26 @@ in
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the issuer.";
+              };
               kind = mkOption {
                 type = types.str;
                 default = "ClusterIssuer";
+                description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
               };
             };
           }
         );
 
         default = config.floes.cert-manager.exports.defaultIssuerRef or null;
+        description = "Issuer that signs the serving certificate. Null mints none.";
       };
       secretName = mkOption {
         type = types.str;
         default = "netbird-tls";
+        description = "Secret the issued certificate lands in.";
       };
       caBundle = mkOption {
         type = refs.nullableMountableRef;
@@ -389,15 +373,18 @@ in
       replicas = mkOption {
         type = types.ints.positive;
         default = 1;
+        description = "How many management replicas to run.";
       };
       storage = {
         size = mkOption {
           type = types.str;
           default = "5Gi";
+          description = "Size of the volume holding the management datastore.";
         };
         storageClass = mkOption {
           type = types.nullOr types.str;
           default = null;
+          description = "StorageClass for it. Null takes the cluster default.";
         };
       };
     };
@@ -405,16 +392,19 @@ in
     signal.replicas = mkOption {
       type = types.ints.positive;
       default = 1;
+      description = "How many signal replicas to run.";
     };
 
     stun = {
       enable = mkOption {
         type = types.bool;
         default = false;
+        description = "Run a TURN server, for peers that cannot hole-punch a direct path.";
       };
       domain = mkOption {
         type = types.str;
         default = "turn.example.com";
+        description = "Hostname the TURN server is reached on.";
       };
     };
 
@@ -422,10 +412,12 @@ in
       enable = mkOption {
         type = types.bool;
         default = false;
+        description = "Run a relay server, the fallback when TURN also fails.";
       };
       domain = mkOption {
         type = types.str;
         default = "turn.example.com";
+        description = "Hostname the relay is reached on.";
       };
     };
 
@@ -578,7 +570,10 @@ in
               tokenRef = mkOption {
                 type = types.submodule {
                   options = {
-                    name = mkOption { type = types.str; };
+                    name = mkOption {
+                      type = types.str;
+                      description = "Name of the Secret holding the token.";
+                    };
                     namespace = mkOption {
                       type = types.nullOr types.str;
                       default = null;
@@ -592,6 +587,7 @@ in
                     key = mkOption {
                       type = types.str;
                       default = "token";
+                      description = "Key within that Secret.";
                     };
                   };
                 };
@@ -651,6 +647,7 @@ in
             ephemeral = mkOption {
               type = types.bool;
               default = false;
+              description = "Peers joining with this key are removed when they go offline. Suits short-lived workloads, not routers.";
             };
           };
         }
@@ -762,6 +759,7 @@ in
                         description = mkOption {
                           type = types.str;
                           default = "Managed by catallaxy";
+                          description = "Description recorded on the netbird object, so an operator reading the netbird UI can tell what created it.";
                         };
                         enabled = mkOption {
                           type = types.bool;
@@ -880,21 +878,25 @@ in
       chart = mkOption {
         type = types.package;
         default = cataCharts.netbird-operator.chart;
+        description = "Helm chart to install. Defaults to the chart catallaxy pins.";
       };
 
       crds = mkOption {
         type = types.nullOr types.path;
         default = cataCharts.netbird-operator.crds or null;
+        description = "CRDs for the netbird operator. Null skips installing them, for a cluster where something else owns them.";
       };
 
       apiTokenSecretName = mkOption {
         type = types.str;
         default = "netbird-mgmt-api-key";
+        description = "Secret the operator's API token is written to.";
       };
 
       apiTokenSecretKey = mkOption {
         type = types.str;
         default = "NB_API_KEY";
+        description = "Key within that Secret.";
       };
 
       managementUrl = mkOption {
@@ -994,13 +996,6 @@ in
     agent = {
       enable = mkEnableOption "Netbird agent (peer) in this cluster";
 
-      image = mkOption {
-        type = types.str;
-
-        default = "netbirdio/netbird:${cfg.version}";
-        defaultText = lib.literalExpression ''"netbirdio/netbird:''${config.floes.netbird.version}"'';
-      };
-
       namespace = mkOption {
         type = types.str;
         default = cfg.namespace;
@@ -1017,6 +1012,7 @@ in
       managementUrl = mkOption {
         type = types.str;
         default = "https://api.netbird.io:443";
+        description = "URL of the management API this agent registers with. A peer cluster points at the cluster running management.";
       };
 
       setupKeyRef = mkOption {
@@ -1026,10 +1022,12 @@ in
               type = types.str;
               default = setupKeySecretName clusterRouterKeyName;
               defaultText = lib.literalExpression ''"setup-key-cluster-router"'';
+              description = "Secret holding the setup key this agent joins with.";
             };
             key = mkOption {
               type = types.str;
               default = setupKeySecretKey;
+              description = "Key within that Secret.";
             };
           };
         };
@@ -1043,25 +1041,30 @@ in
       hostname = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "Name this peer appears under in netbird. Null lets netbird derive one.";
       };
 
       advertisedRoutes = mkOption {
         type = types.listOf types.str;
         default = [ ];
+        description = "CIDRs this peer advertises a route to, which is what makes it a router rather than a leaf.";
       };
 
       persistence = {
         enable = mkOption {
           type = types.bool;
           default = true;
+          description = "Claim a volume for the agent's state, so it keeps its identity across restarts.";
         };
         size = mkOption {
           type = types.str;
           default = "1Gi";
+          description = "Size of that volume.";
         };
         storageClass = mkOption {
           type = types.nullOr types.str;
           default = null;
+          description = "StorageClass for it. Null takes the cluster default.";
         };
       };
 
@@ -1077,16 +1080,12 @@ in
             memory = "256Mi";
           };
         };
+        description = "Resource requests and limits for the agent container.";
       };
     };
 
     dashboard = {
       enable = mkEnableOption "netbird dashboard SPA";
-      image = mkOption {
-        type = types.str;
-        default = "netbirdio/dashboard:main";
-        description = "Container image for the dashboard.";
-      };
 
       domain = mkOption {
         type = types.str;
@@ -1100,12 +1099,14 @@ in
       replicas = mkOption {
         type = types.ints.positive;
         default = 1;
+        description = "How many dashboard replicas to run.";
       };
       oidc = {
         clientId = mkOption {
           type = types.str;
 
           default = "netbird";
+          description = "Client ID the dashboard presents to the issuer.";
         };
         client = mkOption {
           type = contracts.oidc.nullableClient;
@@ -1140,15 +1141,18 @@ in
             "offline_access"
             "groups"
           ];
+          description = "Scopes the dashboard requests at login.";
         };
 
         authRedirectPath = mkOption {
           type = types.str;
           default = "/auth/callback";
+          description = "Path the issuer redirects back to after login.";
         };
         silentRedirectPath = mkOption {
           type = types.str;
           default = "/auth/silent-callback";
+          description = "Path used for silent token renewal, which is what keeps a session alive without a visible redirect.";
         };
       };
       gateway = {
@@ -1170,6 +1174,7 @@ in
       tls.secretName = mkOption {
         type = types.str;
         default = "netbird-dashboard-tls";
+        description = "Secret the dashboard's certificate lands in.";
       };
       resources = mkOption {
         type = types.attrs;
@@ -1179,6 +1184,7 @@ in
           limits.cpu = "200m";
           limits.memory = "128Mi";
         };
+        description = "Resource requests and limits for the dashboard container.";
       };
     };
 

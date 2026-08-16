@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 let
@@ -576,7 +577,7 @@ in
                 containers = [
                   {
                     name = "dashboard";
-                    image = cfg.dashboard.image;
+                    image = cfg.images.dashboard.ref;
                     env = dashboardEnv;
                     ports = [
                       {
@@ -932,7 +933,7 @@ in
                     {
 
                       name = "configure";
-                      image = "busybox:1.36";
+                      image = cfg.images.wait.ref;
                       command = [
                         "sh"
                         "-c"
@@ -1000,7 +1001,7 @@ in
                 containers = [
                   {
                     name = "netbird-management";
-                    image = cfg.managementImage;
+                    image = cfg.images.management.ref;
                     imagePullPolicy = "IfNotPresent";
                     args = [
                       "--log-level"
@@ -1161,7 +1162,7 @@ in
                 containers = [
                   {
                     name = "netbird-signal";
-                    image = cfg.signalImage;
+                    image = cfg.images.signal.ref;
                     imagePullPolicy = "IfNotPresent";
                     args = [
                       "--port"
@@ -1258,7 +1259,7 @@ in
                 containers = [
                   {
                     name = "netbird-relay";
-                    image = cfg.relayImage;
+                    image = cfg.images.relay.ref;
                     imagePullPolicy = "IfNotPresent";
                     args = [
                       "--log-file"
@@ -1371,307 +1372,9 @@ in
         };
       };
 
-      mkRandomSecretMintJob = jobName: secretName: dataKey: {
-        apiVersion = "batch/v1";
-        kind = "Job";
-        metadata = {
-          name = jobName;
-          namespace = cfg.namespace;
-          labels."app.kubernetes.io/managed-by" = "catallaxy";
-          annotations."kapp.k14s.io/update-strategy" = "fallback-on-replace";
-        };
-        spec = {
-          backoffLimit = 5;
-          template = {
-            metadata.labels.app = jobName;
-            spec = {
-              serviceAccountName = "netbird-bootstrap";
-              restartPolicy = "OnFailure";
-              containers = [
-                {
-                  name = "mint";
-                  image = cfg.bootstrapImage;
-                  command = [
-                    "bash"
-                    "-c"
-                  ];
-                  args = [
-                    ''
-                      set -eu
-                      if kubectl -n ${cfg.namespace} get secret ${secretName} >/dev/null 2>&1; then
-                        echo "${secretName} already exists, leaving alone"
-                        exit 0
-                      fi
-                      VAL=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
-                      kubectl -n ${cfg.namespace} create secret generic ${secretName} \
-                        --from-literal=${dataKey}="$VAL"
-                      echo "Created ${secretName}"
-                    ''
-                  ];
-                }
-              ];
-            };
-          };
-        };
-      };
-
-      relaySecretMintJob = {
-        netbird-relay-secret-mint =
-          mkRandomSecretMintJob "netbird-relay-secret-mint" "netbird-relay-secret"
-            "netbird-relay-secret-key";
-
-        netbird-datastore-enc-key-mint =
-          mkRandomSecretMintJob "netbird-datastore-enc-key-mint" "netbird-datastore-enc-key"
-            "key";
-      };
-
       catalLib = import ../../../../../lib/util/idempotent-job.nix { inherit lib; };
 
-      netbirdBootstrapScript = ''
-        set -eu
-
-        log() { echo "[bootstrap] $*"; }
-
-        CACERT_FLAG=""
-        if [ -f /etc/ssl/certs/lab-ca.crt ]; then
-          CACERT_FLAG="--cacert /etc/ssl/certs/lab-ca.crt"
-        fi
-
-        configure_account() {
-          local pat="$1"
-          log "resolving account id for settings patch"
-          ACCOUNT_ID=$(curl -sk $CACERT_FLAG \
-            -H "Authorization: Token $pat" \
-            -H "Accept: application/json" \
-            "$NB_URL/api/accounts" | jq -r '.[0].id // empty')
-          if [ -z "$ACCOUNT_ID" ]; then
-            log "no account visible via /api/accounts; skipping settings patch" >&2
-            return
-          fi
-          CUR=$(curl -sk $CACERT_FLAG \
-            -H "Authorization: Token $pat" \
-            -H "Accept: application/json" \
-            "$NB_URL/api/accounts" | jq -r '.[0].settings')
-          NEW=$(echo "$CUR" | jq '
-            .extra.user_approval_required = false
-            | .extra.peer_approval_enabled = false
-            | .lazy_connection_enabled = ${if cfg.lazyConnections then "true" else "false"}
-            | .jwt_groups_enabled = true
-            | .jwt_groups_claim_name = "${cfg.operator.jwtGroupsClaimName}"
-            ${lib.optionalString (
-              cfg.operator.autoGroupsFromJwt != [ ]
-            ) "| .jwt_allow_groups = ${builtins.toJSON cfg.operator.autoGroupsFromJwt}"}
-          ')
-          if [ "$CUR" = "$NEW" ]; then
-            log "account $ACCOUNT_ID settings already ok"
-          else
-            log "patching account $ACCOUNT_ID (user_approval_required=false, peer_approval_enabled=false, lazy_connection_enabled=${
-              if cfg.lazyConnections then "true" else "false"
-            }, jwt_groups_enabled=true, jwt_groups_claim_name=${cfg.operator.jwtGroupsClaimName})"
-            curl -sk $CACERT_FLAG -X PUT \
-              -H "Authorization: Token $pat" \
-              -H "Content-Type: application/json" \
-              "$NB_URL/api/accounts/$ACCOUNT_ID" \
-              -d "$(jq -n --argjson s "$NEW" '{settings: $s}')" >/dev/null
-          fi
-        }
-
-        discover_jwt_group_uuids() {
-          local id_token="$1"
-          [ -n "''${NB_JWT_SPNS_JSON:-}" ] || return 0
-          [ "$(echo "$NB_JWT_SPNS_JSON" | jq 'length')" -gt 0 ] || return 0
-          if [ -z "$id_token" ] || [ "$id_token" = "null" ]; then
-            log "no id_token available; skipping JWT group UUID discovery" >&2
-            return 0
-          fi
-          local payload
-          payload=$(echo "$id_token" | cut -d. -f2 | tr '_-' '/+')
-          case $(( ''${#payload} % 4 )) in
-            2) payload="''${payload}==" ;;
-            3) payload="''${payload}=" ;;
-          esac
-          local groups_claim
-          groups_claim=$(echo "$payload" | base64 -d 2>/dev/null | jq -c '.groups // []')
-          local spn_uuids_json
-          spn_uuids_json=$(jq -cn \
-            --argjson g "$groups_claim" \
-            --argjson spns "$NB_JWT_SPNS_JSON" \
-            '
-              [ $spns[] as $spn
-                | ($g | to_entries[] | select(.value == $spn) | .key) as $i
-                | select(($i // 0) > 0)
-                | $g[$i - 1] as $u
-                | select($u | test("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))
-                | {($spn): $u}
-              ]
-              | add // {}
-            ')
-          local resolved expected
-          resolved=$(echo "$spn_uuids_json" | jq 'length')
-          expected=$(echo "$NB_JWT_SPNS_JSON" | jq 'length')
-          log "resolved $resolved/$expected JWT group UUIDs: $spn_uuids_json"
-          if [ "$resolved" -lt "$expected" ]; then
-            local missing
-            missing=$(jq -cn \
-              --argjson a "$NB_JWT_SPNS_JSON" \
-              --argjson h "$spn_uuids_json" \
-              '$a | map(select(. as $s | ($h | has($s) | not)))')
-            log "WARNING: missing JWT group UUIDs for SPNs: $missing" >&2
-            log "  add netbird-bot to each SPN's kanidm group and re-run bootstrap" >&2
-            log "  bot id_token groups claim: $groups_claim" >&2
-          fi
-          kubectl -n "$NB_NS" create secret generic "$JWT_GROUP_UUIDS_SECRET" \
-            --from-literal="SPN_UUIDS_JSON=$spn_uuids_json" \
-            --dry-run=client -o yaml \
-            | kubectl apply -f -
-          log "wrote $NB_NS/$JWT_GROUP_UUIDS_SECRET (key SPN_UUIDS_JSON)"
-        }
-
-        do_token_exchange() {
-          local client_id="$OAUTH2_CLIENT_NAME"
-          if [ -z "$client_id" ]; then
-            log "OAUTH2_CLIENT_NAME env not set" >&2
-            exit 1
-          fi
-          local bot_token
-          bot_token=$(kubectl -n "$BOT_TOKEN_NS" get secret "$BOT_TOKEN_SECRET" \
-            -o jsonpath='{.data.'"$BOT_TOKEN_KEY"'}' 2>/dev/null | base64 -d || true)
-          if [ -z "$bot_token" ]; then
-            log "bot Secret $BOT_TOKEN_NS/$BOT_TOKEN_SECRET missing key $BOT_TOKEN_KEY" >&2
-            log "verify the KanidmServiceAccount has reconciled and minted its API token." >&2
-            exit 1
-          fi
-          local token_endpoint="''${TOKEN_ENDPOINT:-}"
-          if [ -n "$token_endpoint" ]; then
-            log "using provider-supplied token endpoint $token_endpoint" >&2
-          else
-            if [ -z "$OIDC_DISCOVERY" ]; then
-              log "neither TOKEN_ENDPOINT nor OIDC_DISCOVERY is set; check idp.machine wiring" >&2
-              exit 1
-            fi
-            log "fetching OIDC discovery from $OIDC_DISCOVERY" >&2
-            local disc
-            disc=$(curl -sf $CACERT_FLAG "$OIDC_DISCOVERY" 2>&1) || {
-              log "OIDC discovery fetch failed: $disc" >&2
-              exit 1
-            }
-            token_endpoint=$(echo "$disc" | jq -r '.token_endpoint // empty')
-            if [ -z "$token_endpoint" ]; then
-              log "no token_endpoint in discovery response" >&2
-              exit 1
-            fi
-          fi
-          log "requesting token-exchange access token from $token_endpoint" >&2
-          local resp
-          resp=$(curl -sf $CACERT_FLAG \
-            --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
-            --data-urlencode "subject_token=$bot_token" \
-            --data-urlencode "subject_token_type=urn:ietf:params:oauth:token-type:access_token" \
-            --data-urlencode "client_id=$client_id" \
-            --data-urlencode "scope=openid email profile groups" \
-            "$token_endpoint" 2>&1) || {
-              log "kanidm token endpoint refused token-exchange: $resp" >&2
-              exit 1
-            }
-          printf '%s' "$resp"
-        }
-
-        EXISTING=$(kubectl -n "$NB_NS" get secret "$OUT_SECRET" \
-          -o jsonpath='{.data.'"$OUT_KEY"'}' 2>/dev/null | base64 -d || true)
-        UUIDS_PRESENT=$(kubectl -n "$NB_NS" get secret "$JWT_GROUP_UUIDS_SECRET" \
-          -o jsonpath='{.data.SPN_UUIDS_JSON}' 2>/dev/null | base64 -d 2>/dev/null || true)
-        UUIDS_NEEDED=$( [ -n "''${NB_JWT_SPNS_JSON:-}" ] \
-          && [ "$(echo "$NB_JWT_SPNS_JSON" | jq 'length')" -gt 0 ] \
-          && echo yes || echo no)
-        UUIDS_STALE=no
-        if [ "$UUIDS_NEEDED" = "yes" ] && [ -n "$UUIDS_PRESENT" ]; then
-          missing=$(jq -cn --argjson a "$NB_JWT_SPNS_JSON" --argjson h "$UUIDS_PRESENT" \
-            '$a | map(select(. as $s | ($h | has($s) | not)))')
-          if [ "$(echo "$missing" | jq 'length')" -gt 0 ]; then
-            UUIDS_STALE=yes
-            log "existing JWT group UUIDs Secret is stale; missing SPNs: $missing"
-          fi
-        fi
-        if [ -n "$EXISTING" ] && [ "$EXISTING" != "" ]; then
-          CODE=$(curl -sk -o /dev/null -w '%{http_code}' \
-            "$NB_URL/api/users/current" \
-            -H "Authorization: Token $EXISTING" 2>/dev/null || echo 000)
-          if [ "$CODE" = "200" ]; then
-            if [ "$UUIDS_NEEDED" = "yes" ] && { [ -z "$UUIDS_PRESENT" ] || [ "$UUIDS_STALE" = "yes" ]; }; then
-              log "existing PAT valid; running token-exchange to (re)populate JWT group UUIDs Secret"
-              RESP=$(do_token_exchange)
-              discover_jwt_group_uuids "$(echo "$RESP" | jq -r '.id_token // empty')"
-            else
-              log "existing PAT + JWT group UUIDs already present; skipping mint"
-            fi
-            configure_account "$EXISTING"
-            exit 0
-          fi
-          log "existing PAT rejected (HTTP $CODE); re-minting"
-        fi
-
-        log "waiting for Netbird management API"
-        for _ in $(seq 1 60); do
-          CODE=$(curl -sk -o /dev/null -w '%{http_code}' "$NB_URL/api/users" 2>/dev/null || echo 000)
-          if [ "$CODE" = "401" ] || [ "$CODE" = "403" ]; then
-            log "API up (HTTP $CODE)"
-            break
-          fi
-          sleep 5
-        done
-
-        RESP=$(do_token_exchange)
-        TOKEN=$(echo "$RESP" | jq -r '.access_token')
-        if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-          log "no access_token in kanidm response: $RESP" >&2
-          exit 1
-        fi
-        log "got OIDC access token"
-
-        log "calling Netbird /api/users (auto-promote)"
-        USERS=$(curl -sf "$NB_URL/api/users" \
-          -H "Authorization: Bearer $TOKEN" 2>&1) || {
-            log "Netbird rejected the OIDC token: $USERS" >&2
-            log "Netbird API audience or issuer may not match kanidm's claims." >&2
-            exit 1
-          }
-
-        SELF_ID=$(echo "$USERS" \
-          | jq -r '.[] | select(.is_current==true) | .id' \
-          | head -1)
-        if [ -z "$SELF_ID" ] || [ "$SELF_ID" = "null" ]; then
-          SELF_ID=$(echo "$USERS" | jq -r '.[] | select(.role=="admin") | .id' | head -1)
-        fi
-        if [ -z "$SELF_ID" ] || [ "$SELF_ID" = "null" ]; then
-          log "could not determine self user id from response: $USERS" >&2
-          exit 1
-        fi
-        log "self user id: $SELF_ID"
-
-        PAYLOAD=$(jq -n --arg n "catallaxy-operator" \
-          '{name: $n, expires_in: 365}')
-        PAT_RESP=$(curl -sf -X POST "$NB_URL/api/users/$SELF_ID/tokens" \
-          -H "Authorization: Bearer $TOKEN" \
-          -H 'Content-Type: application/json' \
-          -d "$PAYLOAD" 2>&1) || {
-            log "PAT mint failed: $PAT_RESP" >&2
-            exit 1
-          }
-        PAT=$(echo "$PAT_RESP" | jq -r '.plain_token // .secret // empty')
-        if [ -z "$PAT" ]; then
-          log "no plain token in mint response: $PAT_RESP" >&2
-          exit 1
-        fi
-
-        kubectl -n "$NB_NS" create secret generic "$OUT_SECRET" \
-          --from-literal="$OUT_KEY=$PAT" \
-          --dry-run=client -o yaml \
-          | kubectl apply -f -
-        log "wrote $NB_NS/$OUT_SECRET with key $OUT_KEY"
-
-        discover_jwt_group_uuids "$(echo "$RESP" | jq -r '.id_token // empty')"
-        configure_account "$PAT"
-      '';
+      netbirdBootstrapScript = builtins.readFile ./scripts/bootstrap.sh;
 
       netbirdBootstrapPodSpec = {
         serviceAccountName = "netbird-bootstrap";
@@ -1679,7 +1382,7 @@ in
         containers = [
           {
             name = "bootstrap";
-            image = cfg.bootstrapImage;
+            image = cfg.images.bootstrap.ref;
             env = [
               {
                 name = "NB_NS";
@@ -1733,6 +1436,22 @@ in
               {
                 name = "JWT_GROUP_UUIDS_SECRET";
                 value = jwtGroupUuidsSecretName;
+              }
+
+              # These three used to be spliced into the script as Nix string
+              # interpolations, which is why it could not live in a .sh file.
+              # They are jq arguments now, so the script is a script.
+              {
+                name = "NB_LAZY_CONNECTIONS";
+                value = if cfg.lazyConnections then "true" else "false";
+              }
+              {
+                name = "NB_JWT_GROUPS_CLAIM";
+                value = cfg.operator.jwtGroupsClaimName;
+              }
+              {
+                name = "NB_JWT_ALLOW_GROUPS";
+                value = builtins.toJSON cfg.operator.autoGroupsFromJwt;
               }
             ];
             command = [
@@ -1824,9 +1543,8 @@ in
               netbirdUrl = "http://netbird-management.${cfg.namespace}.svc.cluster.local";
               outSecret = apiTokenSecretName;
               outKey = cfg.operator.apiTokenSecretKey;
-              image = cfg.bootstrapImage;
-              script = netbirdBootstrapScript;
             };
+            behaviourVersion = 1;
             podSpec = netbirdBootstrapPodSpec;
           }).resources
           // botTokenRbac
@@ -1847,361 +1565,7 @@ in
           }) resources
         );
 
-      nbApiHelpers = ''
-        nb_write() {
-          local method="$1" path="$2" body="''${3-}"
-          local out code
-          out=$(mktemp)
-          if [ -n "$body" ]; then
-            code=$(curl -s -o "$out" -w '%{http_code}' -X "$method" "$NB_URL/api/$path" \
-              "''${AUTH[@]}" -d "$body")
-          else
-            code=$(curl -s -o "$out" -w '%{http_code}' -X "$method" "$NB_URL/api/$path" \
-              "''${AUTH[@]}")
-          fi
-          case "$code" in
-            2*)
-              cat "$out"
-              rm -f "$out"
-              ;;
-            *)
-              log "$method /api/$path failed with HTTP $code:" >&2
-              sed 's/^/    /' "$out" >&2
-              echo >&2
-              rm -f "$out"
-              return 1
-              ;;
-          esac
-        }
-
-        nb_try() {
-          nb_write "$@" >/dev/null || log "  (ignored; this call is best-effort)" >&2
-        }
-      '';
-
-      netbirdRoutingScript = ''
-        set -eu
-
-        log() { echo "[routing] $*" >&2; }
-
-        ${nbApiHelpers}
-
-        log "waiting for operator PAT in $PAT_SECRET/$PAT_KEY"
-        PAT=""
-        for _ in $(seq 1 120); do
-          PAT=$(kubectl -n "$NB_NS" get secret "$PAT_SECRET" \
-            -o jsonpath="{.data.$PAT_KEY}" 2>/dev/null | base64 -d || true)
-          if [ -n "$PAT" ]; then break; fi
-          sleep 5
-        done
-        if [ -z "$PAT" ]; then
-          log "operator PAT still empty after 10 minutes; bootstrap Job likely failed" >&2
-          exit 1
-        fi
-        AUTH=(-H "Authorization: Token $PAT" -H 'Content-Type: application/json')
-
-        log "waiting for management API"
-        for _ in $(seq 1 60); do
-          CODE=$(curl -s -o /dev/null -w '%{http_code}' "$NB_URL/api/groups" "''${AUTH[@]}" 2>/dev/null || echo 000)
-          if [ "$CODE" = "200" ]; then
-            log "API up"
-            break
-          fi
-          sleep 5
-        done
-
-        SPN_UUIDS_MAP="{}"
-        if [ -n "''${JWT_GROUP_UUIDS_SECRET:-}" ]; then
-          raw=$(kubectl -n "$NB_NS" get secret "$JWT_GROUP_UUIDS_SECRET" \
-            -o jsonpath='{.data.SPN_UUIDS_JSON}' 2>/dev/null | base64 -d || true)
-          if [ -n "$raw" ]; then
-            SPN_UUIDS_MAP="$raw"
-            log "loaded SPN→UUID map: $SPN_UUIDS_MAP"
-          else
-            log "WARNING: $JWT_GROUP_UUIDS_SECRET has no SPN_UUIDS_JSON; routing gates may not match peers"
-          fi
-        fi
-
-        group_id() {
-          local name="$1"
-          local all
-          all=$(curl -sf "$NB_URL/api/groups" "''${AUTH[@]}")
-          local id
-          id=$(echo "$all" | jq -r --arg n "$name" \
-            '.[] | select(.name==$n and .issued=="api") | .id' | head -1)
-          if [ -n "$id" ]; then
-            echo "$id"
-            return
-          fi
-          echo "$all" | jq -r --arg n "$name" \
-            '.[] | select(.name==$n) | .id' | head -1
-        }
-
-        group_ids_for_spn() {
-          local spn="$1"
-          local api_id
-          api_id=$(group_id "$spn")
-          if [ -n "$api_id" ]; then
-            echo "$api_id"
-          fi
-          local uuid
-          uuid=$(echo "$SPN_UUIDS_MAP" | jq -r --arg s "$spn" '.[$s] // empty')
-          if [ -n "$uuid" ]; then
-            local jwt_id
-            jwt_id=$(curl -sf "$NB_URL/api/groups" "''${AUTH[@]}" \
-              | jq -r --arg n "$uuid" '.[] | select(.name==$n and .issued=="jwt") | .id' | head -1)
-            if [ -n "$jwt_id" ]; then
-              echo "$jwt_id"
-            fi
-          fi
-          return 0
-        }
-
-        ROUTER_GID=""
-        for _ in $(seq 1 30); do
-          ROUTER_GID=$(group_id "$ROUTER_GROUP")
-          if [ -n "$ROUTER_GID" ]; then break; fi
-          log "waiting for group '$ROUTER_GROUP' to be created by Group CR reconcile..."
-          sleep 5
-        done
-        if [ -z "$ROUTER_GID" ]; then
-          log "group '$ROUTER_GROUP' not found in netbird; aborting" >&2
-          exit 1
-        fi
-
-        SOURCE_GIDS_FILE=$(mktemp)
-        trap 'rm -f "$SOURCE_GIDS_FILE"' EXIT
-        for src_name in $SOURCE_GROUPS; do
-          gid=""
-          for _ in $(seq 1 30); do
-            gid=$(group_id "$src_name")
-            if [ -n "$gid" ]; then break; fi
-            sleep 5
-          done
-          if [ -z "$gid" ]; then
-            log "group '$src_name' not found in netbird after 150s; skipping" >&2
-            continue
-          fi
-          group_ids_for_spn "$src_name" >> "$SOURCE_GIDS_FILE"
-        done
-        sort -u "$SOURCE_GIDS_FILE" -o "$SOURCE_GIDS_FILE"
-        if [ ! -s "$SOURCE_GIDS_FILE" ]; then
-          log "no source groups resolved; aborting (checked: $SOURCE_GROUPS)" >&2
-          exit 1
-        fi
-        SOURCE_GIDS_JSON=$(jq -R . < "$SOURCE_GIDS_FILE" | jq -s .)
-        log "routers=$ROUTER_GID sources=$(tr '\n' ',' < "$SOURCE_GIDS_FILE" | sed 's/,$//')"
-
-        NETWORK_NAME="$NB_NETWORK_NAME"
-        NETWORK_ID=$(curl -sf "$NB_URL/api/networks" "''${AUTH[@]}" \
-          | jq -r --arg n "$NETWORK_NAME" '.[] | select(.name==$n) | .id' | head -1)
-        if [ -z "$NETWORK_ID" ]; then
-          log "creating Network '$NETWORK_NAME'"
-          NETWORK_ID=$(nb_write POST networks \
-            "$(jq -n --arg n "$NETWORK_NAME" \
-              '{name:$n, description:"Managed by catallaxy"}')" | jq -r '.id')
-        fi
-        log "network=$NETWORK_ID"
-
-        ROUTER_BODY=$(jq -n --arg pgid "$ROUTER_GID" \
-          '{enabled:true, masquerade:true, metric:9999, peer_groups:[$pgid]}')
-        ROUTER_ID=$(curl -sf "$NB_URL/api/networks/$NETWORK_ID/routers" "''${AUTH[@]}" \
-          | jq -r '(. // []) | .[0].id // empty')
-        if [ -z "$ROUTER_ID" ]; then
-          log "creating NetworkRouter on network=$NETWORK_ID"
-          nb_write POST "networks/$NETWORK_ID/routers" "$ROUTER_BODY" >/dev/null
-        else
-          log "updating NetworkRouter $ROUTER_ID"
-          nb_write PUT "networks/$NETWORK_ID/routers/$ROUTER_ID" "$ROUTER_BODY" >/dev/null
-        fi
-
-        RULE_LINES_FILE=$(mktemp)
-        trap 'rm -f "$RULE_LINES_FILE"' EXIT
-
-        upsert_resource() {
-          local rname="$1" raddr="$2" enabled="$3" dest_group_name="$4"
-          local dest_gid
-          dest_gid=$(group_id "$dest_group_name")
-          if [ -z "$dest_gid" ]; then
-            log "creating access Group '$dest_group_name' for resource '$rname'"
-            dest_gid=$(nb_write POST groups \
-              "$(jq -n --arg n "$dest_group_name" '{name:$n}')" | jq -r '.id')
-          fi
-          local existing_id
-          existing_id=$(curl -sf "$NB_URL/api/networks/$NETWORK_ID/resources" "''${AUTH[@]}" \
-            | jq -r --arg n "$rname" '(. // []) | .[] | select(.name==$n) | .id' | head -1)
-          local body
-          body=$(jq -n \
-            --arg n "$rname" \
-            --arg a "$raddr" \
-            --argjson e "$enabled" \
-            --arg gid "$dest_gid" \
-            '{
-              name: $n,
-              address: $a,
-              enabled: $e,
-              groups: [$gid],
-              description: "Managed by catallaxy"
-            }')
-          if [ -z "$existing_id" ]; then
-            existing_id=$(nb_write POST "networks/$NETWORK_ID/resources" "$body" | jq -r '.id')
-            log "created NetworkResource '$rname' ($raddr) -> $existing_id"
-          else
-            nb_write PUT "networks/$NETWORK_ID/resources/$existing_id" "$body" >/dev/null
-            log "updated NetworkResource '$rname' ($existing_id)"
-          fi
-          echo "$existing_id"
-        }
-
-        resolve_source_gids_json() {
-          local names="$1"
-          local file
-          file=$(mktemp)
-          local n ids
-          for n in $names; do
-            ids=$(group_ids_for_spn "$n")
-            if [ -n "$ids" ]; then
-              echo "$ids" >> "$file"
-            else
-              log "policy source '$n' not found in netbird; skipping (Policy rule will have fewer sources)" >&2
-            fi
-          done
-          sort -u "$file" -o "$file"
-          local out
-          out=$(jq -R . < "$file" | jq -s .)
-          rm -f "$file"
-          echo "$out"
-        }
-
-        echo "$NB_RESOURCES_JSON" | jq -c '.[]' | while IFS= read -r resource; do
-          rname=$(echo "$resource" | jq -r '.name')
-          raddr=$(echo "$resource" | jq -r '.address')
-          enabled=$(echo "$resource" | jq '.enabled')
-          src_names=$(echo "$resource" | jq -r '.sourceGroups | join(" ")')
-          dest_group=$(echo "$resource" | jq -r '.sourceGroups[0] // empty')
-          if [ -z "$dest_group" ]; then
-            log "resource '$rname' has empty sourceGroups; skipping (no policy rule will grant access)"
-            continue
-          fi
-          resource_id=$(upsert_resource "$rname" "$raddr" "$enabled" "$dest_group")
-          src_gids_json=$(resolve_source_gids_json "$src_names")
-          jq -nc --arg name "$rname" --arg id "$resource_id" --argjson src "$src_gids_json" \
-            '{name: $name, id: $id, sources: $src}' >> "$RULE_LINES_FILE"
-        done
-
-        if [ ! -s "$RULE_LINES_FILE" ]; then
-          log "no resources configured; skipping Policy + Nameserver"
-          exit 0
-        fi
-
-        LIVE_RESOURCES=$(curl -sf "$NB_URL/api/networks/$NETWORK_ID/resources" "''${AUTH[@]}" || echo '[]')
-        MISSING=$(echo "$NB_RESOURCES_JSON" | jq -r --argjson live "$LIVE_RESOURCES" \
-          '.[] | . as $r | select([$live[].name] | index($r.name) | not) | "\($r.name) (\($r.address))"')
-        if [ -n "$MISSING" ]; then
-          log "network '$NETWORK_NAME' is missing resources it was asked to provision:" >&2
-          echo "$MISSING" | sed 's/^/    /' >&2
-          log "nothing routes to those addresses, so their names will not resolve" >&2
-          exit 1
-        fi
-
-        ALL_POLICIES=$(curl -sf "$NB_URL/api/policies" "''${AUTH[@]}" || echo '[]')
-
-        MANAGED_POLICIES_FILE=$(mktemp)
-        trap 'rm -f "$RULE_LINES_FILE" "$MANAGED_POLICIES_FILE"' EXIT
-
-        while IFS= read -r rule_line; do
-          rid=$(echo "$rule_line" | jq -r '.id')
-          rname=$(echo "$rule_line" | jq -r '.name')
-          rsrc=$(echo "$rule_line" | jq -c '.sources')
-          policy_name="$rname-access"
-          echo "$policy_name" >> "$MANAGED_POLICIES_FILE"
-          policy_body=$(jq -n \
-            --arg n "$policy_name" \
-            --arg desc "Managed by catallaxy (resource: $rname)" \
-            --arg rid "$rid" \
-            --argjson src "$rsrc" \
-            '{
-              name: $n,
-              description: $desc,
-              enabled: true,
-              rules: [{
-                name: $n,
-                description: $desc,
-                enabled: true,
-                action: "accept",
-                bidirectional: true,
-                protocol: "all",
-                sources: $src,
-                destinationResource: {id: $rid, type: "subnet"}
-              }]
-            }')
-          existing_id=$(echo "$ALL_POLICIES" | jq -r --arg n "$policy_name" \
-            '(. // []) | .[] | select(.name==$n) | .id' | head -1)
-          if [ -z "$existing_id" ]; then
-            log "creating Policy '$policy_name'"
-            nb_write POST policies "$policy_body" >/dev/null
-          else
-            log "updating Policy '$policy_name' ($existing_id)"
-            nb_write PUT "policies/$existing_id" "$policy_body" >/dev/null
-          fi
-        done < "$RULE_LINES_FILE"
-
-        echo "$ALL_POLICIES" | jq -r \
-          --arg prefix "$NB_NETWORK_NAME-" \
-          '(. // []) | .[] | select(.name | startswith($prefix)) | "\(.id) \(.name)"' \
-        | while IFS=' ' read -r pid pname; do
-          if ! grep -qx "$pname" "$MANAGED_POLICIES_FILE"; then
-            log "deleting stale policy '$pname' ($pid)"
-            nb_try DELETE "policies/$pid"
-          fi
-        done
-
-        LEGACY_POLICY_NAME="$NB_NETWORK_NAME-mesh-access"
-        LEGACY_ID=$(echo "$ALL_POLICIES" | jq -r --arg n "$LEGACY_POLICY_NAME" \
-          '(. // []) | .[] | select(.name==$n) | .id' | head -1)
-        if [ -n "$LEGACY_ID" ]; then
-          log "deleting legacy composite policy '$LEGACY_POLICY_NAME' ($LEGACY_ID)"
-          nb_try DELETE "policies/$LEGACY_ID"
-        fi
-
-        DEFAULT_ID=$(echo "$ALL_POLICIES" | jq -r \
-          '(. // []) | .[] | select(.name=="Default") | .id' | head -1)
-        if [ -n "$DEFAULT_ID" ]; then
-          log "deleting netbird auto-created 'Default' All-to-All policy ($DEFAULT_ID)"
-          nb_try DELETE "policies/$DEFAULT_ID"
-        fi
-
-        if [ -n "$DNS_DOMAINS" ] && [ -n "$RESOLVER_IP" ]; then
-          NSG_NAME="catallaxy-coredns"
-          NSG_ID=$(curl -sf "$NB_URL/api/dns/nameservers" "''${AUTH[@]}" \
-            | jq -r --arg n "$NSG_NAME" '(. // []) | .[] | select(.name==$n) | .id' | head -1)
-          DNS_DOMAINS_JSON=$(echo "$DNS_DOMAINS" | tr ' ' '\n' | jq -R . | jq -s .)
-          NSG_BODY=$(jq -n \
-            --arg n "$NSG_NAME" \
-            --arg ip "$RESOLVER_IP" \
-            --argjson gids "$SOURCE_GIDS_JSON" \
-            --argjson doms "$DNS_DOMAINS_JSON" \
-            '{
-              name: $n,
-              description: "Managed by catallaxy",
-              enabled: true,
-              nameservers: [{ip:$ip, ns_type:"udp", port:53}],
-              groups: $gids,
-              primary: false,
-              domains: $doms,
-              search_domains_enabled: false
-            }')
-          if [ -z "$NSG_ID" ]; then
-            log "creating NameserverGroup '$NSG_NAME'"
-            nb_write POST dns/nameservers "$NSG_BODY" >/dev/null
-          else
-            log "updating NameserverGroup $NSG_ID"
-            nb_write PUT "dns/nameservers/$NSG_ID" "$NSG_BODY" >/dev/null
-          fi
-        fi
-
-        log "done"
-      '';
+      netbirdRoutingScript = builtins.readFile ./scripts/routing.sh;
 
       mkRoutingPodSpec = netName: net: {
         serviceAccountName = "netbird-bootstrap";
@@ -2209,7 +1573,7 @@ in
         containers = [
           {
             name = "routing";
-            image = cfg.bootstrapImage;
+            image = cfg.images.bootstrap.ref;
             env = [
               {
                 name = "NB_NS";
@@ -2315,101 +1679,41 @@ in
         else
           { };
 
+      # Routing is one Job per network, and a label selector cannot say "any
+      # of these hashes". So every Job of a given render carries the same
+      # generation, derived from the same configuration its individual hashes
+      # come from: change anything a routing Job is told and this moves too.
+      # It is what lets the readyProbe wait on this render's Jobs rather than
+      # on every Job the floe has ever produced.
+      routingGeneration = catalLib.hashContent {
+        inherit (cfg.routing) networks dnsDomains resolverIP;
+      };
+
       mkRoutingJob =
         netName: net:
         catalLib.mkIdempotentJob {
           name = "netbird-routing-${netName}";
           namespace = cfg.namespace;
-          extraLabels."catallaxy.io/netbird-routing" = "true";
+          extraLabels = {
+            "catallaxy.io/netbird-routing" = "true";
+            "catallaxy.io/netbird-routing-generation" = routingGeneration;
+          };
           contentInputs = {
             inherit netName;
             inherit (cfg.routing) dnsDomains resolverIP;
             inherit (net) routerGroup;
 
             resources = mkResourcesJson netName net.resources;
-            image = cfg.bootstrapImage;
-            script = netbirdRoutingScript;
           };
+          behaviourVersion = 1;
           podSpec = mkRoutingPodSpec netName net;
         };
 
-      netbirdAdminReconcilerScript = ''
-        set -eu
-
-        log() { echo "[admin-reconciler] $*" >&2; }
-
-        PAT=""
-        for _ in $(seq 1 24); do
-          PAT=$(kubectl -n "$NB_NS" get secret "$PAT_SECRET" \
-            -o jsonpath="{.data.$PAT_KEY}" 2>/dev/null | base64 -d || true)
-          [ -n "$PAT" ] && break
-          sleep 5
-        done
-        if [ -z "$PAT" ]; then
-          log "operator PAT still empty after 2 minutes; giving up (bootstrap may not have run yet)"
-          exit 0
-        fi
-        AUTH=(-H "Authorization: Token $PAT" -H 'Content-Type: application/json')
-
-        if [ "$(echo "$NB_ADMIN_GROUPS_JSON" | jq 'length')" -eq 0 ]; then
-          log "no adminGroupsFromJwt configured; nothing to reconcile"
-          exit 0
-        fi
-
-        ADMIN_NAMES="$NB_ADMIN_GROUPS_JSON"
-        if [ -n "''${JWT_GROUP_UUIDS_SECRET:-}" ]; then
-          SPN_UUIDS=$(kubectl -n "$NB_NS" get secret "$JWT_GROUP_UUIDS_SECRET" \
-            -o jsonpath='{.data.SPN_UUIDS_JSON}' 2>/dev/null | base64 -d || true)
-          if [ -n "$SPN_UUIDS" ]; then
-            ADMIN_NAMES=$(jq -cn \
-              --argjson spns "$NB_ADMIN_GROUPS_JSON" \
-              --argjson map "$SPN_UUIDS" \
-              '$spns + [ $spns[] | . as $s | $map[$s] | select(. != null) ] | unique')
-            log "matching admin groups by SPN + UUID: $ADMIN_NAMES"
-          fi
-        fi
-
-        NB_GROUPS=$(curl -sf "$NB_URL/api/groups" "''${AUTH[@]}" || echo '[]')
-        ADMIN_GIDS=$(echo "$ADMIN_NAMES" \
-          | jq -c --argjson all "$NB_GROUPS" '
-              [ .[] as $spn
-                | $all[] | select(.name == $spn) | .id ]
-              | unique')
-        if [ "$(echo "$ADMIN_GIDS" | jq 'length')" -eq 0 ]; then
-          log "no admin Group IDs resolved yet (SPNs: $NB_ADMIN_GROUPS_JSON)"
-          exit 0
-        fi
-        log "admin group ids: $ADMIN_GIDS"
-
-        USERS=$(curl -sf "$NB_URL/api/users?service_user=false" "''${AUTH[@]}" || echo '[]')
-        echo "$USERS" | jq -c '.[]' | while IFS= read -r u; do
-          uid=$(echo "$u" | jq -r '.id')
-          uname=$(echo "$u" | jq -r '.name // .email // .id')
-          urole=$(echo "$u" | jq -r '.role')
-          uauto=$(echo "$u" | jq -c '.auto_groups // .autoGroups // []')
-          overlap=$(echo "$uauto" | jq -c --argjson admin "$ADMIN_GIDS" \
-            '[ .[] | select(. as $g | $admin | index($g)) ] | length')
-          if [ "$urole" = "admin" ] || [ "$urole" = "owner" ]; then
-            continue
-          fi
-          if [ "$overlap" -eq 0 ]; then
-            continue
-          fi
-          body=$(jq -n \
-            --argjson g "$uauto" \
-            --arg name "$(echo "$u" | jq -r '.name // ""')" \
-            '{role:"admin", is_service_user:false, is_blocked:false, auto_groups:$g, name:$name}')
-          log "promoting user '$uname' ($uid) to admin (auto_groups matches)"
-          curl -sf -X PUT "$NB_URL/api/users/$uid" "''${AUTH[@]}" -d "$body" >/dev/null \
-            || log "PUT /api/users/$uid failed (continuing)"
-        done
-
-        log "done"
-      '';
+      netbirdAdminReconcilerScript = builtins.readFile ./scripts/admin-reconciler.sh;
 
       netbirdAdminReconcilerContainer = {
         name = "reconciler";
-        image = cfg.bootstrapImage;
+        image = cfg.images.bootstrap.ref;
         env = [
           {
             name = "NB_NS";
@@ -2493,9 +1797,8 @@ in
             namespace = cfg.namespace;
             contentInputs = {
               adminGroups = adminGroupsJson;
-              image = cfg.bootstrapImage;
-              script = netbirdAdminReconcilerScript;
             };
+            behaviourVersion = 1;
             podSpec = netbirdAdminReconcilerPodSpec;
           }).resources
           // netbirdAdminReconcilerCronJob
@@ -2568,7 +1871,7 @@ in
               echo ">>> preflight: $1: ok"
             }
 
-            EXPECTED_MGMT_IMAGE="${cfg.managementImage}"
+            EXPECTED_MGMT_IMAGE="${cfg.images.management.ref}"
             server_image=$(kubectl --context "$KUBE_CONTEXT" -n "$NB_NS" get deploy netbird-management -o jsonpath='{.spec.template.spec.containers[?(@.name=="netbird-management")].image}' 2>/dev/null || true)
             if [ -z "$server_image" ]; then
               pf_fix "management image matches source" "could not read the live image; check kubectl access to $KUBE_CONTEXT"
@@ -2904,9 +2207,9 @@ in
 
             printf '  OIDC discovery ..... '
             DISC=$(kubectl --context "$KUBE_CONTEXT" -n "$NB_NS" run "$PROBE_POD" \
-              --image="${cfg.bootstrapImage}" \
+              --image="${cfg.images.bootstrap.ref}" \
               --restart=Never --rm -i --quiet \
-              --overrides='{"spec":{"containers":[{"name":"probe","image":"${cfg.bootstrapImage}","command":["sh","-c","curl -s '"$CACERT_ARG"' -o /tmp/d -w %{http_code} \"'"$ISSUER"'/.well-known/openid-configuration\" && cat /tmp/d"],"volumeMounts":[{"name":"tmp","mountPath":"/tmp"}'"$CA_MOUNT"']}],"volumes":[{"name":"tmp","emptyDir":{}}'"$CA_VOL"']}}' \
+              --overrides='{"spec":{"containers":[{"name":"probe","image":"${cfg.images.bootstrap.ref}","command":["sh","-c","curl -s '"$CACERT_ARG"' -o /tmp/d -w %{http_code} \"'"$ISSUER"'/.well-known/openid-configuration\" && cat /tmp/d"],"volumeMounts":[{"name":"tmp","mountPath":"/tmp"}'"$CA_MOUNT"']}],"volumes":[{"name":"tmp","emptyDir":{}}'"$CA_VOL"']}}' \
               -- sh -c 'true' 2>/dev/null || true)
             HTTP=$(printf '%s' "$DISC" | tail -c 3)
             BODY=$(printf '%s' "$DISC" | head -c -3)
@@ -2925,12 +2228,12 @@ in
             else
               # shellcheck disable=SC2016
               EXCH=$(kubectl --context "$KUBE_CONTEXT" -n "$NB_NS" run "$PROBE_POD-x" \
-                --image="${cfg.bootstrapImage}" \
+                --image="${cfg.images.bootstrap.ref}" \
                 --restart=Never --rm -i --quiet \
                 --env=TOKEN_EP="$TOKEN_EP" \
                 --env=CLIENT_ID="$CLIENT_ID" \
                 --env=SUBJECT_TOKEN="$BOT_TOKEN_VAL" \
-                --overrides='{"spec":{"containers":[{"name":"probe","image":"${cfg.bootstrapImage}","command":["sh","-c","curl -s '"$CACERT_ARG"' -o /tmp/r -w %{http_code} -X POST \"$TOKEN_EP\" -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange -d client_id=\"$CLIENT_ID\" -d subject_token=\"$SUBJECT_TOKEN\" -d subject_token_type=urn:ietf:params:oauth:token-type:access_token && cat /tmp/r"],"volumeMounts":[{"name":"tmp","mountPath":"/tmp"}'"$CA_MOUNT"']}],"volumes":[{"name":"tmp","emptyDir":{}}'"$CA_VOL"']}}' \
+                --overrides='{"spec":{"containers":[{"name":"probe","image":"${cfg.images.bootstrap.ref}","command":["sh","-c","curl -s '"$CACERT_ARG"' -o /tmp/r -w %{http_code} -X POST \"$TOKEN_EP\" -d grant_type=urn:ietf:params:oauth:grant-type:token-exchange -d client_id=\"$CLIENT_ID\" -d subject_token=\"$SUBJECT_TOKEN\" -d subject_token_type=urn:ietf:params:oauth:token-type:access_token && cat /tmp/r"],"volumeMounts":[{"name":"tmp","mountPath":"/tmp"}'"$CA_MOUNT"']}],"volumes":[{"name":"tmp","emptyDir":{}}'"$CA_VOL"']}}' \
                 -- sh -c 'true' 2>/dev/null || true)
               XHTTP=$(printf '%s' "$EXCH" | tail -c 3)
               if [ "$XHTTP" = "200" ]; then
@@ -2973,7 +2276,7 @@ in
           ];
 
       clientVersion = cfg.client.package.version or null;
-      serverTag = lib.last (lib.splitString ":" cfg.managementImage);
+      serverTag = lib.last (lib.splitString ":" cfg.images.management.ref);
       majorMinor = v: lib.concatStringsSep "." (lib.take 2 (lib.splitString "." v));
 
       serverTagComparable = builtins.match "v?[0-9]+\\.[0-9]+\\..*" serverTag != null;
@@ -2988,7 +2291,7 @@ in
           message = ''
             netbird: the host client and the management server disagree on version.
               client  ${toString clientVersion}   (floes.netbird.client.package)
-              server  ${cfg.managementImage}
+              server  ${cfg.images.management.ref}
             A client a minor version away from its management server hangs
             during registration with no error, so this is a hard stop at eval
             rather than a silent stall during `cata lab up`.
@@ -3275,6 +2578,37 @@ in
           than erroring. Pin a `<major>.<minor>.<patch>` tag to get the check back.
         '';
 
+        floes.netbird.images = {
+          management = {
+            repository = "netbirdio/management";
+            tag = cfg.version;
+          };
+          signal = {
+            repository = "netbirdio/signal";
+            tag = cfg.version;
+          };
+          relay = {
+            repository = "netbirdio/relay";
+            tag = cfg.version;
+          };
+          agent = {
+            repository = "netbirdio/netbird";
+            tag = cfg.version;
+          };
+          dashboard = {
+            repository = "netbirdio/dashboard";
+            tag = "main";
+          };
+          bootstrap = {
+            repository = "alpine/k8s";
+            tag = "1.32.4";
+          };
+          wait = {
+            repository = "busybox";
+            tag = "1.36";
+          };
+        };
+
         floes.netbird.gateway.extraDomains = [ signalDomain ];
 
         floes.netbird.routing.sourceGroups = lib.mkDefault cfg.operator.autoGroupsFromJwt;
@@ -3308,6 +2642,20 @@ in
       }
 
       (mkIf (cfg.enable && cfg.operator.enable && cfg.operator.crds != null) {
+        floes.netbird.network = {
+          declared = true;
+
+          egress.internet.ports = [ 443 ];
+        };
+
+        floes.netbird.imagesComplete = true;
+
+        floes.netbird.images.operator = {
+          registry = "ghcr.io";
+          repository = "netbirdio/netbird-operator";
+          tag = "v0.7.0";
+        };
+
         bundles.netbird-operator-crds = {
           owner = {
             bootstrap = "install-target";
@@ -3319,56 +2667,61 @@ in
       })
 
       (mkIf (cfg.enable && cfg.management.enable) {
-        ops.login = {
+        ops.netbird.login = {
 
           description = "Join the lab's Netbird mesh (browser SSO via kanidm)";
-          category = "netbird";
           package = netbirdOpsScripts.login;
         };
-        ops.logout = {
+        ops.netbird.logout = {
           description = "Leave the lab's Netbird mesh and stop its daemon";
-          category = "netbird";
           package = netbirdOpsScripts.logout;
         };
-        ops.status = {
+        ops.netbird.status = {
           description = "Show this lab's netbird client status (not your own daemon's)";
-          category = "netbird";
           package = netbirdOpsScripts.status;
         };
-        ops.peers = {
+        ops.netbird.peers = {
           description = "List peers registered with the lab's Netbird management server";
-          category = "netbird";
           package = netbirdOpsScripts.peers;
         };
-        ops.routes = {
+        ops.netbird.routes = {
           description = "List routes registered with the lab's Netbird management server";
-          category = "netbird";
           package = netbirdOpsScripts.routes;
         };
-        ops.check-config = {
+        ops.netbird.check-config = {
           description = "Preflight: validate OIDC wiring against the live IdP from inside the netbird namespace";
-          category = "netbird";
           package = netbirdOpsScripts.check-config;
         };
       })
 
       (mkIf (cfg.enable && cfg.management.enable) {
+        # Both are read back as bytes rather than as strings: the datastore
+        # key is base64 of a 32-byte AES key, and the relay secret keys an
+        # HMAC. base64 encoding satisfies either reading.
+        secrets.generate = {
+          netbird-datastore-enc-key = {
+            inherit (cfg) namespace;
+            key = "key";
+            length = 32;
+            encoding = "base64";
+          };
+          netbird-relay-secret = {
+            inherit (cfg) namespace;
+            key = "netbird-relay-secret-key";
+            length = 32;
+            encoding = "base64";
+          };
+        };
+
         bundles.netbird-prechart = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
           };
-          resources = bootstrapRbac // relaySecretMintJob;
+          resources = bootstrapRbac;
           createNamespaces = [ cfg.namespace ];
 
           provides = [ "netbird/prechart/ready" ];
-          readyProbe = {
-            kind = "jsonpath";
-            resource = "secret/netbird-datastore-enc-key";
-            namespace = cfg.namespace;
-            jsonpath = "{.data.key}";
-            timeout = "5m";
-          };
         };
       })
 
@@ -3470,7 +2823,7 @@ in
               "--for=condition=complete"
               "job"
               "-l"
-              "catallaxy.io/netbird-routing=true"
+              "catallaxy.io/netbird-routing=true,catallaxy.io/netbird-routing-generation=${routingGeneration}"
               "-n"
               cfg.namespace
               "--timeout=5m"
@@ -3648,7 +3001,21 @@ in
           };
           createNamespaces = [ cfg.agent.namespace ];
 
-          awaitRollout = cfg.management.enable;
+          awaitRollout = true;
+
+          # The agent cannot start without its setup key, so wait for the
+          # Secret rather than for the rollout alone. On the management
+          # cluster the operator mints it; on a peer cluster it is projected
+          # from the lab's secret store. Either way the wave blocks until the
+          # value is really there, and the init container below stays as
+          # defence in depth against it disappearing later.
+          readyProbe = {
+            kind = "jsonpath";
+            resource = "secret/${cfg.agent.setupKeyRef.name}";
+            namespace = cfg.agent.namespace;
+            jsonpath = "{.data.${cfg.agent.setupKeyRef.key}}";
+            timeout = "5m";
+          };
 
           requires = lib.optionals cfg.management.enable [
 
@@ -3754,7 +3121,7 @@ in
                     initContainers = [
                       {
                         name = "init-tun";
-                        image = "busybox:1.36";
+                        image = cfg.images.wait.ref;
                         command = [
                           "sh"
                           "-c"
@@ -3790,7 +3157,7 @@ in
                     containers = [
                       {
                         name = "netbird";
-                        image = cfg.agent.image;
+                        image = cfg.images.agent.ref;
                         imagePullPolicy = "IfNotPresent";
                         env = [
                           {

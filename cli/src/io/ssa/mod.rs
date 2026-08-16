@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -15,6 +14,11 @@ use crate::config::Context as CataContext;
 use crate::domain::SecretsCache;
 use crate::domain::{ClusterSpec, SecretsSpec};
 use crate::io;
+
+mod probe;
+
+pub use probe::ReadyProbe;
+use probe::run_ready_probe;
 
 const BUNDLE_APPLY_ATTEMPTS: u32 = 4;
 const PHASE_APPLY_BACKOFF: Duration = Duration::from_secs(6);
@@ -57,6 +61,11 @@ pub fn apply_manifest_root(ctx: &CataContext, opts: ApplyManifests<'_>) -> Resul
     apply_wave_ordered(ctx, &opts, &wave_meta_path, &timeout_str)
 }
 
+pub fn read_wave_meta(manifest_dir: &Path) -> Option<WaveMeta> {
+    let raw = fs::read_to_string(manifest_dir.join(".wave-meta")).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
 #[derive(serde::Deserialize, Debug)]
 pub struct WaveMeta {
     pub waves: Vec<Wave>,
@@ -76,64 +85,10 @@ pub struct WaveBundle {
     #[serde(default)]
     pub ready_probe: Option<ReadyProbe>,
     pub has_content: bool,
-}
-
-#[derive(serde::Deserialize, Debug)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum ReadyProbe {
-    Condition {
-        resource: String,
-        #[serde(default)]
-        namespace: Option<String>,
-        condition: String,
-        #[serde(default)]
-        timeout: Option<String>,
-    },
-    Jsonpath {
-        resource: String,
-        #[serde(default)]
-        namespace: Option<String>,
-        jsonpath: String,
-        #[serde(default)]
-        value: Option<serde_json::Value>,
-        #[serde(default)]
-        timeout: Option<String>,
-    },
-    Exists {
-        resource: String,
-        #[serde(default)]
-        namespace: Option<String>,
-        #[serde(default)]
-        timeout: Option<String>,
-    },
-    Pod {
-        image: String,
-        command: Vec<String>,
-        #[serde(default)]
-        args: Vec<String>,
-        #[serde(default)]
-        namespace: Option<String>,
-        #[serde(default)]
-        timeout: Option<String>,
-    },
-    #[serde(rename = "kubectl-wait")]
-    KubectlWait {
-        args: Vec<String>,
-    },
-    Script {
-        body: String,
-    },
-}
-
-impl ReadyProbe {
-    pub fn target(&self) -> Option<&str> {
-        match self {
-            ReadyProbe::Condition { resource, .. }
-            | ReadyProbe::Jsonpath { resource, .. }
-            | ReadyProbe::Exists { resource, .. } => Some(resource),
-            _ => None,
-        }
-    }
+    #[serde(default)]
+    pub requires: Vec<String>,
+    #[serde(default)]
+    pub provides: Vec<String>,
 }
 
 fn apply_wave_ordered(
@@ -230,7 +185,7 @@ fn apply_bundle_with_retry(
     }
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=BUNDLE_APPLY_ATTEMPTS {
-        let status = Command::new("kubectl")
+        let status = crate::io::kubectl::command()
             .args([
                 "--context",
                 kube_context,
@@ -310,382 +265,6 @@ fn wait_bundle_crds(
     Ok(())
 }
 
-fn run_ready_probe(
-    ctx: &CataContext,
-    kube_context: &str,
-    bundle_key: &str,
-    probe: &ReadyProbe,
-    fallback_timeout: &str,
-    dry_run: bool,
-) -> Result<()> {
-    match probe {
-        ReadyProbe::Condition { .. } => {
-            probe_condition(kube_context, bundle_key, probe, fallback_timeout, dry_run)
-        }
-        ReadyProbe::Jsonpath { .. } => {
-            probe_jsonpath(kube_context, bundle_key, probe, fallback_timeout, dry_run)
-        }
-        ReadyProbe::Exists { .. } => {
-            probe_exists(kube_context, bundle_key, probe, fallback_timeout, dry_run)
-        }
-        ReadyProbe::Pod { .. } => {
-            probe_pod(kube_context, bundle_key, probe, fallback_timeout, dry_run)
-        }
-        ReadyProbe::KubectlWait { .. } => {
-            probe_kubectl_wait(kube_context, bundle_key, probe, dry_run)
-        }
-        ReadyProbe::Script { .. } => probe_script(ctx, kube_context, bundle_key, probe, dry_run),
-    }
-}
-
-fn probe_condition(
-    kube_context: &str,
-    bundle_key: &str,
-    probe: &ReadyProbe,
-    fallback_timeout: &str,
-    dry_run: bool,
-) -> Result<()> {
-    match probe {
-        ReadyProbe::Condition {
-            resource,
-            namespace,
-            condition,
-            timeout,
-        } => {
-            let timeout = timeout.as_deref().unwrap_or(fallback_timeout);
-            let ns_args: Vec<String> = match namespace {
-                Some(ns) => vec!["-n".into(), ns.clone()],
-                None => vec![],
-            };
-            let mk_args = |for_arg: String| -> Vec<String> {
-                let mut a: Vec<String> = vec!["--context".into(), kube_context.into()];
-                a.extend(ns_args.iter().cloned());
-                a.push("wait".into());
-                a.push(for_arg);
-                a.push(resource.clone());
-                a.push(format!("--timeout={timeout}"));
-                a
-            };
-            let create_args = mk_args("--for=create".into());
-            let (res_kind, _res_name) = resource.split_once('/').unwrap_or((resource.as_str(), ""));
-            let cond_for_arg = if condition.eq_ignore_ascii_case("Available") {
-                match res_kind.to_ascii_lowercase().as_str() {
-                    "statefulset" | "sts" | "statefulsets" => {
-                        "--for=jsonpath={.status.readyReplicas}=1".into()
-                    }
-                    "daemonset" | "ds" | "daemonsets" => {
-                        "--for=jsonpath={.status.numberReady}=1".into()
-                    }
-                    _ => format!("--for=condition={condition}"),
-                }
-            } else {
-                format!("--for=condition={condition}")
-            };
-            let cond_args = mk_args(cond_for_arg);
-            if dry_run {
-                println!(
-                    "{} Would kubectl {} then kubectl {} (readyProbe for '{bundle_key}')",
-                    style(">>>").yellow(),
-                    create_args.join(" "),
-                    cond_args.join(" "),
-                );
-                return Ok(());
-            }
-            println!(
-                "{} Waiting on readyProbe for '{bundle_key}' → {resource} condition={condition}",
-                style(">>>").cyan(),
-            );
-            let create_status = Command::new("kubectl")
-                .args(&create_args)
-                .status()
-                .context("running kubectl wait --for=create for readyProbe")?;
-            if !create_status.success() {
-                bail!(
-                    "readyProbe for '{bundle_key}' ({resource}) never appeared within {timeout}: {create_status}"
-                );
-            }
-            let cond_status = Command::new("kubectl")
-                .args(&cond_args)
-                .status()
-                .context("running kubectl wait for readyProbe condition")?;
-            if !cond_status.success() {
-                bail!(
-                    "readyProbe for '{bundle_key}' ({resource} condition={condition}) failed: {cond_status}"
-                );
-            }
-            Ok(())
-        }
-        _ => unreachable!("dispatched on the same variant"),
-    }
-}
-
-fn probe_jsonpath(
-    kube_context: &str,
-    bundle_key: &str,
-    probe: &ReadyProbe,
-    fallback_timeout: &str,
-    dry_run: bool,
-) -> Result<()> {
-    match probe {
-        ReadyProbe::Jsonpath {
-            resource,
-            namespace,
-            jsonpath,
-            value,
-            timeout,
-        } => {
-            let timeout = timeout.as_deref().unwrap_or(fallback_timeout);
-            let mk_args = |for_arg: String| -> Vec<String> {
-                let mut a: Vec<String> = vec!["--context".into(), kube_context.into()];
-                if let Some(ns) = namespace {
-                    a.push("-n".into());
-                    a.push(ns.clone());
-                }
-                a.push("wait".into());
-                a.push(for_arg);
-                a.push(resource.clone());
-                a.push(format!("--timeout={timeout}"));
-                a
-            };
-            let create_args = mk_args("--for=create".into());
-            let suffix = match value {
-                Some(serde_json::Value::String(s)) => format!("={s}"),
-                Some(v) => format!("={v}"),
-                None => String::new(),
-            };
-            let path_args = mk_args(format!("--for=jsonpath={jsonpath}{suffix}"));
-            if dry_run {
-                println!(
-                    "{} Would kubectl {} then kubectl {} (readyProbe for '{bundle_key}')",
-                    style(">>>").yellow(),
-                    create_args.join(" "),
-                    path_args.join(" "),
-                );
-                return Ok(());
-            }
-            println!(
-                "{} Waiting on readyProbe for '{bundle_key}' → {resource} jsonpath={jsonpath}{suffix}",
-                style(">>>").cyan(),
-            );
-            let create_status = Command::new("kubectl")
-                .args(&create_args)
-                .status()
-                .context("running kubectl wait --for=create for readyProbe")?;
-            if !create_status.success() {
-                bail!(
-                    "readyProbe for '{bundle_key}' ({resource}) never appeared within {timeout}: {create_status}"
-                );
-            }
-            let path_status = Command::new("kubectl")
-                .args(&path_args)
-                .status()
-                .context("running kubectl wait --for=jsonpath for readyProbe")?;
-            if !path_status.success() {
-                bail!(
-                    "readyProbe for '{bundle_key}' ({resource} jsonpath={jsonpath}{suffix}) failed: {path_status}"
-                );
-            }
-            Ok(())
-        }
-        _ => unreachable!("dispatched on the same variant"),
-    }
-}
-
-fn probe_exists(
-    kube_context: &str,
-    bundle_key: &str,
-    probe: &ReadyProbe,
-    fallback_timeout: &str,
-    dry_run: bool,
-) -> Result<()> {
-    match probe {
-        ReadyProbe::Exists {
-            resource,
-            namespace,
-            timeout,
-        } => {
-            let timeout = timeout.as_deref().unwrap_or(fallback_timeout);
-            let mut args: Vec<String> = vec!["--context".into(), kube_context.into()];
-            if let Some(ns) = namespace {
-                args.push("-n".into());
-                args.push(ns.clone());
-            }
-            args.push("wait".into());
-            args.push("--for=create".into());
-            args.push(resource.clone());
-            args.push(format!("--timeout={timeout}"));
-            if dry_run {
-                println!(
-                    "{} Would kubectl {} (readyProbe for '{bundle_key}')",
-                    style(">>>").yellow(),
-                    args.join(" "),
-                );
-                return Ok(());
-            }
-            println!(
-                "{} Waiting on readyProbe for '{bundle_key}' → {resource} exists",
-                style(">>>").cyan(),
-            );
-            let status = Command::new("kubectl")
-                .args(&args)
-                .status()
-                .context("running kubectl wait --for=create for readyProbe")?;
-            if !status.success() {
-                bail!(
-                    "readyProbe for '{bundle_key}' ({resource}) never appeared within {timeout}: {status}"
-                );
-            }
-            Ok(())
-        }
-        _ => unreachable!("dispatched on the same variant"),
-    }
-}
-
-fn probe_pod(
-    kube_context: &str,
-    bundle_key: &str,
-    probe: &ReadyProbe,
-    fallback_timeout: &str,
-    dry_run: bool,
-) -> Result<()> {
-    match probe {
-        ReadyProbe::Pod {
-            image,
-            command,
-            args,
-            namespace,
-            timeout,
-        } => {
-            let timeout = timeout.as_deref().unwrap_or(fallback_timeout);
-            let ns = namespace.as_deref().unwrap_or("default");
-            let slug: String = bundle_key
-                .chars()
-                .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-                .collect::<String>()
-                .trim_matches('-')
-                .to_ascii_lowercase();
-            let stamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let truncated: String = slug.chars().take(40).collect();
-            let pod_name = format!("probe-{}-{stamp}", truncated.trim_matches('-'));
-
-            let mut full: Vec<String> = vec![
-                "--context".into(),
-                kube_context.into(),
-                "-n".into(),
-                ns.into(),
-                "run".into(),
-                pod_name.clone(),
-                "--rm".into(),
-                "--attach".into(),
-                "--restart=Never".into(),
-                format!("--pod-running-timeout={timeout}"),
-                format!("--image={image}"),
-                "--command".into(),
-                "--".into(),
-            ];
-            full.extend(command.iter().cloned());
-            full.extend(args.iter().cloned());
-            if dry_run {
-                println!(
-                    "{} Would kubectl {} (readyProbe for '{bundle_key}')",
-                    style(">>>").yellow(),
-                    full.join(" "),
-                );
-                return Ok(());
-            }
-            println!(
-                "{} Waiting on readyProbe for '{bundle_key}' → in-cluster probe Pod {ns}/{pod_name} ({image})",
-                style(">>>").cyan(),
-            );
-            let status = Command::new("kubectl")
-                .args(&full)
-                .status()
-                .context("running kubectl run for readyProbe probe Pod")?;
-            if !status.success() {
-                bail!("readyProbe for '{bundle_key}' (probe Pod {ns}/{pod_name}) failed: {status}");
-            }
-            Ok(())
-        }
-        _ => unreachable!("dispatched on the same variant"),
-    }
-}
-
-fn probe_kubectl_wait(
-    kube_context: &str,
-    bundle_key: &str,
-    probe: &ReadyProbe,
-    dry_run: bool,
-) -> Result<()> {
-    match probe {
-        ReadyProbe::KubectlWait { args } => {
-            let mut full: Vec<String> =
-                vec!["--context".into(), kube_context.into(), "wait".into()];
-            full.extend(args.iter().cloned());
-            if dry_run {
-                println!(
-                    "{} Would kubectl {} (readyProbe for '{bundle_key}')",
-                    style(">>>").yellow(),
-                    full.join(" "),
-                );
-                return Ok(());
-            }
-            println!(
-                "{} Waiting on readyProbe for '{bundle_key}' → kubectl-wait {}",
-                style(">>>").cyan(),
-                args.join(" "),
-            );
-            let status = Command::new("kubectl")
-                .args(&full)
-                .status()
-                .context("running kubectl wait for readyProbe")?;
-            if !status.success() {
-                bail!("readyProbe for '{bundle_key}' (kubectl-wait) failed: {status}");
-            }
-            Ok(())
-        }
-        _ => unreachable!("dispatched on the same variant"),
-    }
-}
-
-fn probe_script(
-    ctx: &CataContext,
-    kube_context: &str,
-    bundle_key: &str,
-    probe: &ReadyProbe,
-    dry_run: bool,
-) -> Result<()> {
-    match probe {
-        ReadyProbe::Script { body } => {
-            if dry_run {
-                println!(
-                    "{} Would run readyProbe script for '{bundle_key}' ({} bytes)",
-                    style(">>>").yellow(),
-                    body.len(),
-                );
-                return Ok(());
-            }
-            println!(
-                "{} Running readyProbe script for '{bundle_key}'",
-                style(">>>").cyan(),
-            );
-            let _ = ctx;
-            let status = Command::new("bash")
-                .args(["-euo", "pipefail", "-c", body])
-                .env("KUBE_CONTEXT", kube_context)
-                .status()
-                .context("running readyProbe script")?;
-            if !status.success() {
-                bail!("readyProbe script for '{bundle_key}' failed: {status}");
-            }
-            Ok(())
-        }
-        _ => unreachable!("dispatched on the same variant"),
-    }
-}
-
 fn inject_projections_ssa(
     ctx: &CataContext,
     kube_context: &str,
@@ -708,7 +287,7 @@ fn inject_projections_ssa(
             "{} Applying projection Secret '{secret_name}' via SSA",
             style(">>>").cyan(),
         );
-        let status = Command::new("kubectl")
+        let status = crate::io::kubectl::command()
             .args([
                 "--context",
                 kube_context,
@@ -743,51 +322,56 @@ fn yaml_files_under(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn wait_target_in_doc(doc: &str) -> Option<(String, String, String)> {
-    if doc.contains("catallaxy.io/await-rollout: \"false\"")
-        || doc.contains("catallaxy.io/await-rollout: 'false'")
-        || doc.contains("catallaxy.io/await-rollout: false")
-    {
+const AWAIT_ROLLOUT: &str = "catallaxy.io/await-rollout";
+
+fn wait_target_in_value(doc: &serde_yaml::Value) -> Option<(String, String, String)> {
+    let kind = doc.get("kind")?.as_str()?.to_string();
+    if !matches!(
+        kind.as_str(),
+        "Deployment" | "StatefulSet" | "DaemonSet" | "Job"
+    ) {
         return None;
     }
-    let mut kind = None;
-    let mut name = None;
-    let mut ns = None;
-    let mut in_metadata = false;
-    for line in doc.lines() {
-        let trimmed = line.trim_start();
-        if let Some(rest) = line.strip_prefix("kind:") {
-            kind = Some(rest.trim().to_string());
-        } else if line.starts_with("metadata:") {
-            in_metadata = true;
-        } else if in_metadata
-            && let Some(rest) = trimmed.strip_prefix("name:")
-            && !line.starts_with(' ')
-        {
-            name = Some(rest.trim().to_string());
-        } else if in_metadata
-            && name.is_none()
-            && let Some(rest) = line.strip_prefix("  name:")
-        {
-            name = Some(rest.trim().trim_matches('"').to_string());
-        } else if in_metadata
-            && ns.is_none()
-            && let Some(rest) = line.strip_prefix("  namespace:")
-        {
-            ns = Some(rest.trim().trim_matches('"').to_string());
-        } else if !line.starts_with(' ')
-            && !line.is_empty()
-            && !line.starts_with("apiVersion")
-            && !line.starts_with("kind")
-        {
-            in_metadata = false;
-        }
+
+    let metadata = doc.get("metadata")?;
+
+    let opted_out = metadata
+        .get("annotations")
+        .and_then(|a| a.get(AWAIT_ROLLOUT))
+        .is_some_and(|v| match v {
+            serde_yaml::Value::Bool(b) => !*b,
+            other => other.as_str() == Some("false"),
+        });
+    if opted_out {
+        return None;
     }
-    let (k, n) = (kind?, name?);
-    if matches!(k.as_str(), "Deployment" | "StatefulSet" | "DaemonSet") {
-        Some((k, ns.unwrap_or_else(|| "default".to_string()), n))
-    } else {
-        None
+
+    let name = metadata.get("name")?.as_str()?.to_string();
+    let namespace = metadata
+        .get("namespace")
+        .and_then(|n| n.as_str())
+        .unwrap_or("default")
+        .to_string();
+
+    Some((kind, namespace, name))
+}
+
+fn wait_targets_in_file(content: &str) -> Vec<(String, String, String)> {
+    use serde::Deserialize;
+
+    serde_yaml::Deserializer::from_str(content)
+        .filter_map(|doc| serde_yaml::Value::deserialize(doc).ok())
+        .filter_map(|doc| wait_target_in_value(&doc))
+        .collect()
+}
+
+/// What "ready" means for a kind. A Job is never Available; it is complete or
+/// it is not.
+fn condition_for(kind: &str) -> &'static str {
+    match kind {
+        "DaemonSet" => "condition=Ready",
+        "Job" => "condition=complete",
+        _ => "condition=Available",
     }
 }
 
@@ -798,7 +382,7 @@ fn wait_workloads_ready(kube_context: &str, phase_dir: &Path, timeout: &str) -> 
             Ok(c) => c,
             Err(_) => continue,
         };
-        targets.extend(content.split("\n---").filter_map(wait_target_in_doc));
+        targets.extend(wait_targets_in_file(&content));
     }
 
     if targets.is_empty() {
@@ -806,18 +390,16 @@ fn wait_workloads_ready(kube_context: &str, phase_dir: &Path, timeout: &str) -> 
     }
 
     println!(
-        "{} Waiting for {} workload(s) in {} to be Available (timeout: {timeout})",
+        "{} Waiting for {} workload(s) in {} (timeout: {timeout})",
         style(">>>").cyan(),
         targets.len(),
         phase_dir.display(),
     );
+    let mut stalled: Vec<String> = Vec::new();
     for (kind, ns, name) in &targets {
         let target = format!("{}/{name}", kind.to_lowercase());
-        let condition = match kind.as_str() {
-            "DaemonSet" => "condition=Ready",
-            _ => "condition=Available",
-        };
-        let result = Command::new("kubectl")
+        let condition = condition_for(kind);
+        let result = crate::io::kubectl::command()
             .args([
                 "--context",
                 kube_context,
@@ -833,12 +415,22 @@ fn wait_workloads_ready(kube_context: &str, phase_dir: &Path, timeout: &str) -> 
             Ok(s) if s.success() => {}
             _ => {
                 println!(
-                    "{} {ns}/{target} did not reach {condition} within {timeout} \
-                     (continuing)",
-                    style(">>>").yellow(),
+                    "{} {ns}/{target} did not reach {condition} within {timeout}",
+                    style("ERROR").red(),
                 );
+                stalled.push(format!("{ns}/{target}"));
             }
         }
+    }
+
+    if !stalled.is_empty() {
+        bail!(
+            "{} of {} workload(s) never became ready within {timeout}:\n  {}\n\
+             `cata diagnose` shows their pods, events and logs.",
+            stalled.len(),
+            targets.len(),
+            stalled.join("\n  "),
+        );
     }
     Ok(())
 }
@@ -867,7 +459,7 @@ pub fn relinquish_field_manager(
 
     let mut released = 0usize;
     for file in &files {
-        let out = Command::new("kubectl")
+        let out = crate::io::kubectl::command()
             .args([
                 "--context",
                 kube_context,
@@ -945,7 +537,7 @@ fn release_one(kube_context: &str, item: &serde_json::Value, field_manager: &str
     }
     args.extend(["--type".into(), "json".into(), "-p".into(), patch]);
 
-    Command::new("kubectl")
+    crate::io::kubectl::command()
         .args(&args)
         .output()
         .map(|o| o.status.success())
@@ -1059,6 +651,11 @@ fn await_wave_bundles(
 mod tests {
     use super::*;
 
+    fn wait_target_in_doc(doc: &str) -> Option<(String, String, String)> {
+        let parsed: serde_yaml::Value = serde_yaml::from_str(doc).ok()?;
+        wait_target_in_value(&parsed)
+    }
+
     fn deployment(annotations: &str) -> String {
         format!(
             "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  annotations:{annotations}\n  labels: {{}}\n  name: netbird-agent\n  namespace: netbird\nspec:\n  replicas: 1\n"
@@ -1094,5 +691,86 @@ mod tests {
     fn ignores_kinds_that_have_no_rollout() {
         let doc = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\n  namespace: x\n";
         assert!(wait_target_in_doc(doc).is_none());
+    }
+
+    // A bundle whose only workload is a Job used to be waited on for nothing:
+    // Job was not in the list of kinds, so the next wave started immediately.
+    #[test]
+    fn a_job_is_a_workload() {
+        let doc = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: bootstrap-ab12\n  namespace: forgejo\n";
+        assert_eq!(
+            wait_target_in_doc(doc).expect("a Job is work the next wave depends on"),
+            (
+                "Job".to_string(),
+                "forgejo".to_string(),
+                "bootstrap-ab12".to_string()
+            )
+        );
+    }
+
+    // And it has to be waited on for the right thing. A Job never reports
+    // Available, so asking for that condition would time out on a Job that
+    // completed.
+    #[test]
+    fn a_job_is_waited_on_for_completion_not_availability() {
+        assert_eq!(condition_for("Job"), "condition=complete");
+        assert_eq!(condition_for("Deployment"), "condition=Available");
+        assert_eq!(condition_for("DaemonSet"), "condition=Ready");
+    }
+
+    #[test]
+    fn four_space_indentation_is_still_a_workload() {
+        let doc = "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n    name: wide\n    namespace: team\n";
+        assert_eq!(
+            wait_target_in_doc(doc).expect("indentation is not the schema"),
+            (
+                "Deployment".to_string(),
+                "team".to_string(),
+                "wide".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn the_opt_out_annotation_only_counts_on_the_workload_itself() {
+        let configmap_quoting_the_annotation = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\ndata:\n  note: |\n    catallaxy.io/await-rollout: \"false\"\n";
+        let doc = format!(
+            "{configmap_quoting_the_annotation}---\n{}",
+            deployment(" {}")
+        );
+
+        let targets = wait_targets_in_file(&doc);
+
+        assert_eq!(
+            targets.len(),
+            1,
+            "a ConfigMap that merely mentions the annotation must not disable the wait: {targets:?}"
+        );
+    }
+
+    #[test]
+    fn a_separator_inside_a_block_scalar_does_not_split_the_document() {
+        let doc = format!(
+            "apiVersion: v1\nkind: Secret\nmetadata:\n  name: tls\nstringData:\n  cert: |\n    -----BEGIN CERTIFICATE-----\n    aaa\n    ---\n    bbb\n    -----END CERTIFICATE-----\n---\n{}",
+            deployment(" {}")
+        );
+
+        let targets = wait_targets_in_file(&doc);
+
+        assert_eq!(
+            targets,
+            vec![(
+                "Deployment".to_string(),
+                "netbird".to_string(),
+                "netbird-agent".to_string()
+            )],
+            "a --- inside a block scalar is data, not a document separator"
+        );
+    }
+
+    #[test]
+    fn an_unquoted_false_opts_out_too() {
+        let doc = deployment("\n    catallaxy.io/await-rollout: false");
+        assert!(wait_target_in_doc(&doc).is_none());
     }
 }

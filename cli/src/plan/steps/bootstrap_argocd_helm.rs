@@ -1,7 +1,6 @@
 use std::path::Path;
-use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use console::style;
 
 use crate::domain::plan::BootstrapArgocdHelmParams;
@@ -49,22 +48,13 @@ pub fn run(sctx: &StepContext<'_>, p: &BootstrapArgocdHelmParams) -> Result<()> 
         "{} Installing argocd on '{kube_context}' via helm (chart={chart_ref}, release={release_name})...",
         style(">>>").cyan(),
     );
-    let mut cmd = Command::new("helm");
-    cmd.args([
-        "upgrade",
-        "--install",
+    let status = crate::io::helm::upgrade_install(
         release_name,
         chart_ref,
-        "--namespace",
         namespace,
-        "--create-namespace",
-        "--values",
         &full_values,
-        "--kube-context",
         kube_context,
-    ]);
-    let status = crate::io::process::run_status(&mut cmd)
-        .context("running helm upgrade --install for argocd")?;
+    )?;
     if !status.success() {
         bail!("helm install of argocd failed");
     }

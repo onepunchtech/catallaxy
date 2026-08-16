@@ -1,6 +1,8 @@
-use std::fs;
 use std::path::Path;
-use std::process::Command;
+
+pub mod actual;
+pub mod reference;
+pub use reference::ImageRef;
 
 use anyhow::{Context, Result, bail};
 use console::style;
@@ -8,7 +10,6 @@ use console::style;
 use crate::config::Context as CataContext;
 use crate::domain::LabSpec;
 use crate::io::nix;
-use crate::io::process::{run_capture, run_streaming};
 
 pub fn publish_one(lab: &LabSpec, img: &serde_json::Value) -> Result<()> {
     let name = img["name"].as_str().unwrap_or("?");
@@ -41,13 +42,9 @@ pub fn publish_one(lab: &LabSpec, img: &serde_json::Value) -> Result<()> {
             name,
             versions_attr,
         );
-        let mut build = Command::new("nix");
-        build.args(["build", "--no-link", "--print-out-paths", &versions_attr]);
-        let versions_path = run_capture(&mut build)
-            .with_context(|| format!("image '{name}': nix build {versions_attr}"))?
-            .trim()
-            .to_string();
-        let versions_raw = fs::read_to_string(&versions_path)
+        let versions_path = nix::build_out_path(&versions_attr)
+            .with_context(|| format!("image '{name}': nix build {versions_attr}"))?;
+        let versions_raw = crate::io::fs::read_to_string(&versions_path)
             .with_context(|| format!("reading {versions_path}"))?;
         let versions: serde_json::Value = serde_json::from_str(&versions_raw)
             .with_context(|| format!("parsing {versions_path} as JSON"))?;
@@ -69,12 +66,12 @@ pub fn publish_one(lab: &LabSpec, img: &serde_json::Value) -> Result<()> {
     for t in &tags {
         let dest = format!("{destination}:{t}");
         println!("{} Pushing {} → {}", style(">>>").cyan(), name, dest);
-        let mut cmd = Command::new("crane");
-        cmd.args(["push", &tarball_path, &dest]);
-        if let Some(d) = &docker_config_dir {
-            cmd.env("DOCKER_CONFIG", d.path());
-        }
-        run_streaming(&mut cmd).with_context(|| format!("image '{name}': crane push to {dest}"))?;
+        crate::io::crane::push(
+            &tarball_path,
+            &dest,
+            docker_config_dir.as_ref().map(|d| d.path()),
+        )
+        .with_context(|| format!("image '{name}': crane push to {dest}"))?;
     }
     println!(
         "{} Published '{}' ({} tag(s))",
@@ -92,12 +89,8 @@ fn build_image_archive(
 ) -> Result<(String, Option<tempfile::TempPath>)> {
     let image_attr = format!("{source}#{attr}");
     println!("{} Building image: {}", style(">>>").cyan(), image_attr);
-    let mut build = Command::new("nix");
-    build.args(["build", "--no-link", "--print-out-paths", &image_attr]);
-    let archive_path = run_capture(&mut build)
-        .with_context(|| format!("image '{name}': nix build {image_attr}"))?
-        .trim()
-        .to_string();
+    let archive_path = nix::build_out_path(&image_attr)
+        .with_context(|| format!("image '{name}': nix build {image_attr}"))?;
     println!("   built: {archive_path}");
 
     let mut tarball_path = archive_path.clone();
@@ -105,7 +98,7 @@ fn build_image_archive(
         let mut hdr = [0u8; 2];
         let is_gz = {
             use std::io::Read;
-            fs::File::open(&archive_path)
+            crate::io::fs::open(&archive_path)
                 .ok()
                 .and_then(|mut f| f.read_exact(&mut hdr).ok())
                 .is_some()
@@ -118,14 +111,7 @@ fn build_image_archive(
                 .tempfile()
                 .context("creating tempfile for decompressed tarball")?;
             let tmp_path = tmp.into_temp_path();
-            let outfile = fs::File::create(&tmp_path)?;
-            let status = Command::new("gunzip")
-                .arg("-c")
-                .arg(&archive_path)
-                .stdout(outfile)
-                .status()
-                .context("running gunzip")?;
-            if !status.success() {
+            if !crate::io::fs::gunzip_to(Path::new(&archive_path), &tmp_path)? {
                 bail!("image '{name}': gunzip of {archive_path} failed");
             }
             tarball_path = tmp_path.to_string_lossy().into_owned();
@@ -159,35 +145,33 @@ fn image_credentials(
                 cred_secret,
                 cred_cluster,
             );
-            let mut wait = Command::new("kubectl");
-            wait.args([
-                "--context",
+            let _ = crate::io::kubectl::capture(
                 cred_ctx,
-                "-n",
-                cred_namespace,
-                "wait",
-                "--for=create",
-                &format!("secret/{cred_secret}"),
-                "--timeout=2m",
-            ]);
-            let _ = run_capture(&mut wait);
+                &[
+                    "-n",
+                    cred_namespace,
+                    "wait",
+                    "--for=create",
+                    &format!("secret/{cred_secret}"),
+                    "--timeout=2m",
+                ],
+            );
 
-            let mut get = Command::new("kubectl");
-            get.args([
-                "--context",
+            let b64 = crate::io::kubectl::capture(
                 cred_ctx,
-                "-n",
-                cred_namespace,
-                "get",
-                "secret",
-                cred_secret,
-                "-o",
-                "jsonpath={.data.\\.dockerconfigjson}",
-            ]);
-            let b64 = run_capture(&mut get)
-                .with_context(|| format!("image '{name}': reading secret '{cred_secret}'"))?
-                .trim()
-                .to_string();
+                &[
+                    "-n",
+                    cred_namespace,
+                    "get",
+                    "secret",
+                    cred_secret,
+                    "-o",
+                    "jsonpath={.data.\\.dockerconfigjson}",
+                ],
+            )
+            .with_context(|| format!("image '{name}': reading secret '{cred_secret}'"))?
+            .trim()
+            .to_string();
             if b64.is_empty() {
                 bail!("image '{name}': dockerconfigjson is empty");
             }
@@ -196,7 +180,7 @@ fn image_credentials(
                 .decode(b64.as_bytes())
                 .context("base64-decoding dockerconfigjson")?;
             let tmp = tempfile::tempdir().context("creating temp DOCKER_CONFIG dir")?;
-            fs::write(tmp.path().join("config.json"), &json_bytes)
+            crate::io::fs::write(tmp.path().join("config.json"), &json_bytes)
                 .context("writing temp config.json")?;
             let cfg: serde_json::Value =
                 serde_json::from_slice(&json_bytes).context("parsing dockerconfigjson")?;
@@ -274,8 +258,7 @@ pub async fn warm_to_target_with(
         Mutex<std::collections::HashMap<String, std::collections::HashSet<String>>>,
     > = Arc::new(Mutex::new(std::collections::HashMap::new()));
 
-    let concurrency = std::env::var("CATA_WARM_CONCURRENCY")
-        .ok()
+    let concurrency = crate::io::fs::env_var("CATA_WARM_CONCURRENCY")
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(8);
@@ -313,49 +296,49 @@ async fn warm_one_image(
         std::collections::HashMap<String, std::collections::HashSet<String>>,
     >,
 ) -> WarmOutcome {
-    let r = parse_image_ref(image);
+    let r = match plan_warm(image, upstreams, lab_owned) {
+        WarmRoute::LabPublished => {
+            println!(
+                "{} {image}... {} (lab-published)",
+                style(">>>").cyan(),
+                style("skip").dim()
+            );
+            return WarmOutcome::Skipped;
+        }
+        WarmRoute::NoUpstream(registry) => {
+            println!(
+                "{} {image}... {} (no upstream for '{registry}')",
+                style(">>>").cyan(),
+                style("skip").dim(),
+            );
+            return WarmOutcome::Skipped;
+        }
+        WarmRoute::Fetch(r) => r,
+    };
 
-    if lab_owned.iter().any(|h| h == &r.source_registry) {
-        println!(
-            "{} {image}... {} (lab-published)",
-            style(">>>").cyan(),
-            style("skip").dim()
-        );
-        return WarmOutcome::Skipped;
-    }
-
-    if !upstreams.iter().any(|h| h == &r.source_registry) {
-        println!(
-            "{} {image}... {} (no upstream for '{}')",
-            style(">>>").cyan(),
-            style("skip").dim(),
-            r.source_registry,
-        );
-        return WarmOutcome::Skipped;
-    }
+    // A tag list never contains a digest, so a digest-pinned reference would
+    // report uncached every run and re-sync every run. Ask about the tag it
+    // also carries; a mirror holding the tag holds the content.
+    let cache_key = r.tag.clone().unwrap_or_else(|| r.reference());
 
     let cached = {
         let cache = tags_cache.lock().await;
-        cache.get(&r.repo).map(|tags| tags.contains(&r.reference))
+        cache
+            .get(&r.api_repository())
+            .map(|tags| tags.contains(&cache_key))
     };
     let cached = match cached {
         Some(hit) => hit,
         None => {
-            let tags_url = format!("{base}/v2/{}/tags/list", r.repo);
             let mut tags = std::collections::HashSet::new();
-            if let Ok(resp) = client.get(&tags_url).send().await
+            if let Ok(resp) = client.get(tags_url(base, &r.api_repository())).send().await
                 && resp.status().is_success()
                 && let Ok(body) = resp.json::<serde_json::Value>().await
-                && let Some(arr) = body.get("tags").and_then(|t| t.as_array())
             {
-                for v in arr {
-                    if let Some(s) = v.as_str() {
-                        tags.insert(s.to_owned());
-                    }
-                }
+                tags = tags_from_body(&body);
             }
-            let hit = tags.contains(&r.reference);
-            tags_cache.lock().await.insert(r.repo.clone(), tags);
+            let hit = tags.contains(&cache_key);
+            tags_cache.lock().await.insert(r.api_repository(), tags);
             hit
         }
     };
@@ -369,10 +352,7 @@ async fn warm_one_image(
         return WarmOutcome::Ok;
     }
 
-    let sync_url = format!(
-        "{base}/v2/{}/manifests/{}?ns={}",
-        r.repo, r.reference, r.source_registry,
-    );
+    let sync_url = sync_url(base, &r);
     let accept = "application/vnd.oci.image.index.v1+json,\
                   application/vnd.oci.image.manifest.v1+json,\
                   application/vnd.docker.distribution.manifest.list.v2+json,\
@@ -386,7 +366,7 @@ async fn warm_one_image(
 
     match resp {
         Ok(resp) if resp.status().is_success() => {
-            tags_cache.lock().await.remove(&r.repo);
+            tags_cache.lock().await.remove(&r.api_repository());
             println!(
                 "{} {image}... {}",
                 style(">>>").cyan(),
@@ -454,74 +434,12 @@ async fn report_warm_results(
     Ok(())
 }
 
-pub fn parse_image_ref(image: &str) -> ImageRef {
-    let (repo_part, reference) = if let Some(idx) = image.find('@') {
-        (&image[..idx], image[idx + 1..].to_string())
-    } else if let Some(idx) = image.rfind(':') {
-        let after = &image[idx + 1..];
-        if after.contains('/') {
-            (image, "latest".to_string())
-        } else {
-            (&image[..idx], after.to_string())
-        }
-    } else {
-        (image, "latest".to_string())
-    };
-
-    let (source_registry, repo) = match repo_part.split_once('/') {
-        Some((first, rest)) if first.contains('.') || first.contains(':') => {
-            (first.to_string(), rest.to_string())
-        }
-        _ => ("docker.io".to_string(), repo_part.to_string()),
-    };
-
-    let repo = if source_registry == "docker.io" && !repo.contains('/') {
-        format!("library/{repo}")
-    } else {
-        repo
-    };
-
-    ImageRef {
-        source_registry,
-        repo,
-        reference,
-    }
-}
-
-pub fn rewrite_image(image: &str, target_registry: &str) -> String {
-    let (repo_part, suffix) = if let Some(idx) = image.find('@') {
-        (&image[..idx], &image[idx..])
-    } else if let Some(idx) = image.rfind(':') {
-        let potential_tag = &image[idx + 1..];
-        if potential_tag.contains('/') {
-            (image, "")
-        } else {
-            (&image[..idx], &image[idx..])
-        }
-    } else {
-        (image, "")
-    };
-
-    let path = if repo_part.contains('/') {
-        let first = repo_part.split('/').next().unwrap_or("");
-        if first.contains('.') || first.contains(':') {
-            &repo_part[first.len() + 1..]
-        } else {
-            repo_part
-        }
-    } else {
-        repo_part
-    };
-
-    format!("{target_registry}/{path}{suffix}")
-}
-
 pub fn load_image_list_from_package(lab_package: &str) -> Result<Vec<String>> {
     let images_path = Path::new(lab_package).join("images.txt");
     if !images_path.exists() {
         bail!("No images.txt found in lab package. Rebuild with latest catallaxy.");
     }
-    let content = fs::read_to_string(&images_path)
+    let content = crate::io::fs::read_to_string(&images_path)
         .with_context(|| format!("reading {}", images_path.display()))?;
     Ok(content
         .lines()
@@ -539,7 +457,7 @@ pub fn load_image_list(ctx: &CataContext, name: Option<&str>) -> Result<Vec<Stri
         bail!("No images.txt found in lab package. Rebuild with latest catallaxy.");
     }
 
-    let content = fs::read_to_string(&images_path)
+    let content = crate::io::fs::read_to_string(&images_path)
         .with_context(|| format!("reading {}", images_path.display()))?;
 
     let images: Vec<String> = content
@@ -551,14 +469,131 @@ pub fn load_image_list(ctx: &CataContext, name: Option<&str>) -> Result<Vec<Stri
     Ok(images)
 }
 
-pub struct ImageRef {
-    pub source_registry: String,
-    pub repo: String,
-    pub reference: String,
-}
-
 pub enum WarmOutcome {
     Ok,
     Skipped,
     Failed,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum WarmRoute {
+    LabPublished,
+    NoUpstream(String),
+    Fetch(ImageRef),
+}
+
+pub fn plan_warm(image: &str, upstreams: &[String], lab_owned: &[String]) -> WarmRoute {
+    let r = ImageRef::parse(image);
+    if lab_owned.iter().any(|h| h == &r.registry) {
+        WarmRoute::LabPublished
+    } else if !upstreams.iter().any(|h| h == &r.registry) {
+        WarmRoute::NoUpstream(r.registry)
+    } else {
+        WarmRoute::Fetch(r)
+    }
+}
+
+pub fn tags_from_body(body: &serde_json::Value) -> std::collections::HashSet<String> {
+    body.get("tags")
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn tags_url(base: &str, repo: &str) -> String {
+    format!("{base}/v2/{repo}/tags/list")
+}
+
+pub fn sync_url(base: &str, r: &ImageRef) -> String {
+    format!(
+        "{base}/v2/{}/manifests/{}?ns={}",
+        r.api_repository(),
+        r.reference(),
+        r.registry,
+    )
+}
+
+#[cfg(test)]
+mod warm_tests {
+    use super::*;
+
+    fn hosts(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn an_image_from_a_lab_registry_is_never_pulled_through_the_mirror() {
+        assert_eq!(
+            plan_warm(
+                "registry.lab.local/team/app:v1",
+                &hosts(&["docker.io"]),
+                &hosts(&["registry.lab.local"]),
+            ),
+            WarmRoute::LabPublished
+        );
+    }
+
+    #[test]
+    fn lab_ownership_wins_over_a_registry_that_is_also_an_upstream() {
+        assert_eq!(
+            plan_warm(
+                "registry.lab.local/team/app:v1",
+                &hosts(&["registry.lab.local"]),
+                &hosts(&["registry.lab.local"]),
+            ),
+            WarmRoute::LabPublished
+        );
+    }
+
+    #[test]
+    fn an_image_with_no_configured_upstream_names_the_registry_it_wanted() {
+        assert_eq!(
+            plan_warm("quay.io/team/app:v1", &hosts(&["docker.io"]), &[]),
+            WarmRoute::NoUpstream("quay.io".to_string())
+        );
+    }
+
+    #[test]
+    fn an_upstream_image_is_routed_to_a_fetch_carrying_its_parsed_reference() {
+        let WarmRoute::Fetch(r) =
+            plan_warm("docker.io/library/nginx:1.25", &hosts(&["docker.io"]), &[])
+        else {
+            panic!("expected a fetch");
+        };
+        assert_eq!(r.registry, "docker.io");
+        assert_eq!(r.reference(), "1.25");
+    }
+
+    #[test]
+    fn a_tags_list_becomes_a_set_of_tag_names() {
+        let body = serde_json::json!({ "name": "library/nginx", "tags": ["1.25", "latest"] });
+        let tags = tags_from_body(&body);
+        assert!(tags.contains("1.25"));
+        assert!(tags.contains("latest"));
+        assert_eq!(tags.len(), 2);
+    }
+
+    #[test]
+    fn a_repository_with_no_tags_yields_an_empty_set_rather_than_failing() {
+        assert!(tags_from_body(&serde_json::json!({ "tags": null })).is_empty());
+        assert!(tags_from_body(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn the_sync_url_asks_the_mirror_for_the_upstream_namespace() {
+        let r = ImageRef::parse("docker.io/library/nginx:1.25");
+        assert_eq!(
+            sync_url("http://localhost:5000", &r),
+            "http://localhost:5000/v2/library/nginx/manifests/1.25?ns=docker.io"
+        );
+        assert_eq!(
+            tags_url("http://localhost:5000", &r.api_repository()),
+            "http://localhost:5000/v2/library/nginx/tags/list"
+        );
+    }
 }

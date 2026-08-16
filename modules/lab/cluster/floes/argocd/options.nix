@@ -8,7 +8,7 @@
 
 let
   inherit (lib) mkOption mkEnableOption types;
-  inherit (import ../../../../../lib/floe { inherit lib; }) refs;
+  inherit (import ../../../../../lib/floe { inherit lib; }) gatewayOptions refs;
 in
 {
   options.floes.argocd = {
@@ -280,38 +280,8 @@ in
       };
     };
 
-    gateway = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Enable HTTPRoute for external access via Gateway API";
-      };
-
-      gatewayRef = mkOption {
-        type = types.str;
-        default = "default-gateway";
-        description = "Name of the Gateway resource to attach to (public tier).";
-      };
-
-      gatewayNamespace = mkOption {
-        type = types.nullOr types.str;
-        default = "kube-system";
-        description = "Namespace of the Gateway resource";
-      };
-
-      tier = mkOption {
-        type = types.enum [
-          "public"
-          "internal"
-        ];
-
-        default = lab.policy.exposure.defaultTier or "public";
-        description = ''
-          Lab network tier to attach to. `internal` points at
-          `floes.gateway.exports.internalGatewayName`. Requires
-          `floes.gateway.internal.enable = true` on the cluster.
-        '';
-      };
+    gateway = gatewayOptions {
+      inherit lab;
     };
   };
 }

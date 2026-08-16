@@ -1,10 +1,10 @@
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::domain::plan::ApplyRootApplicationParams;
+use crate::io;
 use crate::plan::StepContext;
 
 pub fn run(sctx: &StepContext<'_>, p: &ApplyRootApplicationParams) -> Result<()> {
@@ -48,9 +48,7 @@ pub fn run(sctx: &StepContext<'_>, p: &ApplyRootApplicationParams) -> Result<()>
         "{} Applying argocd root Application to '{kube_context}' (starts gitops sync)...",
         style(">>>").cyan(),
     );
-    let status = Command::new("kubectl")
-        .args(["--context", kube_context, "apply", "-f", &full_path])
-        .status()
+    let status = io::kubectl::status(kube_context, &["apply", "-f", &full_path])
         .context("running kubectl apply for root Application")?;
     if !status.success() {
         bail!("kubectl apply of root Application failed");

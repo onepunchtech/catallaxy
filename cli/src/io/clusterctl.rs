@@ -90,7 +90,7 @@ pub fn wait_control_plane_initialized(
         style(">>>").cyan()
     );
 
-    let mut cmd = Command::new("kubectl");
+    let mut cmd = crate::io::kubectl::command();
     cmd.args([
         "--context",
         kube_context,
@@ -106,4 +106,16 @@ pub fn wait_control_plane_initialized(
 
     println!("{} Control plane initialized", style(">>>").green());
     Ok(())
+}
+
+pub fn move_all(from_context: &str, to_context: &str) -> std::io::Result<std::process::ExitStatus> {
+    Command::new("clusterctl")
+        .args([
+            "move",
+            "--to-kubeconfig-context",
+            to_context,
+            "--kubeconfig-context",
+            from_context,
+        ])
+        .status()
 }

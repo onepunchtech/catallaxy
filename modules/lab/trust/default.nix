@@ -33,9 +33,8 @@ in
 
   imports = [ ./options.nix ];
 
-  config.lab.ops.commands.setup = mkDefault {
+  config.lab.ops.commands.trust.setup = mkDefault {
     description = "Install the lab CA into the operator's OS / browser / Docker trust stores";
-    category = "trust";
     options.docker = {
       type = "bool";
       default = "false";
@@ -44,9 +43,8 @@ in
     package = setupScript;
   };
 
-  config.lab.ops.commands.browser = mkDefault {
+  config.lab.ops.commands.trust.browser = mkDefault {
     description = "Trust the lab CA in your browsers (no sudo)";
-    category = "trust";
     options.firefox-profile = {
       type = "string";
       default = "";
@@ -55,15 +53,13 @@ in
     package = browserScript;
   };
 
-  config.lab.ops.commands.teardown = mkDefault {
+  config.lab.ops.commands.trust.teardown = mkDefault {
     description = "Remove the lab CA from the operator's trust stores";
-    category = "trust";
     package = teardownScript;
   };
 
-  config.lab.ops.commands.export = mkDefault {
+  config.lab.ops.commands.trust.export = mkDefault {
     description = "Print the lab CA PEM to stdout";
-    category = "trust";
     package = exportScript;
   };
 

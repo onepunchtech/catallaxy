@@ -1,6 +1,4 @@
-use std::process::{Command, Stdio};
-
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use console::style;
 
 use crate::io;
@@ -19,27 +17,56 @@ pub fn setup_host_networking_macos(
         "{} Enabling IP forwarding in Colima VM...",
         style(">>>").cyan()
     );
-    open_vm_forwarding(docker_subnet, colima_profile);
+    let unopened = open_vm_forwarding(docker_subnet, colima_profile);
+    if !unopened.is_empty() {
+        println!(
+            "{} the Colima VM did not accept {} of its forwarding settings:",
+            style("Warning:").yellow(),
+            unopened.len(),
+        );
+        for what in &unopened {
+            println!("{}   {what}", style(">>>").yellow());
+        }
+        println!(
+            "{} the lab will come up, but traffic from this machine to \
+             containers may not reach them. `colima ssh --profile {colima_profile}` \
+             to look.",
+            style(">>>").yellow(),
+        );
+    }
+
     add_host_route(docker_subnet, vm_ip)
 }
 
-fn open_vm_forwarding(docker_subnet: &str, colima_profile: &str) {
-    let _ = io::colima::ssh_exec(
+/// Runs a setting the VM needs and names it if it did not take. These used to
+/// be `let _ =`, in a function returning `()`, so a lab could come up fully
+/// and simply not carry traffic.
+fn apply(profile: &str, what: &str, args: &[&str]) -> Option<String> {
+    match io::colima::ssh_exec(profile, args) {
+        Ok(s) if s.success() => None,
+        Ok(s) => Some(format!("{what} (exit {})", s.code().unwrap_or(-1))),
+        Err(e) => Some(format!("{what} ({e})")),
+    }
+}
+
+fn open_vm_forwarding(docker_subnet: &str, colima_profile: &str) -> Vec<String> {
+    let mut failed = Vec::new();
+
+    failed.extend(apply(
         colima_profile,
+        "enable IPv4 forwarding",
         &["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"],
-    );
+    ));
 
-    let _ = io::colima::ssh_exec(
+    failed.extend(apply(
         colima_profile,
+        "set the FORWARD policy to ACCEPT",
         &["sudo", "iptables", "-P", "FORWARD", "ACCEPT"],
-    );
+    ));
 
-    let check_raw = Command::new("colima")
-        .args([
-            "ssh",
-            "--profile",
-            colima_profile,
-            "--",
+    let check_raw = io::colima::ssh_exec(
+        colima_profile,
+        &[
             "sudo",
             "iptables",
             "-t",
@@ -52,14 +79,15 @@ fn open_vm_forwarding(docker_subnet: &str, colima_profile: &str) {
             "col0",
             "-j",
             "ACCEPT",
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+        ],
+    );
 
+    // The -C above is a probe: it fails when the rule is absent, which is the
+    // normal case and why we are here. The insert is not a probe.
     if !matches!(check_raw, Ok(s) if s.success()) {
-        let _ = io::colima::ssh_exec(
+        failed.extend(apply(
             colima_profile,
+            "accept traffic to the lab subnet in the raw table",
             &[
                 "sudo",
                 "iptables",
@@ -74,15 +102,12 @@ fn open_vm_forwarding(docker_subnet: &str, colima_profile: &str) {
                 "-j",
                 "ACCEPT",
             ],
-        );
+        ));
     }
 
-    let check_filter = Command::new("colima")
-        .args([
-            "ssh",
-            "--profile",
-            colima_profile,
-            "--",
+    let check_filter = io::colima::ssh_exec(
+        colima_profile,
+        &[
             "sudo",
             "iptables",
             "-C",
@@ -93,14 +118,13 @@ fn open_vm_forwarding(docker_subnet: &str, colima_profile: &str) {
             "col0",
             "-j",
             "ACCEPT",
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+        ],
+    );
 
     if !matches!(check_filter, Ok(s) if s.success()) {
-        let _ = io::colima::ssh_exec(
+        failed.extend(apply(
             colima_profile,
+            "accept traffic to the lab subnet in DOCKER-USER",
             &[
                 "sudo",
                 "iptables",
@@ -113,26 +137,15 @@ fn open_vm_forwarding(docker_subnet: &str, colima_profile: &str) {
                 "-j",
                 "ACCEPT",
             ],
-        );
+        ));
     }
+
+    failed
 }
 
 fn add_host_route(docker_subnet: &str, vm_ip: &str) -> Result<()> {
-    let existing_gw = Command::new("route")
-        .args([
-            "-n",
-            "get",
-            docker_subnet.split('/').next().unwrap_or("172.19.0.0"),
-        ])
-        .output()
-        .ok()
-        .and_then(|o| {
-            let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-            stdout
-                .lines()
-                .find(|l| l.trim().starts_with("gateway:"))
-                .map(|l| l.trim().trim_start_matches("gateway:").trim().to_string())
-        });
+    let existing_gw =
+        io::route::gateway_for(docker_subnet.split('/').next().unwrap_or("172.19.0.0"));
 
     match existing_gw.as_deref() {
         Some(gw) if gw == vm_ip => {
@@ -155,18 +168,8 @@ fn add_host_route(docker_subnet: &str, vm_ip: &str) -> Result<()> {
                 "    This requires sudo to update a network route so your Mac\n    \
                  can reach Docker containers directly."
             );
-            let _ = Command::new("sudo")
-                .args(["route", "-n", "delete", "-net", docker_subnet])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            let status = Command::new("sudo")
-                .args(["route", "-n", "add", "-net", docker_subnet, vm_ip])
-                .status()
-                .context("Failed to run sudo route add")?;
-            if !status.success() {
-                bail!("Failed to add route for {docker_subnet} via {vm_ip}");
-            }
+            let _ = io::route::delete(docker_subnet);
+            io::route::add(docker_subnet, vm_ip)?;
         }
         None => {
             println!(
@@ -179,13 +182,7 @@ fn add_host_route(docker_subnet: &str, vm_ip: &str) -> Result<()> {
                 "    This requires sudo to add a network route so your Mac\n    \
                  can reach Docker containers directly."
             );
-            let status = Command::new("sudo")
-                .args(["route", "-n", "add", "-net", docker_subnet, vm_ip])
-                .status()
-                .context("Failed to run sudo route add")?;
-            if !status.success() {
-                bail!("Failed to add route for {docker_subnet} via {vm_ip}");
-            }
+            io::route::add(docker_subnet, vm_ip)?;
         }
     }
 
@@ -196,13 +193,7 @@ fn add_host_route(docker_subnet: &str, vm_ip: &str) -> Result<()> {
 pub fn teardown_host_networking_macos(docker_subnet: &str) -> Result<()> {
     println!("{} Removing route: {}", style(">>>").cyan(), docker_subnet);
 
-    let status = Command::new("sudo")
-        .args(["route", "-n", "delete", "-net", docker_subnet])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    match status {
+    match io::route::delete(docker_subnet) {
         Ok(s) if s.success() => {
             println!("{} Route removed", style(">>>").green());
         }
@@ -218,46 +209,17 @@ pub fn teardown_host_networking_macos(docker_subnet: &str) -> Result<()> {
 }
 
 pub fn get_colima_vm_ip() -> Option<String> {
-    let output = Command::new("colima")
-        .args(["list", "-j"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .output()
-        .ok();
-
-    if let Some(ref out) = output
-        && out.status.success()
+    if let Some(list) = io::colima::list_json()
+        && let Some(addr) = io::colima::address_in_list(&list)
     {
-        let json_str = String::from_utf8_lossy(&out.stdout);
-        for line in json_str.lines() {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line)
-                && let Some(addr) = parsed["address"].as_str()
-                && !addr.is_empty()
-            {
-                return Some(addr.to_string());
-            }
-        }
+        return Some(addr);
     }
 
     if cfg!(target_os = "macos")
-        && let Ok(arp_out) = Command::new("arp")
-            .args(["-an"])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output()
+        && let Some(arp) = io::route::arp_table()
+        && let Some(ip) = io::route::bridge_address(&arp, "bridge100")
     {
-        let arp_str = String::from_utf8_lossy(&arp_out.stdout);
-        for line in arp_str.lines() {
-            if line.contains("bridge100")
-                && let Some(start) = line.find('(')
-                && let Some(end) = line.find(')')
-            {
-                let ip = &line[start + 1..end];
-                if !ip.is_empty() {
-                    return Some(ip.to_string());
-                }
-            }
-        }
+        return Some(ip);
     }
 
     None

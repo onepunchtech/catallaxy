@@ -27,25 +27,102 @@ metadata:
     catallaxy.io/lint-skip: image-pin
 ```
 
-## Pins
+## The lockfile
+
+`requireDigest` is only satisfiable if something puts digests into the
+rendered manifests, because most images arrive from a Helm chart and no
+option can reach inside one.
+
+```
+cata images lock --name mylab.local
+```
+
+resolves every image the lab renders and writes `images.lock.json`. Point
+the lab at it, commit both:
 
 ```nix
-lab.images.pins.grafana = {
-  image = "docker.io/grafana/grafana";
-  tag = "11.4.0";
+lab.images.lockFile = ./images.lock.json;
+lab.images.requireDigest = true;
+```
+
+Every reference the file names is rewritten to carry its digest as the
+manifests are rendered. A reference that already has one is left alone, and
+a string the file does not name is left alone, so the lockfile is its own
+filter.
+
+Leaving `lockFile` null rewrites nothing. That is what lets a lab build
+before a lockfile exists, which is how you generate the first one.
+
+Bumping a chart means re-running the command. If you forget, `image-pin`
+names the image that moved.
+
+### What it does not cover
+
+The scrape that finds images to lock reads the same container paths the
+`image-pin` lint reads: containers and init containers on a Pod, on a pod
+template, and inside a CronJob's job template. An operator CR carrying its
+own `spec.image` is invisible to both, so `requireDigest` passing says less
+than it looks on an operator-heavy lab.
+
+Retargeting does not share that blind spot: it descends rather than reading
+a path list, so it reaches a CR's own image. Declaring reaches it too,
+because `imagesComplete` scrapes what was rendered rather than what a list
+expected.
+
+## Declared images
+
+A floe names the images it needs, keyed by a label that is part of its
+interface:
+
+```nix
+floes.openbao.images.server = {
+  registry = "quay.io";
+  repository = "openbao/openbao";
+  tag = "2.3.1";
+};
+```
+
+The floe reads `cfg.images.server.ref` rather than writing the string, and
+where the chart takes registry and repository as separate values, the
+declaration sets them. Declaring is the floe saying this combination was
+tested, and it is what gives you something to override.
+
+A floe that has declared everything it renders sets `imagesComplete = true`.
+The `image-sets-are-complete` check then renders that floe and fails naming
+any image it did not declare, so the claim cannot quietly go stale.
+
+## Retargeting
+
+One line points a whole lab at a mirror or an internal registry:
+
+```nix
+lab.images.registry = "registry.internal";
+```
+
+Repositories and tags are untouched, so the target has to carry the same
+paths upstream does. A pull-through cache does.
+
+This reaches every image a lab renders, not only the declared ones, because
+until every chart image is declared most of what a lab renders is a chart's
+own choice. Two things are left alone: anything inside a ConfigMap or a
+Secret, where an `image` key is somebody's config rather than a workload,
+and any value that carries neither a path nor a tag and so is not a
+reference anyone could pull.
+
+Individual images are overridden by label:
+
+```nix
+lab.images.pinned.openbao.server = {
+  registry = "registry.internal";
   digest = "sha256:abc123…";
 };
 ```
 
-[`lab.images.pins.<name>.ref`](./options/lab.md#images-pins-name-ref) is the
-assembled reference; use that rather than reconstructing the string:
-
-```nix
-floes.grafana.overrides.extraAnnotations."image" =
-  lab.images.pins.grafana.ref;
-```
-
-One place to bump a version, and the digest travels with it.
+Matching is by label and nothing else, so you name the image you mean rather
+than catallaxy inferring from a repository two floes might share. Any field
+left unset keeps what the floe declared, and a pin beats
+`lab.images.registry`, which is what lets a lab mirror everything and still
+take one image from somewhere else.
 
 ## Local registry
 
@@ -69,6 +146,28 @@ cata --flake .#<lab> images prefetch --dry-run
 `images list` reads `images.txt` from the rendered package, which is
 extracted from every pod template at build time, so it covers init
 containers and CronJob templates too, not just the obvious ones.
+
+## What is actually running
+
+```bash
+cata --flake .#<lab> images actual
+cata --flake .#<lab> images actual --undeclared
+cata --flake .#<lab> images actual --cluster obs
+```
+
+`list` says what catallaxy rendered. It cannot say what arrived: an operator
+creates workloads catallaxy never wrote, so a CNPG Postgres pod or a
+StatefulSet an operator built are invisible to anything reading manifests,
+however many paths it reads. This asks the clusters instead.
+
+`--undeclared` narrows it to what the lab never rendered, which is exactly
+the set an operator created. That is the list to hand to a mirror before an
+air-gapped or edge deployment, because it is the part nothing else finds.
+
+It reports what has already run, so a workload that has not started yet is
+not in it. That makes this a discovery aid rather than an authority: the
+declared set is what a lab is built from, and this is how you find out what
+the declared set is missing.
 
 ## Mirroring
 

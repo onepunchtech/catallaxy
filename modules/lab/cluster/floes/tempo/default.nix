@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -106,6 +107,26 @@ in
         queryUrl = "http://${host}:3100";
         otlpGrpc = "${host}:4317";
         otlpHttp = "http://${host}:4318";
+      };
+
+      floes.tempo.network = {
+
+        declared = true;
+
+        serves.api.port = 3100;
+
+        serves.otlp.port = 4317;
+
+      };
+
+      floes.tempo.imagesComplete = true;
+
+      floes.tempo.images.tempo = {
+
+        repository = "grafana/tempo";
+
+        tag = "2.7.1";
+
       };
 
       bundles.tempo = {

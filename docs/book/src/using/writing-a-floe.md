@@ -107,6 +107,35 @@ another bundle publishes, and means ready rather than applied.
 Give a bundle a `readyProbe` whenever it mints state something downstream
 waits on. Leave it `null` for purely declarative bundles.
 
+Say what the floe needs on the network too, which a lab renders into policy
+when it turns [`networkPolicies`](../reference/security.md#network-policies)
+on:
+
+```nix
+floes.hello.network = {
+  declared = true;                      # its traffic has been worked out
+
+  serves.http.port = 8080;              # checked against your Service
+  reaches = [ "openbao/api" ];          # a label openbao published
+  egress.internet.ports = [ 443 ];
+};
+```
+
+Name your own ports under `serves`; name other floes' by label. You never
+write another floe's port number, so you cannot write a wrong one, and
+`openbao/api` naming something that does not exist fails evaluation.
+
+Ingress is derived from whoever reaches you, so there is no second half to
+keep in step.
+
+DNS, same-namespace traffic and the API server are already granted, so a
+floe that needs nothing else still sets `declared` and stops there. A check
+fails on any floe that never does.
+
+`cata lab lint` compares all of this against the Services and service
+references in the rendered manifests, so a wrong port or a flow you forgot
+to declare is a build failure rather than a timeout on a cluster.
+
 ## 4. Publish an interface
 
 ```nix
@@ -187,13 +216,13 @@ failed cleanup should not strand the rest of the teardown.
 
 ## Helpers
 
-| Helper                                                          | Reach it as                              | For                     |
-| --------------------------------------------------------------- | ---------------------------------------- | ----------------------- |
-| `mkHttpRoute`, `mkTlsRoute`, `mkCertificate`, `mkGatewayParent` | `k8sHelpers.*`                           | routes and certificates |
-| `wait.mkWaitInitContainer`, `wait.mkWaitJob`                    | `k8sHelpers.wait.*`                      | in-workload waits       |
-| `mkIdempotentJob`, `hashContent`                                | `catallaxy.lib.*`                        | one-shot bootstrap Jobs |
-| `mkNetworkPolicy`, `network`                                    | `catallaxy.lib.*`                        | policies, CIDR maths    |
-| chart derivations                                               | `cataCharts.<name>.{chart,crds,version}` | pinned upstream charts  |
+| Helper                                                                                                     | Reach it as                              | For                     |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------- |
+| `mkGatewayExposure`, `mkGatewayParentFor`, `mkHttpRoute`, `mkTlsRoute`, `mkCertificate`, `mkGatewayParent` | `k8sHelpers.*`                           | routes and certificates |
+| `wait.mkWaitInitContainer`, `wait.mkWaitJob`                                                               | `k8sHelpers.wait.*`                      | in-workload waits       |
+| `mkIdempotentJob`, `hashContent`                                                                           | `catallaxy.lib.*`                        | one-shot bootstrap Jobs |
+| `mkNetworkPolicy`, `network`                                                                               | `catallaxy.lib.*`                        | policies, CIDR maths    |
+| chart derivations                                                                                          | `cataCharts.<name>.{chart,crds,version}` | pinned upstream charts  |
 
 `mkIdempotentJob` exists because a Job's `spec.template` is immutable: a
 one-shot bootstrap Job that changes becomes a permanent sync error. It

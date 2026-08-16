@@ -19,6 +19,7 @@
     ./kaniop
     ./loki
     ./netbird
+    ./openbao
     ./openebs
     ./otel-collector
     ./prometheus

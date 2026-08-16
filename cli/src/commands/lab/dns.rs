@@ -4,11 +4,27 @@ use console::style;
 use crate::config::Context as CataContext;
 use crate::host;
 
-pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> Result<()> {
-    if setup && teardown {
-        bail!("--setup and --teardown ask for opposite things; pass one of them");
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DnsAction {
+    Setup,
+    Teardown,
+    Show,
+}
 
+impl DnsAction {
+    pub fn of(setup: bool, teardown: bool) -> Result<Self> {
+        match (setup, teardown) {
+            (true, true) => {
+                bail!("--setup and --teardown ask for opposite things; pass one of them")
+            }
+            (true, false) => Ok(DnsAction::Setup),
+            (false, true) => Ok(DnsAction::Teardown),
+            (false, false) => Ok(DnsAction::Show),
+        }
+    }
+}
+
+pub async fn dns(ctx: &CataContext, name: &str, action: DnsAction) -> Result<()> {
     let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
     let Some(dns_info) = lab.dns_info.as_ref() else {
@@ -22,12 +38,10 @@ pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> 
     let port = u64::from(dns_info.port);
     let zone = dns_info.zone.as_str();
 
-    if teardown {
-        return host::dns::dns_teardown(zone).await;
-    }
-
-    if setup {
-        return host::dns::dns_setup(host, port, zone).await;
+    match action {
+        DnsAction::Teardown => return host::dns::dns_teardown(zone).await,
+        DnsAction::Setup => return host::dns::dns_setup(host, port, zone).await,
+        DnsAction::Show => {}
     }
 
     println!("{} Lab DNS Configuration", style("catallaxy").cyan().bold());
@@ -38,12 +52,16 @@ pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> 
     println!("To resolve *.{} from your terminal:", zone);
     println!();
 
+    let resolver = host::dns::macos_resolver_file(host, port, zone);
     println!("{}", style("macOS:").bold());
     println!("  sudo mkdir -p /etc/resolver");
     println!(
-        "  echo -e \"nameserver {}\\nport {}\" | sudo tee /etc/resolver/{}",
-        host, port, zone
+        "  echo -e \"nameserver {}\\nport {}\" | sudo tee {}",
+        host, port, resolver.path
     );
+    if resolver.shared {
+        println!("  (one resolver file covers every *.test lab, install it once)");
+    }
     println!();
 
     let drop_in = host::dns::resolved_drop_in(host, port, zone);
@@ -84,4 +102,22 @@ pub async fn dns(ctx: &CataContext, name: &str, setup: bool, teardown: bool) -> 
     println!("  cata lab dns --teardown  # Remove what --setup wrote");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_flag_selects_its_own_action_and_neither_means_show() {
+        assert_eq!(DnsAction::of(true, false).unwrap(), DnsAction::Setup);
+        assert_eq!(DnsAction::of(false, true).unwrap(), DnsAction::Teardown);
+        assert_eq!(DnsAction::of(false, false).unwrap(), DnsAction::Show);
+    }
+
+    #[test]
+    fn asking_for_both_at_once_is_refused_rather_than_silently_picking_one() {
+        let err = DnsAction::of(true, true).unwrap_err().to_string();
+        assert!(err.contains("--setup and --teardown"), "{err}");
+    }
 }

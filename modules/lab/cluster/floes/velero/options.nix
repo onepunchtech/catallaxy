@@ -210,20 +210,24 @@ in
         cpu = mkOption {
           type = types.str;
           default = "100m";
+          description = "CPU the backup controller is guaranteed.";
         };
         memory = mkOption {
           type = types.str;
           default = "128Mi";
+          description = "Memory the backup controller is guaranteed.";
         };
       };
       limits = {
         cpu = mkOption {
           type = types.str;
           default = "1000m";
+          description = "CPU ceiling for the backup controller.";
         };
         memory = mkOption {
           type = types.str;
           default = "512Mi";
+          description = "Memory ceiling. A backup of a large cluster is the case that pushes this.";
         };
       };
     };

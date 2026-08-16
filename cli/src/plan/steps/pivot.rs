@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::domain::BootstrapTool;
@@ -161,25 +161,22 @@ fn migrate_provisioner_state(
                 "{} CAPI pivot: using clusterctl move...",
                 style(">>>").cyan(),
             );
-            let status = std::process::Command::new("clusterctl")
-                .args([
-                    "move",
-                    "--to-kubeconfig-context",
-                    target_ctx,
-                    "--kubeconfig-context",
-                    bootstrap_ctx,
-                ])
-                .status();
-            if let Ok(s) = status
-                && !s.success()
-            {
-                bail!("clusterctl move failed");
+            let status = crate::io::clusterctl::move_all(bootstrap_ctx, target_ctx).context(
+                "could not run `clusterctl move`. CAPI state was not migrated, so the \
+                     bootstrap cluster must not be destroyed. Install clusterctl and re-run.",
+            )?;
+            if !status.success() {
+                bail!(
+                    "`clusterctl move` exited {}. CAPI state was not migrated, so the \
+                     bootstrap cluster has been left in place.",
+                    status.code().unwrap_or(-1),
+                );
             }
         }
         other => {
-            println!(
-                "{} Unknown provisioner '{other}' for pivot",
-                style("Warning:").yellow(),
+            bail!(
+                "pivot does not know how to migrate state for provisioner '{other}', so the \
+                 bootstrap cluster has been left in place. Known provisioners: crossplane, capi.",
             );
         }
     }

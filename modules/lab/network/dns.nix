@@ -184,7 +184,7 @@ in
 
     containerName = mkOption {
       type = types.str;
-      default = "catallaxy-dns";
+      default = "catallaxy-${config.lab.name}-dns";
       description = "Docker container name for the DNS server";
     };
 

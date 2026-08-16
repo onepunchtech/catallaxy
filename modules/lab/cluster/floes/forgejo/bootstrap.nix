@@ -388,7 +388,7 @@ let
     containers = [
       {
         name = "bootstrap";
-        image = cfg.image;
+        image = forgejoCfg.images.bootstrap.ref;
         env = [
           {
             name = "FORGEJO_NS";
@@ -440,34 +440,29 @@ let
     ];
   };
 
-  jobResources =
-    (catalLib.mkIdempotentJob {
-      name = "forgejo-bootstrap";
-      namespace = forgejoCfg.namespace;
-      contentInputs = {
-        inherit script;
-        inherit (cfg)
-          adminUsername
-          botUsername
-          botTokenSecretName
-          image
-          forgejoDeploymentName
-          ;
-        inherit orgsJson reposJson deployKeysJson;
-      };
-      inherit podSpec;
-      argoCDSyncWave = "20";
-    }).resources;
+  bootstrapJob = catalLib.mkIdempotentJob {
+    name = "forgejo-bootstrap";
+    namespace = forgejoCfg.namespace;
+    contentInputs = {
+      inherit script;
+      inherit (cfg)
+        adminUsername
+        botUsername
+        botTokenSecretName
+        forgejoDeploymentName
+        ;
+      image = forgejoCfg.images.bootstrap.ref;
+      inherit orgsJson reposJson deployKeysJson;
+    };
+    inherit podSpec;
+    argoCDSyncWave = "20";
+  };
+
+  jobResources = bootstrapJob.resources;
 in
 {
   options.floes.forgejo.bootstrap = {
     enable = mkEnableOption "forgejo org/repo/deploy-key bootstrap Job";
-
-    image = mkOption {
-      type = types.str;
-      default = "alpine/k8s:1.32.4";
-      description = "Container image with kubectl + curl + jq + openssh.";
-    };
 
     forgejoDeploymentName = mkOption {
       type = types.str;
@@ -529,10 +524,12 @@ in
               description = mkOption {
                 type = types.str;
                 default = "";
+                description = "Description set on the repository.";
               };
               private = mkOption {
                 type = types.bool;
                 default = true;
+                description = "Create the repository private. Public repositories are readable without a token.";
               };
             };
           }
@@ -551,8 +548,14 @@ in
       type = types.attrsOf (
         types.submodule (_: {
           options = {
-            org = mkOption { type = types.str; };
-            repo = mkOption { type = types.str; };
+            org = mkOption {
+              type = types.str;
+              description = "Organisation that owns the repository.";
+            };
+            repo = mkOption {
+              type = types.str;
+              description = "Repository name.";
+            };
             readOnly = mkOption {
               type = types.bool;
               default = true;
@@ -565,8 +568,14 @@ in
             targetSecret = mkOption {
               type = types.submodule {
                 options = {
-                  namespace = mkOption { type = types.str; };
-                  name = mkOption { type = types.str; };
+                  namespace = mkOption {
+                    type = types.str;
+                    description = "Namespace the deploy-key Secret is written to.";
+                  };
+                  name = mkOption {
+                    type = types.str;
+                    description = "Name of that Secret.";
+                  };
                 };
               };
               description = ''
@@ -601,9 +610,14 @@ in
       params = {
         target = config.cluster.name;
         namespace = forgejoCfg.namespace;
-        jobLabelSelector = "app.kubernetes.io/component=forgejo-bootstrap";
+        jobLabelSelector = bootstrapJob.selector;
       };
       description = "Wait for forgejo-bootstrap Job on '${config.cluster.name}'";
+    };
+
+    floes.forgejo.images.bootstrap = {
+      repository = "alpine/k8s";
+      tag = "1.32.4";
     };
 
     floes.forgejo.verify.bootstrap-completed = {

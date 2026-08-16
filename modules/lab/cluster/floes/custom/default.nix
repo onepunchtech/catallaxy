@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -34,22 +35,14 @@ in
       mkRouteResource =
         name: app:
         let
-          parentRef = {
-            name =
-              if app.gateway.tier == "internal" then
-                config.floes.gateway.exports.internalGatewayName
+          parentRef = k8sHelpers.mkGatewayParentFor {
+            inherit (app) gateway;
+            inherit (config.floes.gateway.exports) internalGatewayName;
+            sectionName =
+              if app.gateway.mode == "passthrough" then
+                "tls-passthrough"
               else
-                app.gateway.gatewayRef;
-          }
-          // optionalAttrs (app.gateway.gatewayNamespace != null) {
-            namespace = app.gateway.gatewayNamespace;
-          }
-          // optionalAttrs (app.gateway.mode == "passthrough") {
-            sectionName = "tls-passthrough";
-          }
-
-          // optionalAttrs (app.gateway.mode != "passthrough") {
-            sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+                config.floes.gateway.exports.terminatingListenerName or "https";
           };
         in
         if app.gateway.mode == "passthrough" then
@@ -114,6 +107,11 @@ in
           };
     in
     {
+      # No `imagesComplete` here, and not by oversight. Every other floe
+      # curates a fixed set of software, so it can name every image it
+      # renders. This one renders charts and resources a lab hands it, so the
+      # images are the lab's and only the lab can say what they are. Claiming
+      # completeness would be claiming to know something this floe cannot.
 
       bundles = concatMapAttrs (
         name: app:

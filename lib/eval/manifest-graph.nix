@@ -47,7 +47,7 @@ let
       let
         kind = removePrefix "kind:" body;
       in
-      attrNames (filterAttrs (_: b: (b.kind or null) == kind) bundles)
+      attrNames (filterAttrs (_: b: builtins.elem kind (b.kinds or [ ])) bundles)
     else if hasPrefix "floe:" body then
       let
         floe = removePrefix "floe:" body;

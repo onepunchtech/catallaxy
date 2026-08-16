@@ -6,6 +6,7 @@
   k8sSpecs,
   k8sHelpers,
   contracts,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -53,47 +54,58 @@ in
       host = lib.mkOption {
         type = lib.types.str;
         default = "kanidm.kanidm.svc.cluster.local";
+        description = "In-cluster DNS name of the kanidm Service.";
       };
       namespace = lib.mkOption {
         type = lib.types.str;
         default = "kanidm";
+        description = "Namespace kanidm runs in.";
       };
       port = lib.mkOption {
         type = lib.types.port;
         default = 8443;
+        description = "Port the Service listens on.";
       };
       url = lib.mkOption {
         type = lib.types.str;
         default = "https://kanidm.kanidm.svc.cluster.local:8443";
+        description = "In-cluster URL, for peers that reach kanidm without leaving the cluster.";
       };
       externalUrl = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Public HTTPS URL, or empty when no domain is set.";
       };
 
       externalHost = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Public hostname on its own, for a consumer that needs host and port apart.";
       };
       externalPort = lib.mkOption {
         type = lib.types.port;
         default = 443;
+        description = "Public port.";
       };
       domain = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Public domain, or empty when kanidm is internal only.";
       };
       instanceName = lib.mkOption {
         type = lib.types.str;
         default = "kanidm";
+        description = "Name of the Kanidm custom resource, so a peer can address what the operator created.";
       };
       oidcIssuer = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "OIDC issuer URL a relying party should trust.";
       };
       oidcDiscovery = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "OIDC discovery document URL.";
       };
       authorizationEndpoint = lib.mkOption {
         type = lib.types.str;
@@ -143,15 +155,18 @@ in
       oidcDiscoveryReadyProbe = lib.mkOption {
         type = lib.types.attrs;
         default = { };
+        description = "Probe a consumer can reuse to wait for discovery to answer, rather than restating the URL.";
       };
 
       adminPasswordsReadyProbe = lib.mkOption {
         type = lib.types.attrs;
         default = { };
+        description = "Probe a consumer can reuse to wait for the admin credentials to exist.";
       };
       caSecretRef = lib.mkOption {
         type = lib.types.attrs;
         default = { };
+        description = "Reference to the CA bundle a client needs to trust kanidm's certificate.";
       };
 
       serviceAccounts = lib.mkOption {
@@ -162,10 +177,12 @@ in
               name = lib.mkOption {
                 type = lib.types.str;
                 default = "";
+                description = "Name of the service account.";
               };
               namespace = lib.mkOption {
                 type = lib.types.str;
                 default = "";
+                description = "Namespace it belongs to.";
               };
 
               apiTokenSecrets = lib.mkOption {
@@ -176,26 +193,32 @@ in
                       secretName = lib.mkOption {
                         type = lib.types.str;
                         default = "";
+                        description = "Secret the token was written to.";
                       };
                       namespace = lib.mkOption {
                         type = lib.types.str;
                         default = "";
+                        description = "Namespace that Secret is in.";
                       };
                       purpose = lib.mkOption {
                         type = lib.types.str;
                         default = "readonly";
+                        description = "What the token may do.";
                       };
                     };
                   }
                 );
+                description = "API tokens kanidm minted, keyed by the account they belong to.";
               };
               credentialsSecret = lib.mkOption {
                 type = lib.types.nullOr lib.types.str;
                 default = null;
+                description = "Secret holding the admin credentials, or null when none was minted.";
               };
             };
           }
         );
+        description = "Service accounts kanidm provisioned, so a peer can find one without guessing its name.";
       };
 
       groups = lib.mkOption {
@@ -219,6 +242,7 @@ in
             };
           }
         );
+        description = "Groups kanidm provisioned, so a peer can reference one without restating its name.";
       };
     };
   module =
@@ -242,38 +266,29 @@ in
 
       chartRef = cfg.chart;
 
-      gatewayParentRef = {
-        name =
-          if cfg.gateway.tier == "internal" then
-            config.floes.gateway.exports.internalGatewayName
-          else
-            cfg.gateway.gatewayRef;
-      }
-      // optionalAttrs (cfg.gateway.gatewayNamespace != null) {
-        namespace = cfg.gateway.gatewayNamespace;
-      }
-      // optionalAttrs (cfg.gateway.mode == "passthrough") {
-        sectionName = "tls-passthrough";
-      }
+      listenerName =
+        if cfg.gateway.mode == "passthrough" then
+          "tls-passthrough"
+        else
+          config.floes.gateway.exports.terminatingListenerName or "https";
 
-      // optionalAttrs (cfg.gateway.mode != "passthrough") {
-        sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+      gatewayParentRef = k8sHelpers.mkGatewayParentFor {
+        inherit (cfg) gateway;
+        inherit (config.floes.gateway.exports) internalGatewayName;
+        sectionName = listenerName;
       };
 
       internalTierEnabled =
         cfg.gateway.enable && cfg.gateway.tier == "public" && peers.gateway.internalEnabled;
 
-      internalGatewayParentRef = {
+      # Same Gateway namespace and listener, but pinned to the internal
+      # Gateway rather than chosen by tier: this is the second route a public
+      # kanidm also publishes inside the lab.
+      internalGatewayParentRef = k8sHelpers.mkGatewayParentFor {
+        inherit (cfg) gateway;
+        inherit (config.floes.gateway.exports) internalGatewayName;
         name = config.floes.gateway.exports.internalGatewayName;
-      }
-      // optionalAttrs (cfg.gateway.gatewayNamespace != null) {
-        namespace = cfg.gateway.gatewayNamespace;
-      }
-      // optionalAttrs (cfg.gateway.mode == "passthrough") {
-        sectionName = "tls-passthrough";
-      }
-      // optionalAttrs (cfg.gateway.mode != "passthrough") {
-        sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+        sectionName = listenerName;
       };
 
       domainConfigured = cfg.domain != "" && cfg.domain != "idm.example.com";
@@ -455,7 +470,7 @@ in
           spec = {
             domain = cfg.domain;
 
-            image = "kanidm/server:${cfg.version}";
+            image = cfg.images.server.ref;
             replicaGroups = [
               {
                 name = "default";
@@ -669,9 +684,8 @@ in
         }) cfg.groups;
       };
 
-      ops.init-user = {
+      ops.kanidm.init-user = {
         description = "Reset a kanidm account's password, for a first login";
-        category = "kanidm";
         args = [
           {
             name = "username";
@@ -716,6 +730,24 @@ in
       floes.gateway.internalHostnames =
         if cfg.gateway.enable && domainConfigured then [ cfg.domain ] else [ ];
 
+      floes.kanidm.network = {
+
+        declared = true;
+
+        serves.https.port = 443;
+
+      };
+
+      floes.kanidm.imagesComplete = true;
+
+      floes.kanidm.images.server = {
+
+        repository = "kanidm/server";
+
+        tag = cfg.version;
+
+      };
+
       bundles = {
         kanidm = {
           owner = {
@@ -737,23 +769,87 @@ in
             ++ refs.needs peers.gateway.routing "publicReady"
             ++ refs.needs peers.kaniop.operator "ready";
           provides = [ "kanidm/instance/ready" ];
-          readyProbe = {
-            kind = "condition";
-
-            resource = "kanidm/${cfg.instanceName}";
-            namespace = cfg.namespace;
-            condition = "Available";
-            timeout = "10m";
-          };
+          # The two paths render different things, so they cannot share a
+          # probe. kaniop reconciles a Kanidm CR that reports Available;
+          # the chart renders a StatefulSet, which has no such condition and
+          # would leave the probe waiting out its timeout and failing the
+          # deploy.
+          readyProbe =
+            if kaniopEnabled then
+              {
+                kind = "condition";
+                resource = "kanidm/${cfg.instanceName}";
+                namespace = cfg.namespace;
+                condition = "Available";
+                timeout = "10m";
+              }
+            else
+              {
+                kind = "jsonpath";
+                resource = "statefulset/kanidm";
+                namespace = cfg.namespace;
+                jsonpath = "{.status.readyReplicas}";
+                value = toString cfg.replicas;
+                timeout = "10m";
+              };
 
           helmCharts = optionalAttrs (!kaniopEnabled) {
             kanidm = {
               chart = chartRef;
               releaseName = "kanidm";
               namespace = cfg.namespace;
-              createNamespace = true;
+
+              # The bundle already declares this namespace, and asking the
+              # chart for it too renders a second Namespace with the same
+              # name.
+              createNamespace = false;
+              # The chart hardcodes `kanidm/server:{{ .Chart.AppVersion }}` and
+              # exposes no image value at all, so `version` reached nothing on
+              # this path while working fine on the kaniop one. Patching is the
+              # only way in, and without it the two paths deploy different
+              # versions of kanidm from the same option.
+              kustomize = {
+                enable = true;
+                patches = [
+                  {
+                    # The chart renders a Namespace unconditionally. Catallaxy
+                    # creates lab namespaces itself, labelled for pod security
+                    # and covered by the default-deny, so the chart's copy is a
+                    # second resource with the same name and none of that.
+                    target = {
+                      kind = "Namespace";
+                      name = cfg.namespace;
+                    };
+                    patch = ''
+                      apiVersion: v1
+                      kind: Namespace
+                      metadata:
+                        name: ${cfg.namespace}
+                      $patch: delete
+                    '';
+                  }
+                  {
+                    target = {
+                      kind = "StatefulSet";
+                      name = "kanidm";
+                    };
+                    patch = ''
+                      apiVersion: apps/v1
+                      kind: StatefulSet
+                      metadata:
+                        name: kanidm
+                      spec:
+                        template:
+                          spec:
+                            containers:
+                              - name: kanidm
+                                image: ${cfg.images.server.ref}
+                    '';
+                  }
+                ];
+              };
+
               values = {
-                image.tag = cfg.version;
                 replicas = cfg.replicas;
 
                 kanidm = {

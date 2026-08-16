@@ -6,6 +6,7 @@
   k8sSpecs,
   k8sHelpers,
   contracts,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -44,36 +45,17 @@ in
         concatStringsSep
         ;
 
-      httpRouteResource = optionalAttrs (cfg.gateway.enable && cfg.domain != "") {
-        forgejo-route = k8sHelpers.mkHttpRoute {
-          name = "forgejo";
-          namespace = cfg.namespace;
-          hostname = cfg.domain;
-          gatewayParent = k8sHelpers.mkGatewayParent {
-            name =
-              if cfg.gateway.tier == "internal" then
-                config.floes.gateway.exports.internalGatewayName
-              else
-                cfg.gateway.gatewayRef;
-            namespace = cfg.gateway.gatewayNamespace;
-          };
-          backend = {
-            name = "forgejo-http";
-            port = cfg.server.httpPort;
-          };
-          labels."app.kubernetes.io/managed-by" = "catallaxy";
+      exposureResources = k8sHelpers.mkGatewayExposure {
+        name = "forgejo";
+        namespace = cfg.namespace;
+        inherit (cfg) domain gateway tls;
+        inherit (config.floes.gateway.exports) internalGatewayName;
+        sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+        backend = {
+          name = "forgejo-http";
+          port = cfg.server.httpPort;
         };
-      };
-
-      tlsCertResource = optionalAttrs (cfg.tls.issuerRef != null) {
-        forgejo-tls = k8sHelpers.mkCertificate {
-          name = cfg.tls.secretName;
-          namespace = cfg.namespace;
-          secretName = cfg.tls.secretName;
-          issuerRef = { inherit (cfg.tls.issuerRef) name kind; };
-          dnsNames = [ cfg.domain ];
-          labels."app.kubernetes.io/managed-by" = "catallaxy";
-        };
+        labels."app.kubernetes.io/managed-by" = "catallaxy";
       };
 
       caBundle = peers.cert-manager.caBundle;
@@ -175,6 +157,33 @@ in
         }
       );
 
+      floes.forgejo.network = {
+
+        declared = true;
+
+        serves.http.port = 3000;
+
+        serves.ssh.port = 22;
+
+        egress.internet.ports = [
+          443
+          22
+        ];
+
+      };
+
+      floes.forgejo.imagesComplete = true;
+
+      floes.forgejo.images.server = {
+
+        registry = "codeberg.org";
+
+        repository = "forgejo/forgejo";
+
+        tag = "11.0.14-rootless";
+
+      };
+
       bundles.forgejo = {
 
         owner = {
@@ -182,7 +191,7 @@ in
           steady = "argocd";
         };
 
-        resources = tlsCertResource // httpRouteResource // oidcRbacResources;
+        resources = exposureResources // oidcRbacResources;
 
         helmCharts.forgejo = {
           chart = cfg.chart;

@@ -67,6 +67,8 @@ A working lab plus a worked `mkFloe` example. See
 
 ```
 legacyPackages.<system>.mkLab              evaluate a lab
+legacyPackages.<system>.mkLabChecks        the checks to gate it with
+legacyPackages.<system>.mkLabShell         a dev shell for a lab
 legacyPackages.<system>.labs.<name>        the evaluated config  (cliConfig)
 legacyPackages.<system>.labPackages.<name> the rendered manifests
 legacyPackages.<system>.charts             the pinned chart set
@@ -90,6 +92,24 @@ is not a derivation, and `nix flake check` warns about non-derivations under
 ```nix
 mkLab { modules = [ … ]; } -> { config, options, ... }
 ```
+
+### `mkLabChecks`
+
+```nix
+mkLabChecks {
+  labs = { "<name>" = lab; … };   # labs as returned by mkLab
+  snapshotLabs ? labs;            # which labs get plan snapshots
+  snapshotDir ? null;             # where the committed fixtures live
+} -> { "<name>-eval" = …; "<name>-lint" = …; lab-subnets = …; … }
+```
+
+Catallaxy runs this against its own example labs, so a consumer's
+`nix flake check` gates on what the framework gates on. It is the whole of
+`checks` in the consumer template. See
+[Build Your Own Lab](../start-here/your-own-lab.md).
+
+`snapshotDir` is opt-in because the fixtures have to live somewhere in your
+repository. Without it you get everything except the plan snapshots.
 
 The lab's own configuration hangs off `.config.lab.out.*`:
 
@@ -133,15 +153,15 @@ nix run .#<lab>-ops                                 # per lab with ops commands
 
 `nix flake check` runs all of them.
 
-| Group                  | What                                                                                                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cli`, `formatting`    | the binary builds. Treefmt is clean                                                                                                                         |
-| `docs`, `docs-summary` | the book builds. Generated option pages match the nav                                                                                                       |
-| `template-consumer`    | the scaffold still evaluates against the current API                                                                                                        |
-| pure-Nix fixtures      | `plan-graph`, `manifest-graph`, `manifest-autoedges`, `k8s-helpers`, `wait-helpers`, `drift-lowering`, `mk-floe`, `floe-exports-defaults`, `contracts-oidc` |
-| floe isolation         | `floe-<name>`, one per in-tree floe                                                                                                                         |
-| out-of-tree proof      | `floe-hello`, `floe-consumer`                                                                                                                               |
-| per example lab        | `<lab>-lint`, `<lab>-planner-assertions`, `plan-snapshot-<lab>-{deploy,teardown}`                                                                           |
+| Group                                           | What                                                                                                                                                        |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cli`, `formatting`                             | the binary builds. Treefmt is clean                                                                                                                         |
+| `docs`, `docs-options-nav`, `docs-option-links` | the book builds. Generated option pages match the nav                                                                                                       |
+| `template-consumer`                             | the scaffold still evaluates against the current API                                                                                                        |
+| pure-Nix fixtures                               | `plan-graph`, `manifest-graph`, `manifest-autoedges`, `k8s-helpers`, `wait-helpers`, `drift-lowering`, `mk-floe`, `floe-exports-defaults`, `contracts-oidc` |
+| floe isolation                                  | `floe-<name>`, one per in-tree floe                                                                                                                         |
+| out-of-tree proof                               | `floe-hello`, `floe-consumer`                                                                                                                               |
+| per example lab                                 | `<lab>-lint`, `<lab>-planner-assertions`, `plan-snapshot-<lab>-{deploy,teardown}`                                                                           |
 
 See [How It Works](../understanding/how-it-works.md).
 

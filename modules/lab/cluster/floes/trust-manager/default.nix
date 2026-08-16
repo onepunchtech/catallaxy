@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -41,10 +42,35 @@ in
   module =
     { cfg, peers, ... }:
     let
-
       bundlesReadyToken = "trust-manager/bundles/ready";
     in
     {
+      floes.trust-manager.network = {
+        declared = true;
+      };
+
+      floes.trust-manager.imagesComplete = true;
+
+      floes.trust-manager.images.controller = {
+
+        registry = "quay.io";
+
+        repository = "jetstack/trust-manager";
+
+        tag = "v0.22.1";
+
+      };
+
+      floes.trust-manager.images.defaultCAs = {
+
+        registry = "quay.io";
+
+        repository = "jetstack/trust-pkg-debian-bookworm";
+
+        tag = "20230311-deb12u1.6";
+
+      };
+
       floes.trust-manager.exports.bundleDistribution = {
         readyToken = bundlesReadyToken;
         inherit (cfg) namespace;

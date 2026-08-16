@@ -34,16 +34,9 @@
 
         devShells.default = catallaxy.legacyPackages.${system}.mkLabShell lab;
 
-        checks.lab-eval =
-          let
-            forced = builtins.toJSON lab.config.lab.out.manifests;
-          in
-          nixpkgs.legacyPackages.${system}.runCommand "lab-eval" { } ''
-            cat > /dev/null <<'JSON'
-            ${forced}
-            JSON
-            echo "my-platform evaluated" > $out
-          '';
+        checks = catallaxy.legacyPackages.${system}.mkLabChecks {
+          labs."my-platform" = lab;
+        };
       }
     );
 }

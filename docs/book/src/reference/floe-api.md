@@ -45,7 +45,7 @@ module = { config, lib, pkgs, cfg, peers, k8sHelpers, ... }: { … }
 | `lab`        | the lab-scope allowlist: `name`, `environment`, `contextPrefix`, `clusters`, `dns`, `network`, `registry`, `proxy`, `bgpRouter`, `secrets`, `images`, `cd`, `policy` |
 | `cataCharts` | pinned chart derivations, `<name>.{chart,crds,version}`                                                                                                              |
 | `k8sSpecs`   | generated Kubernetes and CRD schemas                                                                                                                                 |
-| `k8sHelpers` | `mkHttpRoute`, `mkTlsRoute`, `mkCertificate`, `mkGatewayParent`, `wait.*`                                                                                            |
+| `k8sHelpers` | `mkGatewayExposure`, `mkGatewayParentFor`, `mkHttpRoute`, `mkTlsRoute`, `mkCertificate`, `mkGatewayParent`, `wait.*`                                                 |
 | `contracts`  | protocol contracts, currently `contracts.oidc`                                                                                                                       |
 
 `peers.<x>` holds a peer's `exports` only. Reaching past it takes a

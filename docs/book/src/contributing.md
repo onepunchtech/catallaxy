@@ -78,9 +78,12 @@ Parse `nix eval` JSON into a typed struct at the seam
 `serde_json::Value`. A `.pointer("/foo/bar")` chain means a type is missing
 at the edge.
 
-`commands/` returns `anyhow::Result<T>` because the context is what the user
-reads; domain and `io/` use the `CataError` enum so callers can classify.
-Never `unwrap()` data from outside the process.
+Everything returns `anyhow::Result<T>`, with `.context()` saying what was
+being attempted. There was a `CataError` enum for `io/` and domain to let
+callers classify; nothing ever matched on a variant, so it was a message
+prefix and it is gone. Reach for a typed error when a caller has to make a
+decision from it, not before. Never `unwrap()` data from outside the
+process.
 
 ### Nix
 
@@ -111,9 +114,15 @@ and the reason for each one it cannot.
 `gitops.local` takes about two minutes and wants `sudo` once, because
 `publish-manifests` pushes to a git remote only the lab's DNS knows about.
 
-Only one lab can be up at a time: the host services take fixed container
-names and ports, so the script refuses to start when it finds another lab
-running rather than fighting it for port 80.
+Two labs can be up at once, but only if they do not want the same host
+ports. Container names are derived from the lab name, so those never clash;
+the ports are `lab.proxy.httpPort`, `lab.proxy.httpsPort`,
+`lab.dns.hostPort` and `lab.registry.port`, and every example takes the
+defaults. `cata lab up` checks the ports and the docker subnet before it
+starts anything and says which to change.
+
+The e2e script still refuses to run beside another lab, because it asserts
+that nothing survives teardown and cannot tell your containers from its own.
 
 Which labs CI runs is a hand-written list in the matrix at the top of
 `e2e.yml`: `minimal.local` and `homelab.local`, on every trigger. Add a lab

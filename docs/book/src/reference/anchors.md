@@ -54,10 +54,23 @@ let t = catallaxy.lib.planTokens; in
 `t.cluster <name>` and `t.lab` carry the framework's own token names, so a
 typo is an eval error at the definition rather than a silently missing edge.
 
-> `kind:` and `floe:` are implemented in the install resolver but **inert
-> today**: `modules/lab/cluster/out.nix` sets both fields to `null` when it
-> builds the graph, so those anchors match nothing and a hard one fails
-> eval. Use `provides:` or `bundle:`.
+`kind:<Kind>` on the install side matches every bundle that declares a
+resource of that kind, which is how "after every CRD bundle" is said without
+naming each one:
+
+```nix
+after = [ "kind:CustomResourceDefinition" ];
+```
+
+A bundle's kinds come from its `resources` and nothing else. A kind inside a
+`helmCharts` or `yamls` entry is a rendered artefact, not something eval can
+see, so a chart-only bundle answers no `kind:` anchor and is reached by
+`provides:` or `bundle:` instead.
+
+`floe:<name>` matches every bundle a floe declared. Provenance is stamped
+automatically at the point `mkFloe` merges a floe's module output, so a floe
+author never sets it and cannot forget to. A bundle a lab declares directly
+answers no `floe:` anchor.
 
 ## The fail-loud contract
 
@@ -147,11 +160,10 @@ steps.join-the-mesh = {
 
 Which steps those are is a property of the kind, declared as
 `dialsLabEndpoints` in `modules/lab/planner/kinds/`: `publish-manifests`,
-`publish-images`, `apply-root-application`, `bootstrap-forgejo-repos` and
-`cross-cluster-secret-copy`. The planner adds the soft edge, so the
-publisher names one token instead of listing every kind that might dial
-something, and the list stays right when a lab gains a step or an
-environment emits a different set.
+`publish-images`, `apply-root-application` and `bootstrap-forgejo-repos`.
+The planner adds the soft edge, so the publisher names one token instead of
+listing every kind that might dial something, and the list stays right when
+a lab gains a step or an environment emits a different set.
 
 The kinds that bring the lab up are deliberately not on that list. A step
 cannot both make the lab reachable and wait for it to be reachable, so

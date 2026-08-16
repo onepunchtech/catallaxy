@@ -1,0 +1,8 @@
+[001] docker-network-create name=docker-network-create params.gateway=172.30.0.1 params.name=every-floe params.subnet=172.30.0.0/16
+[002] colima-network-route name=colima-network-route params.profile=catallaxy params.subnet=172.30.0.0/16
+[003] create-cluster name=create-cluster-core params.name=core params.provisioner=k3d
+[004] create-cluster name=create-cluster-idm params.name=idm params.provisioner=k3d
+[005] create-cluster name=create-cluster-net params.name=net params.provisioner=k3d
+[006] deploy-manifests name=deploy-manifests-core params.kubeContext=k3d-every-floe-core params.target=core
+[007] deploy-manifests name=deploy-manifests-idm params.kubeContext=k3d-every-floe-idm params.target=idm
+[008] deploy-manifests name=deploy-manifests-net params.kubeContext=k3d-every-floe-net params.target=net

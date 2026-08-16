@@ -33,7 +33,16 @@ let
         _module.args.pkgs = pkgs;
         _module.args.cataCharts = cataCharts;
         _module.args.k8sSpecs = k8sSpecs;
-        _module.args.k8sHelpers = k8sHelpers;
+        # Rebuilt per cluster so the probe images come from lab config. The
+        # one passed in is constructed before any lab exists.
+        _module.args.k8sHelpers = k8sHelpers // {
+          wait = (
+            import ../../lib/util/wait.nix {
+              inherit lib;
+              images = lib.mapAttrs (_: i: i.ref) outerConfig.lab.images.wait;
+            }
+          );
+        };
         _module.args.contracts = contracts;
         _module.args.lab = {
           name = outerConfig.lab.name;
@@ -48,6 +57,8 @@ let
           secrets = outerConfig.lab.secrets;
 
           images = outerConfig.lab.images;
+
+          lint = outerConfig.lab.lint;
 
           cd = outerConfig.lab.cd;
 

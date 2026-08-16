@@ -1,8 +1,7 @@
-use std::process::{Command, Stdio};
-
 use anyhow::Result;
 use console::style;
 
+use crate::io;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>) -> Result<()> {
@@ -18,10 +17,6 @@ pub async fn run(sctx: &StepContext<'_>) -> Result<()> {
         style(">>>").cyan(),
         network_name,
     );
-    let _ = Command::new("docker")
-        .args(["network", "rm", network_name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    io::docker::remove_network(network_name);
     Ok(())
 }

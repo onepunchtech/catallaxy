@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Command;
 
 use serde::Deserialize;
 
@@ -97,28 +96,9 @@ fn run_chainsaw(
     context: &str,
     report_dir: &Path,
 ) -> std::io::Result<std::process::Output> {
-    let kubeconfig = std::env::var("KUBECONFIG").unwrap_or_else(|_| {
-        format!(
-            "{}/.kube/config",
-            std::env::var("HOME").unwrap_or_else(|_| "/root".into())
-        )
-    });
+    let kubeconfig = crate::io::fs::kubeconfig_path();
 
-    Command::new("chainsaw")
-        .args([
-            "test",
-            "--test-dir",
-            &test_dir.display().to_string(),
-            "--cluster",
-            &format!("{cluster}={kubeconfig}:{context}"),
-            "--report-format",
-            "JSON",
-            "--report-path",
-            &report_dir.display().to_string(),
-            "--report-name",
-            "report",
-        ])
-        .output()
+    crate::io::chainsaw::test(test_dir, cluster, &kubeconfig, context, report_dir)
 }
 
 fn report_diagnostics(
@@ -128,7 +108,7 @@ fn report_diagnostics(
     output: &std::process::Output,
 ) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
-    let parsed: Option<Report> = std::fs::read(report_dir.join("report.json"))
+    let parsed: Option<Report> = crate::io::fs::read(report_dir.join("report.json"))
         .ok()
         .and_then(|b| serde_json::from_slice(&b).ok());
 

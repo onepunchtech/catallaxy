@@ -74,10 +74,14 @@ in
       issuerRef = mkOption {
         type = types.submodule {
           options = {
-            name = mkOption { type = types.str; };
+            name = mkOption {
+              type = types.str;
+              description = "Name of the issuer.";
+            };
             kind = mkOption {
               type = types.str;
               default = "ClusterIssuer";
+              description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
             };
           };
         };
@@ -85,6 +89,7 @@ in
           name = "lab-ca";
           kind = "ClusterIssuer";
         };
+        description = "Issuer that signs the gateway's serving certificate.";
       };
 
       domain = mkOption {
@@ -101,10 +106,14 @@ in
         type = types.listOf (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the Secret holding the certificate.";
+              };
               namespace = mkOption {
                 type = types.nullOr types.str;
                 default = null;
+                description = "Namespace it lives in. Null means the gateway's own namespace.";
               };
             };
           }

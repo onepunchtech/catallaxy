@@ -11,6 +11,34 @@ const MAX_ATTEMPTS: u32 = 6;
 
 const BACKOFF: Duration = Duration::from_secs(8);
 
+pub fn diff(kube_context: &str, app_name: &str, manifests_dir: &str) -> Result<bool> {
+    let prefixed_app_name = format!("cata-{}", app_name);
+
+    let mut cmd = Command::new("kapp");
+    cmd.args([
+        "deploy",
+        "--kubeconfig-context",
+        kube_context,
+        "--app",
+        &prefixed_app_name,
+        "--namespace",
+        "default",
+        "--file",
+        manifests_dir,
+        "--diff-run",
+        "--diff-changes",
+        "--diff-exit-status",
+    ]);
+
+    let status = crate::io::process::run_status(&mut cmd)?;
+
+    match status.code() {
+        Some(0) => Ok(false),
+        Some(3) => Ok(true),
+        other => bail!("kapp diff of '{app_name}' exited {}", other.unwrap_or(-1)),
+    }
+}
+
 pub fn deploy(
     kube_context: &str,
     app_name: &str,

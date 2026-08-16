@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use serde::Deserialize;
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone)]
@@ -75,8 +76,8 @@ pub fn load_manifests(dir: &Path) -> Result<Vec<K8sResource>> {
             continue;
         }
 
-        let content =
-            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let content = crate::io::fs::read_to_string(path)
+            .with_context(|| format!("reading {}", path.display()))?;
 
         parse_yaml_documents(&content, path, &mut resources)?;
     }
@@ -205,123 +206,285 @@ fn extract_pod_labels(
     if map.is_empty() { None } else { Some(map) }
 }
 
-fn optional_aware_ref(m: &serde_yaml::Mapping, key: &str) -> Option<String> {
-    let r = m
-        .get(serde_yaml::Value::String(key.into()))
-        .and_then(|r| r.as_mapping())?;
-    let optional = r
-        .get(serde_yaml::Value::String("optional".into()))
+fn field<'a>(m: &'a serde_yaml::Mapping, key: &str) -> Option<&'a serde_yaml::Value> {
+    m.get(serde_yaml::Value::String(key.into()))
+}
+
+fn submap<'a>(m: &'a serde_yaml::Mapping, key: &str) -> Option<&'a serde_yaml::Mapping> {
+    field(m, key)?.as_mapping()
+}
+
+fn subseq<'a>(m: &'a serde_yaml::Mapping, key: &str) -> Option<&'a serde_yaml::Sequence> {
+    field(m, key)?.as_sequence()
+}
+
+fn is_optional(m: &serde_yaml::Mapping) -> bool {
+    field(m, "optional")
         .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    if optional {
+        .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefKind {
+    ConfigMap,
+    Secret,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Ref {
+    kind: RefKind,
+    name: String,
+}
+
+fn required_ref(m: &serde_yaml::Mapping, key: &str, name_key: &str, kind: RefKind) -> Option<Ref> {
+    let r = submap(m, key)?;
+    if is_optional(r) {
         return None;
     }
-    get_str(r, "name")
+    get_str(r, name_key).map(|name| Ref { kind, name })
+}
+
+fn pod_spec_of(mapping: &serde_yaml::Mapping) -> Option<&serde_yaml::Mapping> {
+    let spec = field(mapping, "spec")?;
+    let nested = spec
+        .as_mapping()
+        .and_then(|s| submap(s, "template"))
+        .and_then(|t| field(t, "spec"));
+
+    nested.or(Some(spec))?.as_mapping()
+}
+
+fn volume_refs(pod: &serde_yaml::Mapping) -> Vec<Ref> {
+    let Some(volumes) = subseq(pod, "volumes") else {
+        return Vec::new();
+    };
+
+    volumes
+        .iter()
+        .filter_map(|v| v.as_mapping())
+        .flat_map(|vol| {
+            [
+                required_ref(vol, "configMap", "name", RefKind::ConfigMap),
+                required_ref(vol, "secret", "secretName", RefKind::Secret),
+            ]
+        })
+        .flatten()
+        .collect()
+}
+
+fn env_from_refs(container: &serde_yaml::Mapping) -> Vec<Ref> {
+    refs_under(container, "envFrom", "configMapRef", "secretRef", |m| {
+        Some(m)
+    })
+}
+
+fn env_refs(container: &serde_yaml::Mapping) -> Vec<Ref> {
+    refs_under(container, "env", "configMapKeyRef", "secretKeyRef", |m| {
+        submap(m, "valueFrom")
+    })
+}
+
+fn refs_under<'a>(
+    container: &'a serde_yaml::Mapping,
+    list_key: &str,
+    cm_key: &str,
+    secret_key: &str,
+    source: impl Fn(&'a serde_yaml::Mapping) -> Option<&'a serde_yaml::Mapping>,
+) -> Vec<Ref> {
+    let Some(entries) = subseq(container, list_key) else {
+        return Vec::new();
+    };
+
+    entries
+        .iter()
+        .filter_map(|e| e.as_mapping())
+        .filter_map(source)
+        .flat_map(|m| {
+            [
+                required_ref(m, cm_key, "name", RefKind::ConfigMap),
+                required_ref(m, secret_key, "name", RefKind::Secret),
+            ]
+        })
+        .flatten()
+        .collect()
+}
+
+fn container_refs(pod: &serde_yaml::Mapping) -> Vec<Ref> {
+    ["containers", "initContainers"]
+        .into_iter()
+        .filter_map(|key| subseq(pod, key))
+        .flatten()
+        .filter_map(|c| c.as_mapping())
+        .flat_map(|c| {
+            let mut refs = env_from_refs(c);
+            refs.extend(env_refs(c));
+            refs
+        })
+        .collect()
 }
 
 fn extract_refs(mapping: &serde_yaml::Mapping) -> (Vec<String>, Vec<String>) {
-    let mut cm_refs = Vec::new();
-    let mut secret_refs = Vec::new();
-
-    let spec = match mapping.get(serde_yaml::Value::String("spec".into())) {
-        Some(v) => v,
-        None => return (cm_refs, secret_refs),
+    let Some(pod) = pod_spec_of(mapping) else {
+        return (Vec::new(), Vec::new());
     };
 
-    let pod_spec = spec
-        .as_mapping()
-        .and_then(|s| s.get(serde_yaml::Value::String("template".into())))
-        .and_then(|t| t.as_mapping())
-        .and_then(|t| t.get(serde_yaml::Value::String("spec".into())))
-        .or(Some(spec));
+    let mut refs = volume_refs(pod);
+    refs.extend(container_refs(pod));
 
-    if let Some(pod_spec) = pod_spec.and_then(|s| s.as_mapping()) {
-        if let Some(volumes) = pod_spec
-            .get(serde_yaml::Value::String("volumes".into()))
-            .and_then(|v| v.as_sequence())
-        {
-            for vol in volumes {
-                if let Some(m) = vol.as_mapping() {
-                    if let Some(cm) = m
-                        .get(serde_yaml::Value::String("configMap".into()))
-                        .and_then(|cm| cm.as_mapping())
-                    {
-                        let optional = cm
-                            .get(serde_yaml::Value::String("optional".into()))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        if !optional && let Some(name) = get_str(cm, "name") {
-                            cm_refs.push(name);
-                        }
-                    }
-                    if let Some(secret) = m
-                        .get(serde_yaml::Value::String("secret".into()))
-                        .and_then(|s| s.as_mapping())
-                    {
-                        let optional = secret
-                            .get(serde_yaml::Value::String("optional".into()))
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        if !optional && let Some(name) = get_str(secret, "secretName") {
-                            secret_refs.push(name);
-                        }
-                    }
-                }
-            }
-        }
+    let (configmaps, secrets): (Vec<Ref>, Vec<Ref>) =
+        refs.into_iter().partition(|r| r.kind == RefKind::ConfigMap);
 
-        for container_key in &["containers", "initContainers"] {
-            if let Some(containers) = pod_spec
-                .get(serde_yaml::Value::String((*container_key).into()))
-                .and_then(|c| c.as_sequence())
-            {
-                for container in containers {
-                    let container = match container.as_mapping() {
-                        Some(m) => m,
-                        None => continue,
-                    };
-
-                    if let Some(env_from) = container
-                        .get(serde_yaml::Value::String("envFrom".into()))
-                        .and_then(|e| e.as_sequence())
-                    {
-                        for ef in env_from {
-                            if let Some(m) = ef.as_mapping() {
-                                if let Some(name) = optional_aware_ref(m, "configMapRef") {
-                                    cm_refs.push(name);
-                                }
-                                if let Some(name) = optional_aware_ref(m, "secretRef") {
-                                    secret_refs.push(name);
-                                }
-                            }
-                        }
-                    }
-
-                    if let Some(env) = container
-                        .get(serde_yaml::Value::String("env".into()))
-                        .and_then(|e| e.as_sequence())
-                    {
-                        for e in env {
-                            if let Some(vf) = e
-                                .as_mapping()
-                                .and_then(|m| m.get(serde_yaml::Value::String("valueFrom".into())))
-                                .and_then(|v| v.as_mapping())
-                            {
-                                if let Some(name) = optional_aware_ref(vf, "configMapKeyRef") {
-                                    cm_refs.push(name);
-                                }
-                                if let Some(name) = optional_aware_ref(vf, "secretKeyRef") {
-                                    secret_refs.push(name);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    (cm_refs, secret_refs)
+    (
+        configmaps.into_iter().map(|r| r.name).collect(),
+        secrets.into_iter().map(|r| r.name).collect(),
+    )
 }
 
-use serde::Deserialize;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn refs_of(yaml: &str) -> (Vec<String>, Vec<String>) {
+        let value: serde_yaml::Value = serde_yaml::from_str(yaml).expect("fixture parses");
+        extract_refs(value.as_mapping().expect("fixture is a mapping"))
+    }
+
+    fn in_pod(pod_spec: &str) -> String {
+        let indented: String = pod_spec.lines().map(|l| format!("      {l}\n")).collect();
+        format!("spec:\n  template:\n    spec:\n{indented}")
+    }
+
+    #[test]
+    fn a_resource_with_no_spec_references_nothing() {
+        assert_eq!(refs_of("kind: ConfigMap\n"), (vec![], vec![]));
+    }
+
+    #[test]
+    fn volumes_contribute_configmaps_and_secrets() {
+        let (cms, secrets) = refs_of(&in_pod(
+            r#"volumes:
+  - configMap:
+      name: cm-one
+  - secret:
+      secretName: sec-one"#,
+        ));
+
+        assert_eq!(cms, vec!["cm-one"]);
+        assert_eq!(secrets, vec!["sec-one"]);
+    }
+
+    #[test]
+    fn a_secret_volume_is_named_by_secret_name_not_name() {
+        let (_, secrets) = refs_of(&in_pod(
+            r#"volumes:
+  - secret:
+      name: ignored
+      secretName: the-real-one"#,
+        ));
+
+        assert_eq!(secrets, vec!["the-real-one"]);
+    }
+
+    #[test]
+    fn an_optional_reference_is_not_a_reference() {
+        let (cms, secrets) = refs_of(&in_pod(
+            r#"volumes:
+  - configMap:
+      name: maybe-cm
+      optional: true
+  - secret:
+      secretName: maybe-sec
+      optional: true"#,
+        ));
+
+        assert!(cms.is_empty(), "{cms:?}");
+        assert!(secrets.is_empty(), "{secrets:?}");
+    }
+
+    #[test]
+    fn env_from_and_env_value_from_both_count() {
+        let (cms, secrets) = refs_of(&in_pod(
+            r#"containers:
+  - name: c
+    envFrom:
+      - configMapRef:
+          name: from-cm
+      - secretRef:
+          name: from-sec
+    env:
+      - name: A
+        valueFrom:
+          configMapKeyRef:
+            name: key-cm
+      - name: B
+        valueFrom:
+          secretKeyRef:
+            name: key-sec"#,
+        ));
+
+        assert_eq!(cms, vec!["from-cm", "key-cm"]);
+        assert_eq!(secrets, vec!["from-sec", "key-sec"]);
+    }
+
+    #[test]
+    fn init_containers_are_searched_after_containers() {
+        let (cms, _) = refs_of(&in_pod(
+            r#"containers:
+  - name: main
+    envFrom:
+      - configMapRef:
+          name: main-cm
+initContainers:
+  - name: init
+    envFrom:
+      - configMapRef:
+          name: init-cm"#,
+        ));
+
+        assert_eq!(cms, vec!["main-cm", "init-cm"]);
+    }
+
+    #[test]
+    fn a_bare_pod_spec_is_read_without_a_template() {
+        let (cms, _) = refs_of(
+            r#"spec:
+  containers:
+    - name: c
+      envFrom:
+        - configMapRef:
+            name: bare"#,
+        );
+
+        assert_eq!(cms, vec!["bare"]);
+    }
+
+    #[test]
+    fn volumes_come_before_container_references() {
+        let (cms, _) = refs_of(&in_pod(
+            r#"volumes:
+  - configMap:
+      name: from-volume
+containers:
+  - name: c
+    envFrom:
+      - configMapRef:
+          name: from-container"#,
+        ));
+
+        assert_eq!(cms, vec!["from-volume", "from-container"]);
+    }
+
+    #[test]
+    fn an_entry_that_is_not_a_mapping_is_skipped_rather_than_fatal() {
+        let (cms, _) = refs_of(&in_pod(
+            r#"containers:
+  - "not-a-mapping"
+  - name: c
+    envFrom:
+      - configMapRef:
+          name: survives"#,
+        ));
+
+        assert_eq!(cms, vec!["survives"]);
+    }
+}

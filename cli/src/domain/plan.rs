@@ -9,6 +9,14 @@ pub enum Direction {
 }
 
 impl Direction {
+    pub fn of_teardown_flag(teardown: bool) -> Self {
+        if teardown {
+            Direction::Teardown
+        } else {
+            Direction::Deploy
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Direction::Deploy => "deployment",
@@ -177,7 +185,6 @@ pub enum StepParams {
     CreateCluster(CreateClusterParams),
     EnsureSecrets(EnsureSecretsParams),
     DeployManifests(DeployManifestsParams),
-    CrossClusterSecretCopy(CrossClusterSecretCopyParams),
     WaitForResources(WaitForResourcesParams),
     SyncKubeconfig(SyncKubeconfigParams),
     Pivot(PivotParams),
@@ -276,24 +283,6 @@ pub struct DeployManifestsParams {
     pub bootstrap: bool,
     #[serde(default)]
     pub kube_context: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CrossClusterSecretCopyParams {
-    pub name: String,
-    pub source_cluster: String,
-    pub source_namespace: String,
-    pub source_secret: String,
-    pub target_cluster: String,
-    pub target_namespace: String,
-    pub target_secret: String,
-    #[serde(default)]
-    pub secret_type: Option<String>,
-    #[serde(default)]
-    pub source_context: Option<String>,
-    #[serde(default)]
-    pub target_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -485,10 +474,6 @@ impl StepParams {
         match self {
             StepParams::CreateCluster(p) => vec![("name", &p.name)],
             StepParams::DeployManifests(p) => vec![("target", &p.target)],
-            StepParams::CrossClusterSecretCopy(p) => vec![
-                ("sourceCluster", &p.source_cluster),
-                ("targetCluster", &p.target_cluster),
-            ],
             StepParams::WaitForResources(p) => vec![("target", &p.target)],
             StepParams::SyncKubeconfig(p) => vec![("target", &p.target)],
             StepParams::Pivot(p) => vec![("cluster", &p.cluster)],
@@ -541,7 +526,6 @@ impl StepParams {
             StepParams::CreateCluster(_) => StepKind::CreateCluster,
             StepParams::EnsureSecrets(_) => StepKind::EnsureSecrets,
             StepParams::DeployManifests(_) => StepKind::DeployManifests,
-            StepParams::CrossClusterSecretCopy(_) => StepKind::CrossClusterSecretCopy,
             StepParams::WaitForResources(_) => StepKind::WaitForResources,
             StepParams::SyncKubeconfig(_) => StepKind::SyncKubeconfig,
             StepParams::Pivot(_) => StepKind::Pivot,
@@ -683,24 +667,23 @@ mod tests {
 
     #[test]
     fn the_wire_format_did_not_change_when_the_variants_became_newtypes() {
+        // camelCase on the wire, snake_case in Rust, and defaults for the
+        // fields a plan omits. Any kind with a mix of both would do; this one
+        // is here because it has required and optional fields together.
         let step = idempotent(
-            "cross-cluster-secret-copy",
+            "wait-for-resources",
             serde_json::json!({
-                "name": "copy-ca",
-                "sourceCluster": "mgmt",
-                "sourceNamespace": "cert-manager",
-                "sourceSecret": "lab-ca",
-                "targetCluster": "apps",
-                "targetNamespace": "cert-manager",
-                "targetSecret": "lab-ca",
+                "target": "core",
+                "waitTimeoutSeconds": 120,
+                "kubeContext": "k3d-core",
             }),
         );
         match step.params {
-            StepParams::CrossClusterSecretCopy(ref p) => {
-                assert_eq!(p.name, "copy-ca");
-                assert_eq!(p.source_cluster, "mgmt");
-                assert_eq!(p.target_secret, "lab-ca");
-                assert_eq!(p.secret_type, None);
+            StepParams::WaitForResources(ref p) => {
+                assert_eq!(p.target, "core");
+                assert_eq!(p.wait_timeout_seconds, Some(120));
+                assert_eq!(p.kube_context.as_deref(), Some("k3d-core"));
+                assert!(p.resources.is_empty(), "an omitted list defaults empty");
             }
             _ => panic!("wrong variant"),
         }

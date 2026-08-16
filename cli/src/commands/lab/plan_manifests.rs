@@ -1,7 +1,5 @@
-use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use console::style;
@@ -44,7 +42,7 @@ fn load_waves(
     from_file: Option<&Path>,
 ) -> Result<Vec<Vec<Value>>> {
     if let Some(path) = from_file {
-        let raw = fs::read_to_string(path)
+        let raw = crate::io::fs::read_to_string(path)
             .with_context(|| format!("reading manifest-waves file {}", path.display()))?;
         let v: Value = serde_json::from_str(&raw)
             .with_context(|| format!("parsing JSON from {}", path.display()))?;
@@ -244,7 +242,7 @@ fn normalize_store_paths(s: &str) -> String {
 }
 
 fn run_diff(actual: &str, baseline_path: &Path) -> Result<bool> {
-    let baseline = fs::read_to_string(baseline_path)
+    let baseline = crate::io::fs::read_to_string(baseline_path)
         .with_context(|| format!("reading baseline {}", baseline_path.display()))?;
     if actual == baseline {
         eprintln!(
@@ -258,11 +256,7 @@ fn run_diff(actual: &str, baseline_path: &Path) -> Result<bool> {
         .context("writing actual waves to temp file")?;
     tmp.flush().ok();
 
-    let baseline_str = baseline_path.to_string_lossy();
-    let tmp_str = tmp.path().to_string_lossy();
-    let status = Command::new("diff")
-        .args(["-u", &baseline_str, &tmp_str])
-        .status();
+    let status = crate::io::diff::unified(baseline_path, tmp.path());
     if let Err(e) = status {
         eprintln!(
             "{}: `diff -u` failed ({e}); waves differ from baseline",

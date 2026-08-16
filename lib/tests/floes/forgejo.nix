@@ -10,21 +10,7 @@ let
       cataCharts.forgejo = {
         chart = pkgs.emptyDirectory;
       };
-      k8sHelpers = {
-        mkGatewayParent = args: args;
-        mkHttpRoute = args: {
-          apiVersion = "gateway.networking.k8s.io/v1";
-          kind = "HTTPRoute";
-          inherit (args) name namespace;
-          spec = args;
-        };
-        mkCertificate = args: {
-          apiVersion = "cert-manager.io/v1";
-          kind = "Certificate";
-          inherit (args) name namespace;
-          spec = args;
-        };
-      };
+      k8sHelpers = import ../../floe/stub-k8s-helpers.nix { inherit lib; };
     };
   };
 
@@ -160,8 +146,12 @@ lib.runTests {
     expected = true;
   };
 
+  # Reads spec.parentRefs, which is the field an HTTPRoute actually has.
+  # It used to read spec.gatewayParent, a shape only the stub k8sHelpers
+  # produced; the stub is the real helpers now, so the assertion moved to the
+  # rendering a lab gets.
   testInternalRouteUsesInternalGateway = {
-    expr = if internalRoute == null then null else internalRoute.spec.gatewayParent.name;
+    expr = if internalRoute == null then null else (builtins.head internalRoute.spec.parentRefs).name;
     expected = "stub-internal";
   };
 

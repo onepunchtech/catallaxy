@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -21,18 +22,22 @@ in
       namespace = lib.mkOption {
         type = lib.types.str;
         default = "otel-collector";
+        description = "Namespace the collector runs in.";
       };
       host = lib.mkOption {
         type = lib.types.str;
         default = "otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local";
+        description = "In-cluster DNS name of the gateway Service.";
       };
       otlpGrpc = lib.mkOption {
         type = lib.types.str;
         default = "otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local:4317";
+        description = "host:port a peer sends OTLP gRPC to.";
       };
       otlpHttp = lib.mkOption {
         type = lib.types.str;
         default = "http://otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local:4318";
+        description = "Full URL a peer sends OTLP HTTP to.";
       };
     };
   module =
@@ -458,6 +463,36 @@ in
           '';
         }
       ];
+
+      floes.otel-collector.network = {
+
+        declared = true;
+
+        serves.otlp.port = 4317;
+
+        serves.otlpHttp.port = 4318;
+
+        reaches = [
+
+          "loki/api"
+
+          "tempo/otlp"
+
+          "prometheus/api"
+
+        ];
+
+      };
+
+      floes.otel-collector.imagesComplete = true;
+
+      floes.otel-collector.images.collector = {
+
+        repository = "otel/opentelemetry-collector-contrib";
+
+        tag = "0.152.0";
+
+      };
 
       bundles.otel-collector = {
         helmCharts = (

@@ -25,8 +25,6 @@ pub struct LabMetadata {
     #[serde(default)]
     pub images: ImagePolicy,
     #[serde(default)]
-    pub lint: LintConfig,
-    #[serde(default)]
     pub assertions: Vec<AssertionMetadata>,
     #[serde(default)]
     pub warnings: Vec<String>,
@@ -83,6 +81,10 @@ pub struct ImagePolicy {
 pub struct ClusterMetadata {
     #[serde(default)]
     pub projections: HashMap<String, ProjectionMetadata>,
+    /// A floe's check applies only where that floe is enabled, so the set is
+    /// per cluster rather than one flat lab-wide list.
+    #[serde(default)]
+    pub lint: LintConfig,
     #[serde(default)]
     pub assertions: Vec<AssertionMetadata>,
     #[serde(default)]
@@ -90,7 +92,41 @@ pub struct ClusterMetadata {
     #[serde(default)]
     pub runtime_materialised: Vec<String>,
     #[serde(default)]
-    pub copied_in_secrets: Vec<String>,
+    pub network_policies: NetworkPolicyMetadata,
+}
+
+/// What the floes on a cluster said they serve.
+///
+/// Only the serving half: that is where a human writes a port number, so it
+/// is the half worth checking against the Services the cluster renders.
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkPolicyMetadata {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub floes: HashMap<String, FloeNetworkMetadata>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FloeNetworkMetadata {
+    #[serde(default)]
+    pub namespaces: Vec<String>,
+    #[serde(default)]
+    pub serves: HashMap<String, ServedPort>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServedPort {
+    pub port: serde_json::Value,
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+}
+
+fn default_protocol() -> String {
+    "TCP".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,7 +145,7 @@ pub struct AssertionMetadata {
 
 pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
     let metadata_path = package_path.join("metadata.json");
-    let metadata_content = std::fs::read_to_string(&metadata_path)
+    let metadata_content = crate::io::fs::read_to_string(&metadata_path)
         .with_context(|| format!("reading {}", metadata_path.display()))?;
     let metadata: LabMetadata = serde_json::from_str(&metadata_content)
         .with_context(|| format!("parsing {}", metadata_path.display()))?;
@@ -162,9 +198,12 @@ pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
         let mut projection_names: HashSet<String> = cluster_meta
             .map(|c| c.projections.keys().cloned().collect())
             .unwrap_or_default();
-        if let Some(cm) = cluster_meta {
-            projection_names.extend(cm.copied_in_secrets.iter().cloned());
-        }
+
+        // An ExternalSecret produces a Secret that no manifest declares, the
+        // same way a projection does. Without this the checks report the
+        // Secret as unproduced and a probe waiting on it as waiting on an
+        // ExternalSecret, which is true and unhelpful.
+        projection_names.extend(external_secret_targets(&resources));
 
         let lab_ns = metadata
             .lab_namespaces
@@ -172,10 +211,12 @@ pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
+        let wave_meta = crate::io::ssa::read_wave_meta(&manifest_dir);
+
         let ctx = rules::CheckContext {
             resources: &resources,
             cluster: cluster_name,
-            manifest_dir: &manifest_dir,
+            wave_meta: wave_meta.as_ref(),
             prefix: &metadata.prefix,
             lab_namespaces: lab_ns,
             projection_names: &projection_names,
@@ -189,14 +230,16 @@ pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
             .flat_map(|r| r.check(&ctx))
             .collect();
 
-        let lint_dir = package_path.join("lint");
+        let lint_dir = package_path.join("lint").join(cluster_name);
         if lint_dir.exists() && !skip.contains(&"custom".to_string()) {
             let manifest_dir = package_path.join("manifests").join(cluster_name);
+            let empty = LintConfig::default();
+            let checks = cluster_meta.map_or(&empty.checks, |c| &c.lint.checks);
             cluster_diags.extend(run_custom_checks(
                 &lint_dir,
                 &manifest_dir,
                 cluster_name,
-                &metadata.lint.checks,
+                checks,
             ));
         }
 
@@ -232,7 +275,7 @@ fn run_custom_checks(
     checks: &HashMap<String, CustomCheck>,
 ) -> Vec<Diagnostic> {
     let mut diags = Vec::new();
-    let entries = match std::fs::read_dir(lint_dir) {
+    let entries = match crate::io::fs::read_dir(lint_dir) {
         Ok(e) => e,
         Err(_) => return diags,
     };
@@ -249,10 +292,12 @@ fn run_custom_checks(
 
         match scope {
             "per-cluster" => {
-                let out = spawn_check(
-                    std::process::Command::new(&script)
-                        .env("CLUSTER", cluster_name)
-                        .env("MANIFEST_DIR", manifest_dir),
+                let out = crate::io::check_script::run(
+                    &script,
+                    &[
+                        ("CLUSTER", cluster_name.as_ref()),
+                        ("MANIFEST_DIR", manifest_dir.as_ref()),
+                    ],
                 );
                 diags.extend(interpret_output(
                     out,
@@ -275,10 +320,12 @@ fn run_custom_checks(
                         continue;
                     }
                     let yaml_file = e.into_path();
-                    let out = spawn_check(
-                        std::process::Command::new(&script)
-                            .env("FILE", &yaml_file)
-                            .env("CLUSTER", cluster_name),
+                    let out = crate::io::check_script::run(
+                        &script,
+                        &[
+                            ("FILE", yaml_file.as_ref()),
+                            ("CLUSTER", cluster_name.as_ref()),
+                        ],
                     );
                     diags.extend(interpret_output(
                         out,
@@ -294,20 +341,6 @@ fn run_custom_checks(
         }
     }
     diags
-}
-
-fn spawn_check(cmd: &mut std::process::Command) -> std::io::Result<std::process::Output> {
-    const ETXTBSY: i32 = 26;
-    const ATTEMPTS: usize = 5;
-    for attempt in 1..=ATTEMPTS {
-        match cmd.output() {
-            Err(e) if e.raw_os_error() == Some(ETXTBSY) && attempt < ATTEMPTS => {
-                std::thread::sleep(std::time::Duration::from_millis(10 * attempt as u64));
-            }
-            other => return other,
-        }
-    }
-    unreachable!("loop returns on the final attempt")
 }
 
 fn parse_severity(s: &str) -> Severity {
@@ -398,51 +431,83 @@ fn interpret_output(
 }
 
 fn print_report(diagnostics: &[Diagnostic]) {
+    print!("{}", render_report(diagnostics));
+}
+
+/// Secret names an ExternalSecret will create. `spec.target.name` when set,
+/// otherwise the ExternalSecret's own name, which is what external-secrets
+/// falls back to.
+fn external_secret_targets(resources: &[manifest::K8sResource]) -> HashSet<String> {
+    resources
+        .iter()
+        .filter(|r| r.kind == "ExternalSecret")
+        .map(|r| {
+            r.raw
+                .get("spec")
+                .and_then(|s| s.get("target"))
+                .and_then(|t| t.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or(&r.name)
+                .to_string()
+        })
+        .collect()
+}
+
+fn render_diagnostic(d: &Diagnostic) -> String {
+    let severity = match d.severity {
+        Severity::Error => style("ERROR").red().bold(),
+        Severity::Warning => style("WARN").yellow(),
+    };
+    let file = d.file.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+    format!(
+        "    {} [{}] {}: {} ({})\n",
+        severity, d.check, d.resource, d.message, file,
+    )
+}
+
+fn render_summary(errors: usize, warnings: usize) -> String {
+    if errors > 0 {
+        format!(
+            "  {} {errors} error(s), {warnings} warning(s)\n",
+            style("\u{2717}").red().bold(),
+        )
+    } else {
+        format!("  {} {warnings} warning(s)\n", style("\u{26a0}").yellow())
+    }
+}
+
+pub fn render_report(diagnostics: &[Diagnostic]) -> String {
     if diagnostics.is_empty() {
-        println!("  {} All checks passed", style("✓").green().bold(),);
-        return;
+        return format!("  {} All checks passed\n", style("\u{2713}").green().bold());
     }
 
-    let errors = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    let warnings = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Warning)
-        .count();
-
-    let mut by_cluster: HashMap<&str, Vec<&Diagnostic>> = HashMap::new();
+    // Ordered, so two runs over the same lab print the same report.
+    let mut by_cluster: std::collections::BTreeMap<&str, Vec<&Diagnostic>> =
+        std::collections::BTreeMap::new();
     for d in diagnostics {
         by_cluster.entry(&d.cluster).or_default().push(d);
     }
 
+    let mut out = String::new();
     for (cluster, diags) in &by_cluster {
-        println!("  {}:", style(*cluster).bold());
+        out.push_str(&format!("  {}:\n", style(*cluster).bold()));
         for d in diags {
-            let severity_str = match d.severity {
-                Severity::Error => style("ERROR").red().bold(),
-                Severity::Warning => style("WARN").yellow(),
-            };
-            let file = d.file.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-            println!(
-                "    {} [{}] {}: {} ({})",
-                severity_str, d.check, d.resource, d.message, file,
-            );
+            out.push_str(&render_diagnostic(d));
         }
     }
 
-    println!();
-    if errors > 0 {
-        println!(
-            "  {} {} error(s), {} warning(s)",
-            style("✗").red().bold(),
-            errors,
-            warnings,
-        );
-    } else {
-        println!("  {} {} warning(s)", style("⚠").yellow(), warnings,);
-    }
+    out.push('\n');
+    out.push_str(&render_summary(
+        diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .count(),
+        diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .count(),
+    ));
+    out
 }
 
 #[cfg(test)]
@@ -455,19 +520,19 @@ mod tests {
 
     fn write_script(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
-        fs::write(&path, format!("#!/bin/sh\n{}\n", body)).unwrap();
-        let mut perms = fs::metadata(&path).unwrap().permissions();
+        crate::io::fs::write(&path, format!("#!/bin/sh\n{}\n", body)).unwrap();
+        let mut perms = crate::io::fs::metadata(&path).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&path, perms).unwrap();
         path
     }
 
     fn tmpdir(subpath: &str) -> PathBuf {
-        let base = std::env::var("TMPDIR").unwrap_or_else(|_| "/tmp".into());
+        let base = crate::io::fs::temp_root();
         let dir =
             PathBuf::from(base).join(format!("cata-lint-{}-{}", subpath, std::process::id(),));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let _ = crate::io::fs::remove_dir_all(&dir);
+        crate::io::fs::create_dir_all(&dir).unwrap();
         dir
     }
 
@@ -485,10 +550,10 @@ mod tests {
         let root = tmpdir("per-cluster");
         let lint_dir = root.join("lint");
         let manifest_dir = root.join("manifests");
-        fs::create_dir_all(&lint_dir).unwrap();
-        fs::create_dir_all(&manifest_dir).unwrap();
-        fs::write(manifest_dir.join("a.yaml"), "kind: X").unwrap();
-        fs::write(manifest_dir.join("b.yaml"), "kind: Y").unwrap();
+        crate::io::fs::create_dir_all(&lint_dir).unwrap();
+        crate::io::fs::create_dir_all(&manifest_dir).unwrap();
+        crate::io::fs::write(manifest_dir.join("a.yaml"), "kind: X").unwrap();
+        crate::io::fs::write(manifest_dir.join("b.yaml"), "kind: Y").unwrap();
 
         write_script(&lint_dir, "count", "echo boom; exit 1");
         let mut checks = HashMap::new();
@@ -508,10 +573,10 @@ mod tests {
         let root = tmpdir("per-file");
         let lint_dir = root.join("lint");
         let manifest_dir = root.join("manifests");
-        fs::create_dir_all(&lint_dir).unwrap();
-        fs::create_dir_all(&manifest_dir).unwrap();
-        fs::write(manifest_dir.join("a.yaml"), "kind: X").unwrap();
-        fs::write(manifest_dir.join("b.yaml"), "kind: Y").unwrap();
+        crate::io::fs::create_dir_all(&lint_dir).unwrap();
+        crate::io::fs::create_dir_all(&manifest_dir).unwrap();
+        crate::io::fs::write(manifest_dir.join("a.yaml"), "kind: X").unwrap();
+        crate::io::fs::write(manifest_dir.join("b.yaml"), "kind: Y").unwrap();
         write_script(&lint_dir, "always-fail", "echo x; exit 1");
 
         let mut checks = HashMap::new();
@@ -526,8 +591,8 @@ mod tests {
         let root = tmpdir("json");
         let lint_dir = root.join("lint");
         let manifest_dir = root.join("manifests");
-        fs::create_dir_all(&lint_dir).unwrap();
-        fs::create_dir_all(&manifest_dir).unwrap();
+        crate::io::fs::create_dir_all(&lint_dir).unwrap();
+        crate::io::fs::create_dir_all(&manifest_dir).unwrap();
         write_script(
             &lint_dir,
             "structured",
@@ -555,8 +620,8 @@ EOF"#,
         let root = tmpdir("json-empty");
         let lint_dir = root.join("lint");
         let manifest_dir = root.join("manifests");
-        fs::create_dir_all(&lint_dir).unwrap();
-        fs::create_dir_all(&manifest_dir).unwrap();
+        crate::io::fs::create_dir_all(&lint_dir).unwrap();
+        crate::io::fs::create_dir_all(&manifest_dir).unwrap();
         write_script(&lint_dir, "quiet", "echo '[]'");
 
         let mut checks = HashMap::new();
@@ -570,8 +635,8 @@ EOF"#,
         let root = tmpdir("json-invalid");
         let lint_dir = root.join("lint");
         let manifest_dir = root.join("manifests");
-        fs::create_dir_all(&lint_dir).unwrap();
-        fs::create_dir_all(&manifest_dir).unwrap();
+        crate::io::fs::create_dir_all(&lint_dir).unwrap();
+        crate::io::fs::create_dir_all(&manifest_dir).unwrap();
         write_script(&lint_dir, "broken", "echo 'not json at all'");
 
         let mut checks = HashMap::new();
@@ -588,11 +653,11 @@ EOF"#,
         let root = tmpdir("unrunnable");
         let lint_dir = root.join("lint");
         let manifest_dir = root.join("manifests");
-        fs::create_dir_all(&lint_dir).unwrap();
-        fs::create_dir_all(&manifest_dir).unwrap();
+        crate::io::fs::create_dir_all(&lint_dir).unwrap();
+        crate::io::fs::create_dir_all(&manifest_dir).unwrap();
         let script = lint_dir.join("broken");
-        fs::write(&script, "#!/bin/sh\necho '[]'\n").unwrap();
-        let mut perms = fs::metadata(&script).unwrap().permissions();
+        crate::io::fs::write(&script, "#!/bin/sh\necho '[]'\n").unwrap();
+        let mut perms = crate::io::fs::metadata(&script).unwrap().permissions();
         perms.set_mode(0o644);
         fs::set_permissions(&script, perms).unwrap();
 
@@ -614,13 +679,89 @@ EOF"#,
         let root = tmpdir("legacy");
         let lint_dir = root.join("lint");
         let manifest_dir = root.join("manifests");
-        fs::create_dir_all(&lint_dir).unwrap();
-        fs::create_dir_all(&manifest_dir).unwrap();
-        fs::write(manifest_dir.join("a.yaml"), "kind: X").unwrap();
+        crate::io::fs::create_dir_all(&lint_dir).unwrap();
+        crate::io::fs::create_dir_all(&manifest_dir).unwrap();
+        crate::io::fs::write(manifest_dir.join("a.yaml"), "kind: X").unwrap();
         write_script(&lint_dir, "legacy-check", "echo hi; exit 1");
 
         let diags = run_custom_checks(&lint_dir, &manifest_dir, "c1", &HashMap::new());
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].severity, Severity::Warning);
+    }
+
+    fn diagnostic(severity: Severity, cluster: &str, message: &str) -> Diagnostic {
+        Diagnostic {
+            severity,
+            check: "ready-probe",
+            cluster: cluster.to_string(),
+            file: PathBuf::from("/tmp/manifests/app.yaml"),
+            resource: "bundle/app".to_string(),
+            message: message.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_clean_lint_reports_one_line_and_no_summary() {
+        assert_eq!(
+            console::strip_ansi_codes(&render_report(&[])),
+            "  \u{2713} All checks passed\n"
+        );
+    }
+
+    #[test]
+    fn a_diagnostic_carries_its_check_resource_message_and_file() {
+        let report = render_report(&[diagnostic(Severity::Error, "dev", "probe never resolves")]);
+        let report = console::strip_ansi_codes(&report);
+        assert_eq!(
+            report,
+            "  dev:\n    ERROR [ready-probe] bundle/app: probe never resolves (app.yaml)\n\n  \u{2717} 1 error(s), 0 warning(s)\n"
+        );
+    }
+
+    #[test]
+    fn warnings_alone_do_not_report_an_error_count() {
+        let report = render_report(&[diagnostic(Severity::Warning, "dev", "no probe")]);
+        let report = console::strip_ansi_codes(&report);
+        assert!(report.ends_with("  \u{26a0} 1 warning(s)\n"), "{report}");
+        assert!(!report.contains("error(s)"), "{report}");
+    }
+
+    #[test]
+    fn one_error_among_warnings_switches_the_summary_to_the_error_form() {
+        let report = render_report(&[
+            diagnostic(Severity::Warning, "dev", "a"),
+            diagnostic(Severity::Error, "dev", "b"),
+            diagnostic(Severity::Warning, "dev", "c"),
+        ]);
+        let report = console::strip_ansi_codes(&report);
+        assert!(
+            report.ends_with("  \u{2717} 1 error(s), 2 warning(s)\n"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn clusters_are_reported_in_a_stable_order() {
+        let diags: Vec<Diagnostic> = ["zulu", "alpha", "mike"]
+            .iter()
+            .map(|c| diagnostic(Severity::Error, c, "boom"))
+            .collect();
+
+        let report = console::strip_ansi_codes(&render_report(&diags)).to_string();
+        let order: Vec<&str> = ["alpha", "mike", "zulu"]
+            .iter()
+            .filter(|c| report.contains(&format!("  {c}:")))
+            .copied()
+            .collect();
+
+        assert_eq!(order, ["alpha", "mike", "zulu"]);
+        let positions: Vec<usize> = order
+            .iter()
+            .map(|c| report.find(&format!("  {c}:")).unwrap())
+            .collect();
+        assert!(
+            positions.windows(2).all(|w| w[0] < w[1]),
+            "clusters out of order: {report}"
+        );
     }
 }

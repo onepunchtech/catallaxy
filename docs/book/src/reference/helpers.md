@@ -9,14 +9,58 @@ importable from a consumer flake.
 From `lib/k8s-helpers.nix`. These exist so floes stop hand-writing Gateway
 API and cert-manager shapes, and so a shape change lands in one place.
 
+### `mkGatewayExposure`
+
+```nix
+mkGatewayExposure {
+  name, namespace, domain,
+  gateway,                     # the floe's own `gateway` option block
+  internalGatewayName,         # floes.gateway.exports.internalGatewayName
+  sectionName,                 # floes.gateway.exports.terminatingListenerName
+  backend,                     # { name; port; }
+  pathPrefix ? "/",
+  routeName ? "<name>-route",  # key in `resources`
+  tls ? null,                  # { secretName; issuerRef; }
+  labels ? { },
+} -> resources
+```
+
+A floe's whole public face: the HTTPRoute that attaches it to a Gateway and
+the Certificate that terminates TLS for it, guarded and ready to merge into
+`bundles.<n>.resources`. Reach for this first; the pieces below are what it
+is made of.
+
+Empty when `gateway.enable` is false or `domain` is `""`. The certificate is
+_not_ gated on `gateway.enable`, because a floe reached some other way still
+wants one.
+
+`sectionName` has no default on purpose. Eight floes built this by hand and
+the copies disagreed about exactly this field: a lab with
+`floes.gateway.tls.enable = false` exports `"http"`, and the ones that
+assumed `"https"` named a listener that was not there.
+
+### `mkGatewayParentFor`
+
+```nix
+mkGatewayParentFor {
+  gateway, internalGatewayName, sectionName,
+  name ? <chosen by gateway.tier>,
+} -> parentRef
+```
+
+The parent-ref half of the above, for a floe whose route is not a plain
+HTTPRoute. Picks the Gateway by `tier` unless `name` overrides it, which is
+what a floe publishing a second route on the internal Gateway needs.
+
 ### `mkGatewayParent`
 
 ```nix
 mkGatewayParent { name, sectionName, namespace ? null } -> parentRef
 ```
 
-Builds one entry for an HTTPRoute's `parentRefs`. Omits `namespace` entirely
-when null, rather than emitting an explicit `null`.
+Builds one entry for an HTTPRoute's `parentRefs` from a name you have
+already resolved. Prefer `mkGatewayParentFor`, which resolves it. Omits
+`namespace` entirely when null, rather than emitting an explicit `null`.
 
 ### `mkHttpRoute` and `mkTlsRoute`
 
@@ -101,10 +145,20 @@ mkIdempotentJob {
 ```
 
 Job specs are largely immutable, so a one-shot bootstrap Job that changes
-becomes a permanent sync error. This suffixes the Job's name with a SHA256
-of `contentInputs`: same content, same name, apply is a no-op. Changed
-content, new name, new Job beside the old one. An owning `<name>-runs`
-ConfigMap accumulates the hash history as an audit trail.
+becomes a permanent sync error. This suffixes the Job's name with a SHA256:
+same content, same name, apply is a no-op. Changed content, new name, and a
+new Job that runs.
+
+The hash covers `contentInputs` **and `podSpec`**, so bumping an image tag
+or reordering an `env` entry re-runs the Job just as editing the script
+does. That is wider than it should be, and
+[Runtime Effects](../understanding/runtime-effects.md) explains why and what
+to do about it.
+
+What happens to the previous Job depends on the deploy path: kapp and ArgoCD
+prune it, and the plain server-side-apply path leaves it in the namespace.
+The `<name>-runs` ConfigMap holds only the current generation's hash, not a
+history.
 
 `resources` contains both the Job and the ConfigMap, ready to splice into a
 bundle's `resources`.

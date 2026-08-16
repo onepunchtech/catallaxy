@@ -1,54 +1,15 @@
 { config, lib, ... }:
 
 let
+  imageTypes = import ./image-types.nix { inherit lib; };
+
   inherit (lib)
     mkOption
     types
-    mapAttrs
+    literalExpression
     mapAttrsToList
     ;
 
-  pinType = types.submodule (
-    { config, ... }:
-    {
-      options = {
-        image = mkOption {
-          type = types.str;
-          description = "Full image path (e.g., docker.io/grafana/grafana)";
-        };
-
-        tag = mkOption {
-          type = types.nullOr types.str;
-          default = null;
-          description = "Image tag (e.g., 11.4.0). Mutable; use digest for reproducibility.";
-        };
-
-        digest = mkOption {
-          type = types.nullOr types.str;
-          default = null;
-          description = "Image digest (e.g., sha256:abc123...). Immutable; ensures reproducibility.";
-        };
-
-        ref = mkOption {
-          type = types.str;
-          readOnly = true;
-          description = "Computed full image reference (image:tag@digest)";
-        };
-      };
-
-      config.ref =
-        let
-          base = config.image;
-          withTag = if config.tag != null then "${base}:${config.tag}" else base;
-          withDigest =
-            if config.digest != null then
-              if config.tag != null then "${base}:${config.tag}@${config.digest}" else "${base}@${config.digest}"
-            else
-              withTag;
-        in
-        withDigest;
-    }
-  );
 in
 {
   options.lab.images = {
@@ -70,20 +31,93 @@ in
       '';
     };
 
-    pins = mkOption {
-      type = types.attrsOf pinType;
-      default = { };
-      description = ''
-        Pinned container images. Each pin declares an image with optional tag and digest.
-        Components can reference pins via `lab.images.pins.<name>.ref` to get
-        the full image reference string.
+    wait = {
+      kubectl = mkOption {
+        type = imageTypes.imageType;
+        default = {
+          repository = "alpine/k8s";
+          tag = "1.32.4";
+        };
+        description = ''
+          Image the probe containers catallaxy renders run kubectl from.
 
-        Example:
-          lab.images.pins.grafana = {
-            image = "docker.io/grafana/grafana";
-            tag = "11.4.0";
+          Not any floe's software: this and the two below are what every
+          waiter in every lab rides, and they were three literals in a shared
+          helper that nothing could reach.
+        '';
+      };
+
+      curl = mkOption {
+        type = imageTypes.imageType;
+        default = {
+          repository = "curlimages/curl";
+          tag = "8.10.1";
+        };
+        description = "Image for `http` probes.";
+      };
+
+      network = mkOption {
+        type = imageTypes.imageType;
+        default = {
+          repository = "busybox";
+          tag = "1.36";
+        };
+        description = "Image for `tcp` and `dns` probes.";
+      };
+    };
+
+    lockFile = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      example = lib.literalExpression "./images.lock.json";
+      description = ''
+        A file mapping each image reference to its digest, written by
+        `cata images lock`. Every reference in it is rewritten to carry its
+        digest as the manifests are rendered, which is what makes
+        `requireDigest` something a lab can turn on.
+
+        Null rewrites nothing, and that is deliberate rather than merely a
+        default: a lab has to be able to build before a lockfile exists, or
+        there would be no way to generate one.
+
+        The path is relative to the lab that sets it, not to catallaxy.
+      '';
+    };
+
+    registry = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "registry.internal";
+      description = ''
+        Registry every floe's images are taken from, whatever each floe
+        declared. This is how a lab is pointed at a mirror or an internal
+        registry in one line rather than in one line per image.
+
+        Repositories and tags are untouched, so `registry.internal` has to
+        carry the same paths upstream does. A pull-through cache does; a
+        hand-curated registry is what `lab.images.pinned` is for.
+      '';
+    };
+
+    pinned = mkOption {
+      type = types.attrsOf (types.attrsOf imageTypes.pinType);
+      default = { };
+      example = literalExpression ''
+        {
+          openbao.server = {
+            registry = "registry.internal";
             digest = "sha256:abc123...";
           };
+        }
+      '';
+      description = ''
+        Per-floe image overrides, as `<floe>.<label>`, where the label is the
+        one the floe declared in `floes.<floe>.images`.
+
+        Matching is by label and nothing else: a lab names the image it means
+        rather than catallaxy inferring from a repository that may appear in
+        more than one floe. A pin beats `lab.images.registry`, and any field
+        left unset keeps what the floe declared.
       '';
     };
 
@@ -150,6 +184,7 @@ in
                     };
                   };
                 };
+                description = "Where the image is pushed.";
               };
 
               credentialsRef = mkOption {
@@ -163,6 +198,7 @@ in
                       namespace = mkOption {
                         type = types.str;
                         default = "harbor";
+                        description = "Namespace the credentials Secret lives in.";
                       };
                       secretName = mkOption {
                         type = types.str;

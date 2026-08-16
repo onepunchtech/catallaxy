@@ -2,6 +2,7 @@
   lib,
   pkgs,
   yamlUtil,
+  waitImages ? { },
 }:
 
 let
@@ -12,7 +13,10 @@ let
     fixedWidthString
     ;
 
-  waitLib = import ../util/wait.nix { inherit lib; };
+  waitLib = import ../util/wait.nix {
+    inherit lib;
+    images = waitImages;
+  };
 
   nativeProbeKinds = [
     "condition"

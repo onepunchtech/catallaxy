@@ -11,12 +11,22 @@ generated from the parser. This page is what the parser cannot tell you.
 cata [--flake <REF>] [-v|--verbose] <COMMAND>
 ```
 
-The fragment names the lab or cluster the command acts on, the same shape
+The fragment names the **lab** the command acts on, the same shape
 `nix build .#foo` takes:
 
 ```bash
 cata --flake .#<lab> lab up
 cata --flake github:you/infra#prod lab plan
+```
+
+It never names a cluster. Cluster-scoped commands (`cluster`, `apply`,
+`pki`, `diagnose`) read the lab from the fragment and then take the cluster
+as an argument. When the lab has exactly one cluster they use it; when it
+has several they list the candidates rather than guess.
+
+```bash
+cata --flake .#<lab> cluster status          # fine when the lab has one cluster
+cata --flake .#<lab> cluster status mgmt     # otherwise name it
 ```
 
 Commands that act on every lab take no fragment:
@@ -25,10 +35,12 @@ Commands that act on every lab take no fragment:
 cata --flake . lab list
 ```
 
-Every lab-scoped command also accepts the name positionally
+Most lab-scoped commands also accept the name positionally
 (`cata --flake . lab up my-lab.local`), which is occasionally useful in a
-script looping over several labs against one flake. The fragment form is
-what the rest of these docs use.
+script looping over several labs against one flake. `lab ops` and the
+`images` commands take `--name` instead, because `lab ops` passes everything
+after the name through to the ops tool. The fragment form is what the rest
+of these docs use.
 
 The CLI resolves two flake attributes:
 
@@ -44,6 +56,12 @@ See [Flake Outputs](./flake-outputs.md).
 `lab down` stops things and keeps state, so `lab up` restarts them.
 `lab destroy` runs the teardown plan and deletes cloud resources. For a
 local k3d lab the difference is a few seconds; for a cloud lab it is a bill.
+
+`lab destroy` takes the same `--dry-run` and `--up-to` as `lab up`. It exits
+non-zero when a step could not confirm that something was removed, so a
+`cata lab destroy && ...` chain stops rather than continuing with cloud
+resources still running. What it could not confirm is listed at the end,
+along with any matching `lab.destroy.rescueHints`.
 
 ## `--up-to` takes a step kind
 
@@ -61,9 +79,26 @@ error rather than a silent no-op. The kinds are in
 
 `lab lint` reads rendered manifests and needs no cluster. `lab verify` reads
 a running lab: apiservers, host services, rollouts, and every hostname the
-lab routes. Both exit non-zero on an error diagnostic and both take
+lab routes. Both exit non-zero on an error diagnostic. `verify` takes
 `--json`. See [Lint Rules](./lint.md) and
 [Verifying a Running Lab](./verify.md).
+
+## When something is broken
+
+`cata diagnose` is the command to reach for. It reads one cluster and prints
+node status, kapp app status, per-floe health, unhealthy pods with their
+recent logs, deployments that stopped progressing, and warning events:
+
+```bash
+cata --flake .#<lab> diagnose              # the lab's only cluster
+cata --flake .#<lab> diagnose --all        # every cluster
+cata --flake .#<lab> diagnose --tail 100   # more log lines per pod
+```
+
+`cata lab status` is the quicker look: strategy, zone, whether each host
+service is running, and whether each cluster's apiserver answers. It takes
+`--json`. If the docker daemon is not reachable it says so, rather than
+reporting every container as stopped.
 
 ## Snapshotting a plan
 
@@ -78,7 +113,7 @@ against a baseline and exits non-zero on mismatch.
 
 ```bash
 cata --flake .#<lab> lab ops -- trust setup
-cata --flake .#<lab> lab ops idm init-user lab-admin
+cata --flake .#<lab> lab ops kanidm init-user lab-admin
 ```
 
 Ops commands are declared by the floes a lab enables, so the set differs per

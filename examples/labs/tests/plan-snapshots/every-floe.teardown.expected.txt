@@ -1,0 +1,4 @@
+[001] destroy-cluster name=destroy-cluster-core params.name=core params.provisioner=k3d
+[002] destroy-cluster name=destroy-cluster-idm params.name=idm params.provisioner=k3d
+[003] destroy-cluster name=destroy-cluster-net params.name=net params.provisioner=k3d
+[004] remove-network name=remove-network

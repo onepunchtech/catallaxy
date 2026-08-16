@@ -158,6 +158,16 @@ in
       description = "Software bill of materials";
     };
 
+    imageCompleteness = mkOption {
+      type = types.raw;
+      default = { };
+      internal = true;
+      description = ''
+        Per floe that set `imagesComplete`, the references it declared and
+        the rendered bundles to check that claim against.
+      '';
+    };
+
     bundleView = mkOption {
       type = types.raw;
       default = { };
@@ -353,6 +363,28 @@ in
     }) unsatisfiable;
 
   config.cluster.out = {
+    # For each floe that claims its image set is complete: what it declared,
+    # and the rendered bundles to check that claim against. The bundles are
+    # found by the provenance mkFloe stamps on them.
+    imageCompleteness =
+      let
+        view = config.cluster.out.bundleView;
+        bundlesOf =
+          floeName:
+          lib.attrValues (
+            lib.filterAttrs (k: _: (config.bundles.${k}.floe or null) == floeName) view.packages
+          );
+
+        # A probe container the renderer adds to a floe's bundle runs an image
+        # the lab chose, not one the floe picked, so asking every floe to
+        # declare all three would be asking it to restate a lab setting.
+        probeRefs = lib.mapAttrsToList (_: i: i.ref) (lab.images.wait or { });
+      in
+      lib.mapAttrs (floeName: floeCfg: {
+        declared = lib.unique (probeRefs ++ lib.mapAttrsToList (_: i: i.ref) floeCfg.images);
+        packages = bundlesOf floeName;
+      }) (lib.filterAttrs (_: f: (f.enable or false) && (f.imagesComplete or false)) config.floes);
+
     topology = {
       name = config.cluster.name;
       provider = config.cluster.provider;
@@ -389,8 +421,12 @@ in
           requires = bundle.requires or [ ];
           provides = bundle.provides or [ ];
 
-          kind = null;
-          floe = null;
+          # Only what `resources` declares. A kind inside a helm chart or a raw
+          # yaml is a rendered artefact, not something eval can see, so a
+          # chart-only bundle answers no `kind:` anchor and is reached by
+          # `provides:` or `bundle:` instead.
+          kinds = lib.unique (lib.mapAttrsToList (_: r: r.kind) (bundle.resources or { }));
+          floe = bundle.floe or null;
 
           resources = bundle.resources or { };
           helmCharts = lib.mapAttrs (_: h: { inherit (h) namespace; }) (bundle.helmCharts or { });
@@ -412,7 +448,7 @@ in
             after = [ ];
             requires = [ ];
             provides = [ ];
-            kind = null;
+            kinds = [ ];
             floe = null;
             resources = { };
             helmCharts = { };
@@ -431,7 +467,7 @@ in
             after = lib.optional hasNamespaceContent "bundle:namespaces";
             requires = [ ];
             provides = [ "secret:${proj.namespace}/${projName}" ];
-            kind = null;
+            kinds = [ ];
             floe = null;
             resources = { };
             helmCharts = { };
@@ -443,7 +479,14 @@ in
           };
         }) config.secrets.projections;
 
-        projectionSet = lib.mapAttrs (_: proj: { inherit (proj) namespace; }) config.secrets.projections;
+        # A generated Secret joins the projection token namespace, so a bundle
+        # referencing one waits for it through the same auto-edge and nobody
+        # has to write the edge.
+        projectionSet =
+          lib.mapAttrs (_: proj: { inherit (proj) namespace; }) config.secrets.projections
+          // lib.mapAttrs' (
+            _: g: lib.nameValuePair g.secret { inherit (g) namespace; }
+          ) config.secrets.generate;
 
         rawBundlesWithProjRequires = projections.withProjectionRequires {
           bundles = rawBundles;

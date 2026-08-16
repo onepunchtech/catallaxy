@@ -1,4 +1,11 @@
-{ lib }:
+{
+  lib,
+  # The images catallaxy's own probe containers run, as assembled references.
+  # These are not any floe's software: they are the kubectl, curl and busybox
+  # that every waiter in every lab rides, which until now were three literals
+  # nothing could reach. `lab.images.wait` sets them.
+  images ? { },
+}:
 
 let
   inherit (lib)
@@ -8,9 +15,9 @@ let
     hasAttr
     ;
 
-  defaultKubectlImage = "alpine/k8s:1.32.4";
-  defaultCurlImage = "curlimages/curl:8.10.1";
-  defaultNetworkImage = "busybox:1.36";
+  defaultKubectlImage = images.kubectl or "alpine/k8s:1.32.4";
+  defaultCurlImage = images.curl or "curlimages/curl:8.10.1";
+  defaultNetworkImage = images.network or "busybox:1.36";
 
   caBundleVolumeName = "ca-bundle";
 

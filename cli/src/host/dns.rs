@@ -1,10 +1,7 @@
-use std::fs;
-use std::process::Command;
-
 use anyhow::{Context, Result, bail};
 use console::style;
 
-use crate::io::process::{run_capture, run_interactive};
+use crate::io;
 
 use super::network::get_colima_vm_ip;
 
@@ -24,8 +21,12 @@ fn per_zone_conf(zone: &str) -> String {
     format!("{}/{}.conf", RESOLVED_CONF_DIR, zone.replace('.', "-"))
 }
 
+fn shares_the_test_tld(host: &str, port: u64, zone: &str) -> bool {
+    host == "127.0.0.1" && port == DEFAULT_DNS_HOST_PORT && zone.ends_with(".test")
+}
+
 pub fn resolved_drop_in(host: &str, port: u64, zone: &str) -> ResolvedDropIn {
-    if host == "127.0.0.1" && port == DEFAULT_DNS_HOST_PORT && zone.ends_with(".test") {
+    if shares_the_test_tld(host, port, zone) {
         ResolvedDropIn {
             path: SHARED_TEST_CONF.to_string(),
             domains: "test".to_string(),
@@ -37,6 +38,20 @@ pub fn resolved_drop_in(host: &str, port: u64, zone: &str) -> ResolvedDropIn {
             domains: zone.to_string(),
             shared: false,
         }
+    }
+}
+
+pub fn macos_resolver_file(host: &str, port: u64, zone: &str) -> ResolvedDropIn {
+    let domains = if shares_the_test_tld(host, port, zone) {
+        "test".to_string()
+    } else {
+        zone.to_string()
+    };
+
+    ResolvedDropIn {
+        path: format!("/etc/resolver/{domains}"),
+        shared: domains == "test",
+        domains,
     }
 }
 
@@ -66,28 +81,32 @@ fn install_resolver_file(dns_host: &str, port: u64, resolver_file: &str) -> Resu
         .prefix("cata-resolver-")
         .tempfile()
         .context("staging the resolver file")?;
-    fs::write(
+    io::fs::write(
         staged.path(),
         format!("nameserver {dns_host}\nport {port}\n"),
     )
     .context("writing the staged resolver file")?;
 
-    let mut install = Command::new("sudo");
-    install
-        .args(["install", "-m", "0644"])
-        .arg(staged.path())
-        .arg(resolver_file);
-    run_interactive(&mut install).with_context(|| format!("installing {resolver_file}"))
+    io::sudo::install_file(staged.path(), resolver_file)
 }
 
 fn dns_setup_macos(host: &str, port: u64, zone: &str) -> Result<()> {
     let dns_host = get_colima_vm_ip().unwrap_or_else(|| host.to_string());
 
     let resolver_dir = "/etc/resolver";
-    let resolver_file = format!("{}/{}", resolver_dir, zone);
+    let target = macos_resolver_file(&dns_host, port, zone);
+    let resolver_file = target.path.clone();
+
+    if target.shared {
+        println!(
+            "{} Using the shared resolver for the whole .test TLD, so every \
+             *.test lab on this machine is covered by this one file.",
+            style(">>>").dim(),
+        );
+    }
 
     if std::path::Path::new(&resolver_file).exists() {
-        let content = fs::read_to_string(&resolver_file).unwrap_or_default();
+        let content = io::fs::read_to_string(&resolver_file).unwrap_or_default();
         if content.contains(&format!("nameserver {}", dns_host))
             && content.contains(&format!("port {}", port))
         {
@@ -113,9 +132,7 @@ fn dns_setup_macos(host: &str, port: u64, zone: &str) -> Result<()> {
     } else {
         println!("{} Creating {}...", style(">>>").cyan(), resolver_file);
 
-        let mut mkdir = Command::new("sudo");
-        mkdir.args(["mkdir", "-p", resolver_dir]);
-        run_interactive(&mut mkdir).with_context(|| format!("creating {resolver_dir}"))?;
+        io::sudo::make_directory(resolver_dir)?;
 
         install_resolver_file(&dns_host, port, &resolver_file)?;
 
@@ -133,21 +150,21 @@ fn dns_setup_macos(host: &str, port: u64, zone: &str) -> Result<()> {
 }
 
 fn dns_setup_linux(host: &str, port: u64, zone: &str) -> Result<()> {
-    let mut is_active = Command::new("systemctl");
-    is_active.args(["is-active", "systemd-resolved"]);
-    let resolved_running = run_capture(&mut is_active)
-        .map(|o| o.trim() == "active")
-        .unwrap_or(false);
-
-    if resolved_running {
-        dns_setup_systemd_resolved(host, port, zone)
-    } else {
-        println!("{} systemd-resolved is not running", style(">>>").yellow());
-        println!();
-        println!("Please configure your DNS resolver manually.");
-        println!("See: cata lab dns (for instructions)");
-        Ok(())
+    if io::systemd::is_active("systemd-resolved") {
+        return dns_setup_systemd_resolved(host, port, zone);
     }
+
+    let drop_in = resolved_drop_in(host, port, zone);
+    bail!(
+        "systemd-resolved is not running, so there is nothing here to configure \
+         and nothing was written.\n    \
+         `cata lab dns` prints the dnsmasq and NixOS routes as well. For dnsmasq:\n      \
+         server=/{zone}/{host}#{port}\n    \
+         The equivalent systemd-resolved drop-in, once it is running, is {}.\n    \
+         Nothing else needs this: the lab's own clusters resolve through their own \
+         DNS, and `cata lab verify` reaches lab hostnames without the host resolver.",
+        drop_in.path,
+    )
 }
 
 fn dns_setup_systemd_resolved(host: &str, port: u64, zone: &str) -> Result<()> {
@@ -166,7 +183,7 @@ fn dns_setup_systemd_resolved(host: &str, port: u64, zone: &str) -> Result<()> {
         .then(|| per_zone_conf(zone))
         .filter(|p| std::path::Path::new(p).exists());
 
-    let matches = fs::read_to_string(&target.path)
+    let matches = io::fs::read_to_string(&target.path)
         .map(|c| c == desired)
         .unwrap_or(false);
 
@@ -186,19 +203,11 @@ fn dns_setup_systemd_resolved(host: &str, port: u64, zone: &str) -> Result<()> {
         .suffix(".conf")
         .tempfile()
         .context("staging the resolver drop-in")?;
-    fs::write(staged.path(), desired.as_bytes())
+    io::fs::write(staged.path(), desired.as_bytes())
         .with_context(|| format!("writing staged drop-in {}", staged.path().display()))?;
 
-    let mut mkdir = Command::new("sudo");
-    mkdir.args(["mkdir", "-p", RESOLVED_CONF_DIR]);
-    run_interactive(&mut mkdir).with_context(|| format!("creating {RESOLVED_CONF_DIR}"))?;
-
-    let mut install = Command::new("sudo");
-    install
-        .args(["install", "-m", "0644"])
-        .arg(staged.path())
-        .arg(&target.path);
-    run_interactive(&mut install).with_context(|| format!("installing {}", target.path))?;
+    io::sudo::make_directory(RESOLVED_CONF_DIR)?;
+    io::sudo::install_file(staged.path(), &target.path)?;
 
     if let Some(ref stale) = superseded {
         println!(
@@ -206,14 +215,10 @@ fn dns_setup_systemd_resolved(host: &str, port: u64, zone: &str) -> Result<()> {
             style(">>>").cyan(),
             stale
         );
-        let mut rm = Command::new("sudo");
-        rm.args(["rm", "-f", stale]);
-        run_interactive(&mut rm).with_context(|| format!("removing {stale}"))?;
+        io::sudo::remove_file(stale)?;
     }
 
-    let mut restart = Command::new("sudo");
-    restart.args(["systemctl", "restart", "systemd-resolved"]);
-    run_interactive(&mut restart).context("restarting systemd-resolved")?;
+    io::systemd::restart("systemd-resolved")?;
 
     println!(
         "{} DNS resolver configured at {}",
@@ -244,17 +249,26 @@ pub async fn dns_teardown(zone: &str) -> Result<()> {
 }
 
 fn dns_teardown_macos(zone: &str) -> Result<()> {
+    if !zone_is_well_formed(zone) {
+        bail!("Refusing to touch DNS config: zone '{zone}' contains unexpected characters");
+    }
+
     let resolver_file = format!("/etc/resolver/{}", zone);
 
     if std::path::Path::new(&resolver_file).exists() {
         println!("{} Removing {}...", style(">>>").cyan(), resolver_file);
 
-        let mut rm = Command::new("sudo");
-        rm.args(["rm", "-f", &resolver_file]);
-        run_interactive(&mut rm).with_context(|| format!("removing {resolver_file}"))?;
+        io::sudo::remove_file(&resolver_file)?;
+        println!("{} DNS configuration removed", style(">>>").green());
+        return Ok(());
     }
 
-    println!("{} DNS configuration removed", style(">>>").green());
+    println!(
+        "{} Nothing to remove for '{zone}'. A *.test lab resolves through \
+         /etc/resolver/test, which is shared by every *.test lab on this \
+         machine, so tearing this one down leaves it in place.",
+        style(">>>").green(),
+    );
 
     Ok(())
 }
@@ -286,15 +300,11 @@ fn dns_teardown_linux(zone: &str) -> Result<()> {
 
     println!("{} Removing {}...", style(">>>").cyan(), conf_file);
 
-    let mut rm = Command::new("sudo");
-    rm.args(["rm", "-f", &conf_file]);
-    run_interactive(&mut rm).with_context(|| format!("removing {conf_file}"))?;
+    io::sudo::remove_file(&conf_file)?;
 
     println!("{} Restarting systemd-resolved...", style(">>>").cyan());
 
-    let mut restart = Command::new("sudo");
-    restart.args(["systemctl", "restart", "systemd-resolved"]);
-    if run_interactive(&mut restart).is_err() {
+    if io::systemd::restart("systemd-resolved").is_err() {
         println!(
             "{} Failed to restart systemd-resolved (may need manual restart)",
             style("Warning:").yellow()
@@ -333,6 +343,42 @@ mod tests {
         let d = resolved_drop_in("127.0.0.1", DEFAULT_DNS_HOST_PORT, "lab.example.com");
         assert!(!d.shared);
         assert_eq!(d.path, "/etc/systemd/resolved.conf.d/lab-example-com.conf");
+    }
+
+    #[test]
+    fn macos_shares_one_resolver_file_for_the_test_tld() {
+        for zone in ["minimal.test", "homelab.test", "mesh.test"] {
+            let r = macos_resolver_file("127.0.0.1", DEFAULT_DNS_HOST_PORT, zone);
+            assert!(r.shared, "{zone} should share the .test resolver");
+            assert_eq!(r.path, "/etc/resolver/test");
+        }
+    }
+
+    #[test]
+    fn macos_keeps_a_per_zone_resolver_when_it_cannot_share() {
+        let non_test = macos_resolver_file("127.0.0.1", DEFAULT_DNS_HOST_PORT, "lab.example.com");
+        assert!(!non_test.shared);
+        assert_eq!(non_test.path, "/etc/resolver/lab.example.com");
+
+        let odd_port = macos_resolver_file("127.0.0.1", 5399, "minimal.test");
+        assert!(!odd_port.shared);
+        assert_eq!(odd_port.path, "/etc/resolver/minimal.test");
+    }
+
+    #[test]
+    fn both_platforms_agree_on_when_the_test_tld_is_shared() {
+        for (host, port, zone) in [
+            ("127.0.0.1", DEFAULT_DNS_HOST_PORT, "minimal.test"),
+            ("127.0.0.1", 5399, "minimal.test"),
+            ("127.0.0.1", DEFAULT_DNS_HOST_PORT, "lab.example.com"),
+            ("172.20.0.1", DEFAULT_DNS_HOST_PORT, "minimal.test"),
+        ] {
+            assert_eq!(
+                resolved_drop_in(host, port, zone).shared,
+                macos_resolver_file(host, port, zone).shared,
+                "{host}:{port} {zone} should be shared on both platforms or neither"
+            );
+        }
     }
 
     #[test]

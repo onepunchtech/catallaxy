@@ -44,8 +44,6 @@ pub struct LabSpec {
 
     pub services: BTreeMap<String, HostService>,
 
-    pub self_contained: SelfContained,
-
     pub destroy: DestroyConfig,
 
     pub verify: Value,
@@ -85,20 +83,11 @@ pub enum BootstrapTool {
     None,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SelfContained {
-    pub eligible: bool,
-    pub env_file: Option<String>,
-    #[serde(default)]
-    pub reasons: Vec<String>,
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DestroyConfig {
     #[serde(default)]
-    pub rescue_hints: BTreeMap<String, Value>,
+    pub rescue_hints: BTreeMap<String, String>,
 }
 
 fn resolve_context<'a>(
@@ -135,6 +124,10 @@ pub fn kube_context_in<'a>(lab: &'a Value, cluster: &str) -> anyhow::Result<&'a 
 }
 
 impl LabSpec {
+    pub fn dns_container(&self) -> Option<&str> {
+        self.services.get("dns").map(|s| s.container.as_str())
+    }
+
     pub fn from_value(value: Value) -> Result<Self, serde_json::Error> {
         serde_json::from_value(value)
     }

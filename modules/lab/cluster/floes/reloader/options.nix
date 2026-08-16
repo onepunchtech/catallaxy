@@ -12,6 +12,7 @@ in
     chart = mkOption {
       type = types.package;
       default = cataCharts.reloader.chart;
+      description = "Helm chart to install. Defaults to the chart catallaxy pins.";
     };
   };
 }

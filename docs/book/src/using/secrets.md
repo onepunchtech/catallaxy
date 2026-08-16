@@ -24,6 +24,17 @@ in git at `secrets/<lab>/<store>.enc.yaml`. `env` is a set of environment
 variables, which is what a lab uses when it has to stand up somewhere that
 holds no decryption key, CI being the case that motivated it.
 
+The backend also decides a second thing, `direction`, which is derived and
+read-only. `sops` and `env` are **authored**: you write the value before the
+lab exists, and a cluster cannot write back, since for sops that would mean
+committing to your repository. `vault` and `external` are **runtime**, and a
+cluster can publish into them.
+
+That distinction decides how a secret is allowed to travel. Everything above
+this line is about authored values.
+[Sharing between clusters](#sharing-between-clusters) is about the other
+kind.
+
 ## Declaring one
 
 ```nix
@@ -169,6 +180,47 @@ does not work. Setting `kind = "ca"` implies the keys `ca.crt` and `ca.key`,
 and `secrets generate` mints the pair (P-256, ten years) rather than running
 a generator per key. `secrets init-intermediate <name>` signs a second CA
 with the root already in the store. See [TLS and the Lab CA](./tls.md).
+
+## Sharing between clusters
+
+Some values cannot be authored, because only the running lab can produce
+them. Harbor mints a robot account's credential through its own API after it
+comes up; nothing knows it at build time.
+
+For those, one cluster publishes and any number subscribe:
+
+```nix
+# in the cluster that has it
+secrets.publish.harbor-obs-puller.namespace = "harbor";
+
+# in a cluster that wants it
+secrets.subscribe.harbor-obs-puller = {
+  from = "core";
+  namespace = "default";
+};
+```
+
+That renders a `PushSecret` on one side and an `ExternalSecret` on the
+other, plus the `ClusterSecretStore` they share, and external-secrets does
+the rest. Both clusters need `floes.external-secrets.enable`.
+
+The two sides never talk. A published secret's address in the store is a
+pure function of where it lives:
+
+```
+<lab>/<producing-cluster>/<namespace>/<secret>
+```
+
+The publisher derives it from its own name and every subscriber derives the
+same string from the cluster it names, so a publisher never learns who reads
+it and any number of consumers can subscribe. It also means the contract is
+checkable at build time: naming a cluster that does not exist, or a secret
+it does not publish, fails `nix build` rather than leaving an
+`ExternalSecret` waiting forever.
+
+Publishing needs a `runtime` store. Trying to publish into an authored one
+is an error that says so, because it is not a limitation to work around: an
+authored store is the wrong place for a value the lab minted.
 
 ## What runs when
 

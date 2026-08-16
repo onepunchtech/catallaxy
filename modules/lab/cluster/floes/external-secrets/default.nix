@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -26,6 +27,36 @@ in
       kappLib = import ../../../../../lib/util/kapp.nix { inherit lib; };
     in
     {
+
+      floes.external-secrets.network = {
+
+        declared = true;
+
+        serves.webhook = {
+
+          port = 443;
+
+          fromApiServer = true;
+
+        };
+
+        reaches = [ "openbao/api" ];
+
+        egress.internet.ports = [ 443 ];
+
+      };
+
+      floes.external-secrets.imagesComplete = true;
+
+      floes.external-secrets.images.controller = {
+
+        registry = "oci.external-secrets.io";
+
+        repository = "external-secrets/external-secrets";
+
+        tag = "v0.15.0";
+
+      };
 
       bundles.external-secrets-crds = {
         owner = {

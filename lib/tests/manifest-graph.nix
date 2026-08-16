@@ -7,7 +7,7 @@ let
   b =
     attrs:
     {
-      kind = null;
+      kinds = [ ];
       floe = null;
       after = [ ];
       requires = [ ];
@@ -155,17 +155,50 @@ lib.concatLists [
   (assertEq "kind:X anchor matches any bundle of that kind"
     (orderOf {
       workload = b {
-        kind = "Deployment";
+        kinds = [ "Deployment" ];
         after = [ "kind:Namespace" ];
       };
-      ns-app = b { kind = "Namespace"; };
-      ns-lib = b { kind = "Namespace"; };
+      ns-app = b { kinds = [ "Namespace" ]; };
+      ns-lib = b { kinds = [ "Namespace" ]; };
     })
 
     [
       "ns-app"
       "ns-lib"
       "workload"
+    ]
+  )
+
+  # A bundle holds resources of many kinds, which is why this is a list and
+  # not the scalar it started as: the scalar could only ever describe a bundle
+  # holding one thing.
+  (assertEq "kind:X matches a bundle that holds that kind among others"
+    (orderOf {
+      mixed = b {
+        kinds = [
+          "ConfigMap"
+          "CustomResourceDefinition"
+          "Deployment"
+        ];
+      };
+      user = b { after = [ "optional:kind:CustomResourceDefinition" ]; };
+    })
+
+    [
+      "mixed"
+      "user"
+    ]
+  )
+
+  (assertEq "a bundle declaring no kinds answers no kind: anchor"
+    (orderOf {
+      chartOnly = b { kinds = [ ]; };
+      user = b { after = [ "optional:kind:Deployment" ]; };
+    })
+
+    [
+      "chartOnly"
+      "user"
     ]
   )
 
@@ -296,7 +329,7 @@ lib.concatLists [
     (computeWaves {
       bundles = {
         only = b {
-          kind = "custom-kind";
+          kinds = [ "custom-kind" ];
           floe = "myfloe";
           provides = [ "here" ];
         };
@@ -307,7 +340,7 @@ lib.concatLists [
         {
           after = [ ];
           floe = "myfloe";
-          kind = "custom-kind";
+          kinds = [ "custom-kind" ];
           name = "only";
           provides = [ "here" ];
           requires = [ ];

@@ -4,11 +4,16 @@
   dirBuilder,
   yamlUtil,
   prefixUtil,
+  imageUtil,
 }:
 
 {
   clusterName,
   prefix ? "",
+  imageLock ? { },
+  imageRegistry ? null,
+  imageExempt ? [ ],
+  imageOverrides ? { },
   labNamespaces ? [ ],
 
   packages,
@@ -232,6 +237,12 @@ let
                 done
 
                 ${prefixUtil.applyToDir { inherit prefix labNamespaces; } "$out/${sanitized}"}
+                ${imageUtil.applyToDir {
+                  lock = imageLock;
+                  registry = imageRegistry;
+                  exempt = imageExempt;
+                  overrides = imageOverrides;
+                } "$out/${sanitized}"}
               ''
           ) bundleEntries
         )}

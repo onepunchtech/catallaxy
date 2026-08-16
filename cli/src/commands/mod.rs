@@ -7,6 +7,7 @@ pub mod generate;
 pub mod images;
 pub mod kubeconfig;
 pub mod lab;
+pub mod new;
 pub mod pki;
 pub mod secrets;
 

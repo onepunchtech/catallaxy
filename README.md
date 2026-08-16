@@ -65,7 +65,7 @@ Walkthrough:
 
 - **A plan you read before it runs.** `cata lab plan` prints the ordered
   step list `cata lab up` will execute, provisioning, host DNS and TLS,
-  cross-cluster secret copies, your own hooks.
+  secret projections, your own hooks.
 - **Install order that is derived.** Bundles declare what they need and what
   they offer. Waves fall out. Nothing carries a number.
 - **Failures that happen early.** Types, assertions, graph contracts, lint
@@ -97,8 +97,8 @@ nix fmt                           # nixfmt, rustfmt, yamlfmt
 nix build .#docs                  # the book
 ```
 
-[Contributing](https://onepunchtech.github.io/catallaxy/contributing/setup.html)
-· [Conventions](CLAUDE.md)
+[Contributing](https://onepunchtech.github.io/catallaxy/contributing.html) ·
+[Conventions](https://onepunchtech.github.io/catallaxy/contributing.html#conventions)
 
 ## License
 

@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -10,7 +9,8 @@ use serde::Deserialize;
 
 use crate::config::Context as CataContext;
 use crate::domain::secrets::{
-    Backend, SecretKind, SecretsSpec, StoreProblem, describe_store_problems, env_var_name,
+    self as secrets, Backend, SecretKind, SecretsSpec, StoreProblem, StoreValues,
+    describe_store_problems, env_var_name,
 };
 use crate::generators;
 use crate::io::nix;
@@ -18,7 +18,7 @@ use crate::io::pki;
 
 const STORE_HELP: &str = "Store name from lab.secrets.stores, or a path to an encrypted file";
 const SECRETS_LAB_HELP: &str = "Lab to act on. Defaults to the flake fragment";
-const CA_ALGORITHM: &str = "ecdsa-p256";
+const CA_ALGORITHM: crate::io::pki::KeyAlgorithm = crate::io::pki::KeyAlgorithm::EcdsaP256;
 const ROOT_CA_DAYS: u32 = 3650;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -170,7 +170,7 @@ pub async fn run(ctx: &CataContext, command: SecretsCommands) -> Result<()> {
                 cluster.as_deref(),
                 secret.as_deref(),
                 force,
-                example,
+                Minting::of_example_flag(example),
                 format,
             )
             .await
@@ -191,10 +191,7 @@ async fn edit(_ctx: &CataContext, file: &str) -> Result<()> {
         style("catallaxy").cyan().bold()
     );
 
-    let status = std::process::Command::new("sops")
-        .arg(file)
-        .status()
-        .context("Failed to run sops")?;
+    let status = crate::io::sops::edit(file)?;
 
     if !status.success() {
         bail!("sops edit failed");
@@ -214,10 +211,7 @@ async fn encrypt(_ctx: &CataContext, file: &str, output: Option<&str>) -> Result
         style("catallaxy").cyan().bold()
     );
 
-    let status = std::process::Command::new("sops")
-        .args(["--encrypt", file, "--output", &output_path])
-        .status()
-        .context("Failed to run sops")?;
+    let status = crate::io::sops::encrypt_to(file, &output_path)?;
 
     if !status.success() {
         bail!("sops encrypt failed");
@@ -228,10 +222,7 @@ async fn encrypt(_ctx: &CataContext, file: &str, output: Option<&str>) -> Result
 }
 
 async fn decrypt(_ctx: &CataContext, file: &str) -> Result<()> {
-    let output = std::process::Command::new("sops")
-        .args(["--decrypt", file])
-        .output()
-        .context("Failed to run sops")?;
+    let output = crate::io::sops::decrypt_to_stdout(file)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -248,10 +239,7 @@ async fn rotate(_ctx: &CataContext, file: &str) -> Result<()> {
         style("catallaxy").cyan().bold()
     );
 
-    let status = std::process::Command::new("sops")
-        .args(["rotate", "--in-place", file])
-        .status()
-        .context("Failed to run sops")?;
+    let status = crate::io::sops::rotate_in_place(file)?;
 
     if !status.success() {
         bail!("sops rotate failed");
@@ -340,13 +328,13 @@ async fn generate(
     _cluster: Option<&str>,
     only_secret: Option<&str>,
     force: bool,
-    example: bool,
+    minting: Minting,
     format: GenerateFormat,
 ) -> Result<()> {
     let lab = get_lab_secrets(ctx, _cluster)?;
 
     if format == GenerateFormat::Env {
-        return generate_env(&lab, only_secret, example);
+        return generate_env(&lab, only_secret, minting);
     }
 
     let sops_stores = lab.spec.stores_with(Backend::Sops);
@@ -366,7 +354,7 @@ async fn generate(
         return Ok(());
     }
 
-    if !example {
+    if !minting.is_example() {
         crate::io::process::check_tool("sops")?;
         println!(
             "{} Generating secrets for lab '{}'",
@@ -378,7 +366,7 @@ async fn generate(
     for store_name in &sops_stores {
         let path = crate::io::secrets::store_file_path(ctx, &lab.lab_name, store_name);
 
-        if !example && path.exists() && !force {
+        if !minting.is_example() && path.exists() && !force {
             println!(
                 "{} Skipping store '{}' (already exists, use --force to regenerate or --example to print)",
                 style(">>>").yellow(),
@@ -387,12 +375,26 @@ async fn generate(
             continue;
         }
 
-        let data = mint_store(&lab, store_name, only_secret, example)?;
+        let existing = if !minting.is_example() && path.exists() {
+            let held = crate::io::secrets::load_store(ctx, &lab.lab_name, store_name, &lab.spec)
+                .with_context(|| {
+                    format!(
+                        "'{store_name}' already exists at {} but could not be decrypted. \
+                         Regenerating would destroy the values it holds, so nothing was written.",
+                        path.display(),
+                    )
+                })?;
+            Some(held)
+        } else {
+            None
+        };
+
+        let data = mint_store(&lab, store_name, only_secret, minting, existing.as_ref())?;
         if data.is_empty() {
             continue;
         }
 
-        if example {
+        if minting.is_example() {
             let yaml = serde_yaml::to_string(&data)?;
             println!("# store: {} ({})", store_name, path.display());
             println!("# Diff this against the decrypted contents of the file above:");
@@ -418,7 +420,7 @@ async fn generate(
     Ok(())
 }
 
-fn generate_env(lab: &LabSecrets, only_secret: Option<&str>, example: bool) -> Result<()> {
+fn generate_env(lab: &LabSecrets, only_secret: Option<&str>, minting: Minting) -> Result<()> {
     let env_stores = lab.spec.stores_with(Backend::Env);
     if env_stores.is_empty() {
         bail!(
@@ -428,7 +430,7 @@ fn generate_env(lab: &LabSecrets, only_secret: Option<&str>, example: bool) -> R
     }
 
     for store_name in &env_stores {
-        let data = mint_store(lab, store_name, only_secret, example)?;
+        let data = mint_store(lab, store_name, only_secret, minting, None)?;
         print_env_store(store_name, &data);
     }
 
@@ -447,13 +449,34 @@ fn print_env_store(store_name: &str, data: &PlainStore) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Minting {
+    Real,
+    Example,
+}
+
+impl Minting {
+    pub fn of_example_flag(example: bool) -> Self {
+        if example {
+            Minting::Example
+        } else {
+            Minting::Real
+        }
+    }
+
+    pub fn is_example(self) -> bool {
+        self == Minting::Example
+    }
+}
+
 type PlainStore = BTreeMap<String, BTreeMap<String, String>>;
 
 fn mint_store(
     lab: &LabSecrets,
     store_name: &str,
     only_secret: Option<&str>,
-    example: bool,
+    minting: Minting,
+    existing: Option<&StoreValues>,
 ) -> Result<PlainStore> {
     let mut data = PlainStore::new();
 
@@ -462,14 +485,31 @@ fn mint_store(
             continue;
         }
 
+        let held = existing.and_then(|values| values.get(secret_name));
+
         let keys = match secret.kind {
-            SecretKind::Ca => mint_ca(&lab.lab_name, secret_name, example)?,
+            SecretKind::Ca => match held {
+                Some(prior) if !minting.is_example() && prior.contains_key(pki::CERT_KEY) => {
+                    prior.clone().into_iter().collect()
+                }
+                _ => mint_ca(&lab.lab_name, secret_name, minting)?,
+            },
             SecretKind::Value => secret
                 .keys
                 .iter()
                 .map(|(key_name, key_def)| {
-                    mint(key_def.generator.as_deref(), key_def.length, example)
-                        .map(|value| (key_name.clone(), value))
+                    let kept = if minting.is_example() || key_def.generator.is_some() {
+                        None
+                    } else {
+                        held.and_then(|prior| prior.get(key_name))
+                            .filter(|v| !v.is_empty() && v.as_str() != secrets::PLACEHOLDER)
+                            .cloned()
+                    };
+                    match kept {
+                        Some(value) => Ok((key_name.clone(), value)),
+                        None => mint(key_def.generator.as_deref(), key_def.length, minting)
+                            .map(|value| (key_name.clone(), value)),
+                    }
                 })
                 .collect::<Result<BTreeMap<String, String>>>()?,
         };
@@ -482,8 +522,12 @@ fn mint_store(
     Ok(data)
 }
 
-fn mint_ca(lab_name: &str, secret_name: &str, example: bool) -> Result<BTreeMap<String, String>> {
-    if example {
+fn mint_ca(
+    lab_name: &str,
+    secret_name: &str,
+    minting: Minting,
+) -> Result<BTreeMap<String, String>> {
+    if minting.is_example() {
         return Ok(BTreeMap::from([
             (
                 pki::CERT_KEY.to_string(),
@@ -527,7 +571,7 @@ fn write_sops_store(
 
     let path = crate::io::secrets::store_file_path(ctx, lab_name, store_name);
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).context("Failed to create secrets directory")?;
+        crate::io::fs::create_dir_all(parent).context("Failed to create secrets directory")?;
     }
 
     let mut plaintext = tempfile::NamedTempFile::new()?;
@@ -682,10 +726,10 @@ fn pem_of(values: &HashMap<String, String>, secret: &str, key: &str) -> Result<S
     Ok(value.clone())
 }
 
-fn mint(generator: Option<&str>, length: Option<u64>, example: bool) -> Result<String> {
+fn mint(generator: Option<&str>, length: Option<u64>, minting: Minting) -> Result<String> {
     match generator {
-        None => Ok("PLACEHOLDER_USE_SECRETS_EDIT".to_string()),
-        Some(generator) if example => Ok(match length {
+        None => Ok(secrets::PLACEHOLDER.to_string()),
+        Some(generator) if minting.is_example() => Ok(match length {
             Some(len) => format!("<{generator}:{len}>"),
             None => format!("<{generator}>"),
         }),

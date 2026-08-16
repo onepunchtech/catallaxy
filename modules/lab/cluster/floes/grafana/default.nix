@@ -6,6 +6,7 @@
   k8sSpecs,
   k8sHelpers,
   contracts,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -27,26 +28,32 @@ in
       host = lib.mkOption {
         type = lib.types.str;
         default = "grafana.grafana.svc.cluster.local";
+        description = "In-cluster DNS name of the Grafana Service.";
       };
       namespace = lib.mkOption {
         type = lib.types.str;
         default = "grafana";
+        description = "Namespace Grafana runs in.";
       };
       port = lib.mkOption {
         type = lib.types.port;
         default = 80;
+        description = "Port the Service listens on.";
       };
       url = lib.mkOption {
         type = lib.types.str;
         default = "http://grafana.grafana.svc.cluster.local:80";
+        description = "In-cluster URL, for peers that reach Grafana without leaving the cluster.";
       };
       externalUrl = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Public HTTPS URL, or empty when no domain is set.";
       };
       domain = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Public hostname, or empty when Grafana is internal only.";
       };
     };
   module =
@@ -220,6 +227,52 @@ in
         else
           [ ];
 
+      floes.grafana.network = {
+
+        declared = true;
+
+        serves.http.port = 80;
+
+        reaches = [
+
+          "prometheus/api"
+
+          "loki/api"
+
+          "tempo/api"
+
+        ];
+
+      };
+
+      floes.grafana.imagesComplete = true;
+
+      floes.grafana.images.grafana = {
+
+        repository = "grafana/grafana";
+
+        tag = "12.3.1";
+
+      };
+
+      floes.grafana.images.downloader = {
+
+        repository = "library/busybox";
+
+        tag = "1.31.1";
+
+      };
+
+      floes.grafana.images.sidecar = {
+
+        registry = "quay.io";
+
+        repository = "kiwigrid/k8s-sidecar";
+
+        tag = "2.5.0";
+
+      };
+
       bundles.grafana = {
         helmCharts.grafana = {
           chart = chartRef;
@@ -283,37 +336,18 @@ in
           };
         };
 
-        resources =
-          (optionalAttrs (cfg.tls.issuerRef != null) {
-            "${cfg.tls.secretName}" = k8sHelpers.mkCertificate {
-              name = cfg.tls.secretName;
-              namespace = cfg.namespace;
-              secretName = cfg.tls.secretName;
-              issuerRef = {
-                inherit (cfg.tls.issuerRef) name kind;
-              };
-              dnsNames = [ cfg.domain ];
-            };
-          })
-          // (optionalAttrs (cfg.gateway.enable && cfg.domain != "") {
-            "grafana-httproute" = k8sHelpers.mkHttpRoute {
-              name = "grafana";
-              namespace = cfg.namespace;
-              hostname = cfg.domain;
-              gatewayParent = k8sHelpers.mkGatewayParent {
-                name =
-                  if cfg.gateway.tier == "internal" then
-                    config.floes.gateway.exports.internalGatewayName
-                  else
-                    cfg.gateway.gatewayRef;
-                namespace = cfg.gateway.gatewayNamespace;
-              };
-              backend = {
-                name = "grafana";
-                port = 80;
-              };
-            };
-          });
+        resources = k8sHelpers.mkGatewayExposure {
+          name = "grafana";
+          routeName = "grafana-httproute";
+          namespace = cfg.namespace;
+          inherit (cfg) domain gateway tls;
+          inherit (config.floes.gateway.exports) internalGatewayName;
+          sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+          backend = {
+            name = "grafana";
+            port = 80;
+          };
+        };
 
         createNamespaces = [ cfg.namespace ];
 

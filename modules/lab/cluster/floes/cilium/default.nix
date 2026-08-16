@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -114,6 +115,74 @@ in
           message = "cilium gatewayAPI.tls.enable requires floes.cert-manager to be enabled (reconciles the Certificate CR).";
         }
       ];
+
+      floes.cilium.network = {
+
+        declared = true;
+
+      };
+
+      floes.cilium.imagesComplete = true;
+
+      floes.cilium.images.agent = {
+
+        registry = "quay.io";
+
+        repository = "cilium/cilium";
+
+        tag = "v1.17.2";
+
+        digest = "sha256:3c4c9932b5d8368619cb922a497ff2ebc8def5f41c18e410bcc84025fcd385b1";
+
+      };
+
+      floes.cilium.images.operator = {
+
+        registry = "quay.io";
+
+        repository = "cilium/operator-generic";
+
+        tag = "v1.17.2";
+
+        digest = "sha256:81f2d7198366e8dec2903a3a8361e4c68d47d19c68a0d42f0b7b6e3f0523f249";
+
+      };
+
+      floes.cilium.images.envoy = {
+
+        registry = "quay.io";
+
+        repository = "cilium/cilium-envoy";
+
+        tag = "v1.31.5-1741765102-efed3defcc70ab5b263a0fc44c93d316b846a211";
+
+        digest = "sha256:377c78c13d2731f3720f931721ee309159e782d882251709cb0fac3b42c03f4b";
+
+      };
+
+      floes.cilium.images.hubbleRelay = {
+
+        registry = "quay.io";
+
+        repository = "cilium/hubble-relay";
+
+        tag = "v1.17.2";
+
+        digest = "sha256:42a8db5c256c516cacb5b8937c321b2373ad7a6b0a1e5a5120d5028433d586cc";
+
+      };
+
+      floes.cilium.images.certgen = {
+
+        registry = "quay.io";
+
+        repository = "cilium/certgen";
+
+        tag = "v0.2.1";
+
+        digest = "sha256:ab6b1928e9c5f424f6b0f51c68065b9fd85e2f8d3e5f21fbd1a3cb27e6fb9321";
+
+      };
 
       bundles.gateway-api-crds.yamls =
         if cfg.gatewayAPI.enable then [ k8sSpecs.standaloneCrds.gateway-api ] else [ ];

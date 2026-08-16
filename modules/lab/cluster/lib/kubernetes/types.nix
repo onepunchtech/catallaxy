@@ -98,12 +98,40 @@ let
     }
   );
 
+  # The generated resource types carry `freeformType = types.attrs`, so this
+  # checks the fields Kubernetes knows about and lets unknown ones through. A
+  # kind outside the committed schemas keeps the untyped spec it had before.
+  specTypeFor =
+    kind:
+    let
+      kindType = allResourceTypes.${kind} or null;
+      subOptions = if kindType == null then { } else kindType.getSubOptions [ ];
+    in
+    subOptions.spec.type or (types.nullOr types.attrs);
+
+  readyProbeType = types.submodule {
+    options.kind = mkOption {
+      type = types.enum [
+        "condition"
+        "jsonpath"
+        "exists"
+        "http"
+        "tcp"
+        "dns"
+        "script"
+        "kubectl-wait"
+      ];
+      description = ''
+        Which probe shape this is. Every kind but `kubectl-wait` is
+        rendered by `lib/util/wait.nix`; `kubectl-wait` passes `args`
+        through to kubectl.
+      '';
+    };
+    freeformType = types.attrs;
+  };
+
   kubernetesResourceType = types.submodule (
     { name, config, ... }:
-    let
-
-      kindType = allResourceTypes.${config.kind} or null;
-    in
     {
       options = {
         apiVersion = mkOption {
@@ -113,7 +141,14 @@ let
 
         kind = mkOption {
           type = types.str;
-          description = "Kubernetes resource kind (e.g., 'Service', 'Deployment')";
+          default = "";
+          description = ''
+            Kubernetes resource kind (e.g., 'Service', 'Deployment'). It
+            picks the type `spec` is checked against, so it is read while
+            the option tree is built and carries a default for that reason.
+            A resource that leaves it empty is rejected by an assertion
+            rather than by the type.
+          '';
         };
 
         metadata = mkOption {
@@ -125,9 +160,19 @@ let
         };
 
         spec = mkOption {
-          type = types.nullOr types.attrs;
+          type = specTypeFor config.kind;
           default = null;
-          description = "Resource spec (structure depends on kind)";
+          description = ''
+            Resource spec. When the kind is one of the generated Kubernetes
+            ${k8sVersion} API or CRD types, every field Kubernetes declares
+            is checked against its type, so `replicas = "three"` fails
+            evaluation naming the option path.
+
+            Two things it does not catch. The generated types default every
+            field to null, so leaving out a field Kubernetes requires is not
+            an error here. And they carry a freeform escape hatch, so a
+            misspelled key passes through to the manifest.
+          '';
         };
 
         data = mkOption {
@@ -156,7 +201,11 @@ let
           default = { };
           description = ''
             Typed Kubernetes resources to include in this phase.
-            Resources are validated against the generated K8s ${k8sVersion} API types and CRD types.
+            A resource whose `kind` is one of the generated K8s ${k8sVersion}
+            API or CRD types has its `spec` checked against that type, so a
+            field given the wrong type fails evaluation. Kinds outside those
+            schemas, and fields Kubernetes does not declare, are passed
+            through unchecked.
           '';
         };
 
@@ -252,6 +301,16 @@ let
           '';
         };
 
+        floe = mkOption {
+          internal = true;
+          type = types.nullOr types.str;
+          default = null;
+          description = ''
+            Which floe declared this bundle, for `floe:<name>` anchors.
+            Stamped by `mkFloe`; a bundle a lab declares directly has none.
+          '';
+        };
+
         awaitRollout = mkOption {
           type = types.bool;
           default = true;
@@ -260,15 +319,19 @@ let
             reach `Available` before moving on.
 
             Set `false` when a workload gates at runtime on something it
-            does not mint, and its own initContainer is the real gate.
-            The netbird agent on a peer cluster is the motivating case:
-            its setup key arrives by `cross-cluster-secret-copy`, a plan
-            step that necessarily runs *after* the deploy, so waiting for
-            the Deployment to go Available deadlocks the plan against
-            itself (2026-07-31). The bundle already declines to express
-            this as a DAG edge; the token is minted in another cluster,
-            so the same judgement belongs here rather than as an ordering
-            anchor in whatever lab happens to compose the floe.
+            does not mint, nothing in the deploy can make that thing
+            appear, and its own initContainer is the real gate.
+
+            The netbird agent on a peer cluster used to be the motivating
+            case: its setup key arrived by a plan step that necessarily
+            ran after the deploy, so waiting for the Deployment to go
+            Available deadlocked the plan against itself (2026-07-31).
+            That is no longer true. The key is authored in the lab's
+            secret store and projected during the deploy, so the bundle
+            waits on the Secret with a `readyProbe` and awaits its
+            rollout like anything else. Prefer that shape: if the value
+            can be made to arrive during the deploy, wait for it rather
+            than opting out of waiting.
 
             This is a statement a bundle makes about ITSELF. It names no
             step, cluster or peer, so it survives the plan being
@@ -283,7 +346,7 @@ let
 
         readyProbe = mkOption {
 
-          type = types.nullOr types.attrs;
+          type = types.nullOr readyProbeType;
           default = null;
           description = ''
             How to determine this bundle is READY beyond "kubectl apply
@@ -291,6 +354,11 @@ let
             any tagged shape it accepts (`condition`, `jsonpath`,
             `exists`, `http`, `tcp`, `dns`, `script`), plus a
             `kubectl-wait` escape hatch taking free-form `args`.
+
+            `kind` is checked at evaluation, so a misspelled one is an
+            error here rather than a probe that never fires and a wait
+            that times out minutes later with nothing pointing at the
+            cause. The fields each kind reads are not yet typed.
 
             `condition` / `jsonpath` / `exists` / `kubectl-wait` /
             `script` run host-side against the operator's kubeconfig.
@@ -391,6 +459,7 @@ let
             bootstrap = null;
             steady = null;
           };
+          description = "Who owns this bundle's resources at each stage: which tool applies it during bootstrap, and which reconciles it afterwards.";
         };
       };
     }

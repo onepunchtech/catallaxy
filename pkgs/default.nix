@@ -110,6 +110,8 @@ let
           cp -r ${optionDocs}/. src/src/reference/
           chmod -R u+w src/src/reference
           cp ${stepKindDocs} src/src/reference/step-kinds.md
+          cp ${../CHANGELOG.md} src/src/changelog.md
+          chmod u+w src/src/changelog.md
           mv src/src/reference/SUMMARY.md src/src/SUMMARY.md
           rm -f src/src/reference/undescribed.txt
           mdbook-mermaid install src

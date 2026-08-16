@@ -3,6 +3,8 @@
   lab.name = "homelab.local";
   lab.environment = "development";
 
+  lab.secrets.envFile = "examples/labs/homelab/envs/ci.env";
+
   lab.network.dockerSubnet = "172.22.0.0/16";
 
   lab.dns.enable = true;

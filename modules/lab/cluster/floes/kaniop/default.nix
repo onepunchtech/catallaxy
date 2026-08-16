@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -73,6 +74,7 @@ in
           condition = "Available";
           timeout = "5m";
         };
+        description = "Probe a consumer can reuse to wait for the operator, rather than restating the deployment name and namespace.";
       };
     };
   module =
@@ -98,6 +100,24 @@ in
         namespace = cfg.namespace;
         condition = "Available";
         timeout = "5m";
+      };
+
+      floes.kaniop.network = {
+
+        declared = true;
+
+      };
+
+      floes.kaniop.imagesComplete = true;
+
+      floes.kaniop.images.operator = {
+
+        registry = "ghcr.io";
+
+        repository = "pando85/kaniop";
+
+        tag = "0.11.1";
+
       };
 
       bundles.kaniop-crds = {

@@ -1,7 +1,5 @@
-use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use console::style;
@@ -13,18 +11,13 @@ use crate::domain::{Direction, PlannedStep, StepParams};
 pub async fn run(
     ctx: &CataContext,
     name: Option<&str>,
-    teardown: bool,
+    direction: Direction,
     stable: bool,
     from_file: Option<PathBuf>,
     diff: Option<PathBuf>,
 ) -> Result<()> {
     let stable = stable || diff.is_some();
 
-    let direction = if teardown {
-        Direction::Teardown
-    } else {
-        Direction::Deploy
-    };
     let steps = load_steps(ctx, name, direction, from_file.as_deref())?;
     let parsed = parse_steps(&steps, direction)?;
     if from_file.is_none() {
@@ -43,7 +36,7 @@ pub async fn run(
         return Ok(());
     }
 
-    render_pretty(name.unwrap_or(""), teardown, &parsed);
+    render_pretty(name.unwrap_or(""), direction, &parsed);
     Ok(())
 }
 
@@ -59,7 +52,7 @@ fn load_steps(
     };
 
     if let Some(path) = from_file {
-        let raw = fs::read_to_string(path)
+        let raw = crate::io::fs::read_to_string(path)
             .with_context(|| format!("reading plan file {}", path.display()))?;
         let v: Value = serde_json::from_str(&raw)
             .with_context(|| format!("parsing plan JSON from {}", path.display()))?;
@@ -262,7 +255,7 @@ fn normalize_store_paths(s: &str) -> String {
 }
 
 fn run_diff(actual: &str, baseline_path: &Path) -> Result<bool> {
-    let baseline = fs::read_to_string(baseline_path)
+    let baseline = crate::io::fs::read_to_string(baseline_path)
         .with_context(|| format!("reading baseline {}", baseline_path.display()))?;
     if actual == baseline {
         eprintln!(
@@ -277,11 +270,7 @@ fn run_diff(actual: &str, baseline_path: &Path) -> Result<bool> {
         .context("writing actual plan to temp file")?;
     tmp.flush().ok();
 
-    let baseline_str = baseline_path.to_string_lossy();
-    let tmp_str = tmp.path().to_string_lossy();
-    let status = Command::new("diff")
-        .args(["-u", &baseline_str, &tmp_str])
-        .status();
+    let status = crate::io::diff::unified(baseline_path, tmp.path());
     match status {
         Ok(_) => {}
         Err(e) => {
@@ -294,8 +283,11 @@ fn run_diff(actual: &str, baseline_path: &Path) -> Result<bool> {
     Ok(false)
 }
 
-fn render_pretty(lab_name: &str, teardown: bool, steps: &[PlannedStep]) {
-    let plan_label = if teardown { "Teardown" } else { "Deployment" };
+fn render_pretty(lab_name: &str, direction: Direction, steps: &[PlannedStep]) {
+    let plan_label = match direction {
+        Direction::Teardown => "Teardown",
+        Direction::Deploy => "Deployment",
+    };
 
     println!(
         "{} {} plan for '{lab_name}'",
@@ -334,7 +326,6 @@ fn icon(kind: &str) -> &'static str {
         "ensure-secrets" => "🔑",
         "wait-for-resources" | "wait-for-cluster-gone" => "⏳",
         "sync-kubeconfig" => "🔗",
-        "cross-cluster-secret-copy" => "🔁",
         "publish-images" | "publish-manifests" => "📤",
         "pivot" => "🔄",
         "destroy-cluster" | "delete-managed-resource" => "💥",
@@ -354,15 +345,6 @@ fn detail(params: &StepParams) -> Option<String> {
         } else {
             format!("target={}", p.target)
         }),
-        StepParams::CrossClusterSecretCopy(p) => Some(format!(
-            "{}:{}/{} → {}:{}/{}",
-            p.source_cluster,
-            p.source_namespace,
-            p.source_secret,
-            p.target_cluster,
-            p.target_namespace,
-            p.target_secret,
-        )),
         StepParams::WaitForResources(p) => Some(format!(
             "on={}, waiting for: {}",
             p.target,

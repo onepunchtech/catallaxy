@@ -23,7 +23,6 @@ impl LabCheckRule for Plan {
         let mut diags = Vec::new();
         diags.extend(check_cluster_refs(ctx.deployment_plan, &known));
         diags.extend(check_duplicate_create(ctx.deployment_plan));
-        diags.extend(check_secret_copy_ordering(ctx.deployment_plan));
         diags
     }
 }
@@ -66,41 +65,6 @@ fn check_duplicate_create(plan: &[PlannedStep]) -> Vec<Diagnostic> {
     diags
 }
 
-fn check_secret_copy_ordering(plan: &[PlannedStep]) -> Vec<Diagnostic> {
-    let mut created: HashSet<&str> = HashSet::new();
-    let mut diags = Vec::new();
-
-    let ever_created: HashSet<&str> = plan
-        .iter()
-        .filter_map(|s| match &s.params {
-            StepParams::CreateCluster(p) => Some(p.name.as_str()),
-            _ => None,
-        })
-        .collect();
-
-    for step in plan {
-        if let StepParams::CreateCluster(p) = &step.params {
-            created.insert(p.name.as_str());
-        }
-        if let StepParams::CrossClusterSecretCopy(p) = &step.params {
-            for endpoint in [p.source_cluster.as_str(), p.target_cluster.as_str()] {
-                if ever_created.contains(endpoint) && !created.contains(endpoint) {
-                    diags.push(diag(
-                        Severity::Error,
-                        &p.name,
-                        format!(
-                            "cross-cluster secret '{}' copy scheduled before \
-                             cluster '{}' is created",
-                            p.name, endpoint,
-                        ),
-                    ));
-                }
-            }
-        }
-    }
-    diags
-}
-
 fn step_kind(step: &PlannedStep) -> &'static str {
     step.type_tag()
 }
@@ -131,7 +95,6 @@ mod tests {
             lab_namespaces: HashMap::new(),
             clusters: HashMap::new(),
             images: ImagePolicy::default(),
-            lint: Default::default(),
             assertions: vec![],
             warnings: vec![],
             deployment_plan: plan,
@@ -163,22 +126,6 @@ mod tests {
             &format!("deploy-manifests-{target}"),
             "deploy-manifests",
             serde_json::json!({ "target": target }),
-        )
-    }
-
-    fn copy(name: &str, src: &str, tgt: &str) -> PlannedStep {
-        planned_step(
-            name,
-            "cross-cluster-secret-copy",
-            serde_json::json!({
-                "name": name,
-                "sourceCluster": src,
-                "sourceNamespace": "ns",
-                "sourceSecret": "sec",
-                "targetCluster": tgt,
-                "targetNamespace": "ns",
-                "targetSecret": "sec",
-            }),
         )
     }
 
@@ -216,21 +163,6 @@ mod tests {
     }
 
     #[test]
-    fn secret_copy_before_create_errors() {
-        let meta = meta_with(
-            vec!["hub", "spoke"],
-            vec![create("hub"), copy("s", "spoke", "hub"), create("spoke")],
-        );
-        let diags = run(&meta);
-        assert!(
-            diags
-                .iter()
-                .any(|d| d.severity == Severity::Error
-                    && d.message.contains("before cluster 'spoke'"))
-        );
-    }
-
-    #[test]
     fn an_argocd_bootstrap_naming_an_unknown_cluster_is_caught() {
         let step = planned_step(
             "bootstrap-argocd-typo",
@@ -244,11 +176,5 @@ mod tests {
                 .any(|d| d.severity == Severity::Error && d.message.contains("typo")),
             "a target on an argocd bootstrap step must be linted like any other"
         );
-    }
-
-    #[test]
-    fn secret_copy_between_external_clusters_is_silent() {
-        let meta = meta_with(vec!["hub", "spoke"], vec![copy("s", "hub", "spoke")]);
-        assert!(run(&meta).is_empty());
     }
 }

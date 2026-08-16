@@ -10,7 +10,7 @@ pub fn is_macos() -> bool {
 }
 
 pub fn docker_socket(profile: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let home = crate::io::fs::home_or_tmp();
     format!("unix://{home}/.colima/{profile}/docker.sock")
 }
 
@@ -36,7 +36,7 @@ pub fn profile_running(profile: &str) -> bool {
         return true;
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let home = crate::io::fs::home_or_tmp();
     let sock = format!("{home}/.colima/{profile}/docker.sock");
     std::path::Path::new(&sock).exists()
 }
@@ -107,4 +107,24 @@ fn ensure_binfmt_amd64(profile: &str) {
             .stderr(Stdio::null())
             .status();
     }
+}
+
+pub fn list_json() -> Option<String> {
+    let out = Command::new("colima")
+        .args(["list", "-j"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+pub fn address_in_list(list_json: &str) -> Option<String> {
+    list_json.lines().find_map(|line| {
+        let parsed = serde_json::from_str::<serde_json::Value>(line).ok()?;
+        let addr = parsed["address"].as_str()?;
+        (!addr.is_empty()).then(|| addr.to_string())
+    })
 }

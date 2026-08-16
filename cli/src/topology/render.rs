@@ -1,30 +1,36 @@
+use std::fmt::Write;
+
 use anyhow::Result;
 use console::style;
 
 use super::*;
 
-pub fn render(topo: &LabTopology, format: TopologyFormat) -> Result<()> {
-    match format {
-        TopologyFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(topo)?);
-        }
+pub fn render(topo: &LabTopology, format: TopologyFormat) -> Result<String> {
+    Ok(match format {
+        // The table writes its own line breaks as it goes; the other three are
+        // documents that the caller used to hand to println!, which is one
+        // trailing newline more than the document carries.
         TopologyFormat::Table => render_table(topo),
-        TopologyFormat::Mermaid => println!("{}", render_mermaid(topo)),
-        TopologyFormat::Dot => println!("{}", render_dot(topo)),
-    }
-    Ok(())
+        TopologyFormat::Json => serde_json::to_string_pretty(topo)? + "\n",
+        TopologyFormat::Mermaid => render_mermaid(topo) + "\n",
+        TopologyFormat::Dot => render_dot(topo) + "\n",
+    })
 }
 
-fn render_table(topo: &LabTopology) {
-    println!(
+fn render_table(topo: &LabTopology) -> String {
+    let mut out = String::new();
+
+    let _ = writeln!(
+        out,
         "{} Lab '{}' topology",
         style("catallaxy").cyan().bold(),
         style(&topo.name).green()
     );
-    println!();
+    let _ = writeln!(out);
 
     let zone_str = topo.zone.as_deref().unwrap_or("?");
-    println!(
+    let _ = writeln!(
+        out,
         "  {} {} {} {} {} {} {}",
         style("strategy:").dim(),
         topo.cd_strategy,
@@ -34,40 +40,126 @@ fn render_table(topo: &LabTopology) {
         style("|").dim(),
         style(format!("net: {}", topo.network.docker_subnet)).dim()
     );
-    println!();
+    let _ = writeln!(out);
 
-    render_services(topo);
-    render_clusters(topo);
-    render_edges(topo);
+    out.push_str(&render_services(topo));
+    out.push_str(&render_clusters(topo));
+    out.push_str(&render_edges(topo));
+    out
 }
 
-fn render_services(topo: &LabTopology) {
-    if !topo.services.is_empty() {
-        println!("{}", style("Services:").bold());
-        for (name, svc) in &topo.services {
-            let status = match svc.running {
-                Some(true) => style("running").green(),
-                Some(false) => style("stopped").red(),
-                None => style("unknown").dim(),
-            };
-            let ports = if svc.ports.is_empty() {
-                String::new()
+fn render_services(topo: &LabTopology) -> String {
+    let mut out = String::new();
+    if topo.services.is_empty() {
+        return out;
+    }
+
+    let _ = writeln!(out, "{}", style("Services:").bold());
+    for (name, svc) in &topo.services {
+        let status = match svc.running {
+            Some(true) => style("running").green(),
+            Some(false) => style("stopped").red(),
+            None => style("unknown").dim(),
+        };
+        let ports = if svc.ports.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", style(format!("[{}]", svc.ports.join(", "))).dim())
+        };
+        let _ = writeln!(
+            out,
+            "  {} ({}) [{}]{}",
+            style(name).cyan(),
+            svc.description,
+            status,
+            ports
+        );
+    }
+    let _ = writeln!(out);
+    out
+}
+
+fn render_node_lines(live: &ClusterLiveState) -> String {
+    let mut out = String::new();
+    if live.nodes.is_empty() {
+        return out;
+    }
+
+    let _ = writeln!(out, "  {}", style("Nodes:").dim());
+    for node in &live.nodes {
+        let node_status = if node.ready {
+            style("Ready").green()
+        } else {
+            style("NotReady").red()
+        };
+        let _ = writeln!(
+            out,
+            "    {} [{}] {}",
+            style(&node.name).cyan(),
+            node_status,
+            node.version
+        );
+    }
+    out
+}
+
+pub fn version_suffix(version: Option<&str>) -> String {
+    version
+        .filter(|v| !v.is_empty())
+        .map(|v| {
+            if v.starts_with('v') {
+                format!(" {v}")
             } else {
-                format!(" {}", style(format!("[{}]", svc.ports.join(", "))).dim())
-            };
-            println!(
-                "  {} ({}) [{}]{}",
-                style(name).cyan(),
-                svc.description,
-                status,
-                ports
-            );
+                format!(" v{v}")
+            }
+        })
+        .unwrap_or_default()
+}
+
+fn health_suffix(health: Option<&ComponentHealthState>) -> String {
+    match health {
+        Some(ComponentHealthState::Healthy { pod_count }) => {
+            format!(" ({})", style(format!("{pod_count} pods")).green())
         }
-        println!();
+        Some(ComponentHealthState::Degraded { ready, total }) => {
+            format!(" ({})", style(format!("{ready}/{total} ready")).yellow())
+        }
+        Some(ComponentHealthState::NoPods) => format!(" ({})", style("no pods").dim()),
+        None => String::new(),
     }
 }
 
-fn render_clusters(topo: &LabTopology) {
+fn render_component_lines(cluster: &ClusterTopology) -> String {
+    let mut out = String::new();
+    if cluster.components.is_empty() {
+        return out;
+    }
+
+    let _ = writeln!(out, "  {}", style("Components:").dim());
+    for (comp_name, comp) in &cluster.components {
+        let domain_str = comp
+            .domain
+            .as_ref()
+            .map(|d| format!(" {}", style(d).dim()))
+            .unwrap_or_default();
+
+        let _ = writeln!(
+            out,
+            "    {} {}{} {}{}{}",
+            style("-").dim(),
+            style(comp_name).cyan(),
+            style(version_suffix(comp.version.as_deref())).dim(),
+            style(format!("[{}]", comp.namespace)).dim(),
+            health_suffix(comp.health.as_ref()),
+            domain_str,
+        );
+    }
+    out
+}
+
+fn render_clusters(topo: &LabTopology) -> String {
+    let mut out = String::new();
+
     for cluster in topo.clusters.values() {
         let status = match &cluster.live {
             Some(live) if live.reachable => style("ready").green(),
@@ -75,14 +167,16 @@ fn render_clusters(topo: &LabTopology) {
             None => style("static").dim(),
         };
 
-        println!(
+        let _ = writeln!(
+            out,
             "{} {} [{}] (context: {})",
             style("Cluster").bold(),
             style(&cluster.name).green().bold(),
             status,
             style(&cluster.kube_context).dim(),
         );
-        println!(
+        let _ = writeln!(
+            out,
             "  {} {}  {} {}cp/{}w  {} pods={} svc={}",
             style("provider:").dim(),
             cluster.provider,
@@ -94,100 +188,47 @@ fn render_clusters(topo: &LabTopology) {
             cluster.service_subnet,
         );
 
-        if let Some(live) = &cluster.live
-            && !live.nodes.is_empty()
-        {
-            println!("  {}", style("Nodes:").dim());
-            for node in &live.nodes {
-                let node_status = if node.ready {
-                    style("Ready").green()
-                } else {
-                    style("NotReady").red()
-                };
-                println!(
-                    "    {} [{}] {}",
-                    style(&node.name).cyan(),
-                    node_status,
-                    node.version
-                );
-            }
+        if let Some(live) = &cluster.live {
+            out.push_str(&render_node_lines(live));
         }
+        out.push_str(&render_component_lines(cluster));
+        let _ = writeln!(out);
+    }
+    out
+}
 
-        if !cluster.components.is_empty() {
-            println!("  {}", style("Components:").dim());
-            for (comp_name, comp) in &cluster.components {
-                let version = comp
-                    .version
-                    .as_deref()
-                    .filter(|v| !v.is_empty())
-                    .map(|v| {
-                        if v.starts_with('v') {
-                            format!(" {v}")
-                        } else {
-                            format!(" v{v}")
-                        }
-                    })
-                    .unwrap_or_default();
-
-                let health_str = match &comp.health {
-                    Some(ComponentHealthState::Healthy { pod_count }) => {
-                        format!(" ({})", style(format!("{pod_count} pods")).green())
-                    }
-                    Some(ComponentHealthState::Degraded { ready, total }) => {
-                        format!(" ({})", style(format!("{ready}/{total} ready")).yellow())
-                    }
-                    Some(ComponentHealthState::NoPods) => {
-                        format!(" ({})", style("no pods").dim())
-                    }
-                    None => String::new(),
-                };
-
-                let domain_str = comp
-                    .domain
-                    .as_ref()
-                    .map(|d| format!(" {}", style(d).dim()))
-                    .unwrap_or_default();
-
-                println!(
-                    "    {} {}{} {}{}{}",
-                    style("-").dim(),
-                    style(comp_name).cyan(),
-                    style(version).dim(),
-                    style(format!("[{}]", comp.namespace)).dim(),
-                    health_str,
-                    domain_str,
-                );
-            }
-        }
-        println!();
+pub fn edge_kind_label(kind: &EdgeKind) -> &'static str {
+    match kind {
+        EdgeKind::ProxyRoute => "route",
+        EdgeKind::DeployDependency => "depends-on",
+        EdgeKind::Provisions => "provisions",
     }
 }
 
-fn render_edges(topo: &LabTopology) {
-    if !topo.edges.is_empty() {
-        println!("{}", style("Relationships:").bold());
-        for edge in &topo.edges {
-            let kind_str = match edge.kind {
-                EdgeKind::ProxyRoute => "route",
-                EdgeKind::SecretCopy => "secret-copy",
-                EdgeKind::DeployDependency => "depends-on",
-                EdgeKind::Provisions => "provisions",
-            };
-            let label = edge
-                .label
-                .as_ref()
-                .map(|l| format!(" ({l})"))
-                .unwrap_or_default();
-            println!(
-                "  {} --[{}]--> {}{}",
-                style(&edge.source).cyan(),
-                style(kind_str).dim(),
-                style(&edge.target).cyan(),
-                style(&label).dim()
-            );
-        }
-        println!();
+fn render_edges(topo: &LabTopology) -> String {
+    let mut out = String::new();
+    if topo.edges.is_empty() {
+        return out;
     }
+
+    let _ = writeln!(out, "{}", style("Relationships:").bold());
+    for edge in &topo.edges {
+        let label = edge
+            .label
+            .as_ref()
+            .map(|l| format!(" ({l})"))
+            .unwrap_or_default();
+        let _ = writeln!(
+            out,
+            "  {} --[{}]--> {}{}",
+            style(&edge.source).cyan(),
+            style(edge_kind_label(&edge.kind)).dim(),
+            style(&edge.target).cyan(),
+            style(&label).dim()
+        );
+    }
+    let _ = writeln!(out);
+    out
 }
 
 fn render_mermaid(topo: &LabTopology) -> String {
@@ -234,7 +275,6 @@ fn render_mermaid(topo: &LabTopology) -> String {
         let label = edge.label.as_deref().unwrap_or("");
         let kind_str = match edge.kind {
             EdgeKind::ProxyRoute => "route",
-            EdgeKind::SecretCopy => "secret",
             EdgeKind::DeployDependency => "depends",
             EdgeKind::Provisions => "provisions",
         };
@@ -304,7 +344,6 @@ fn render_dot(topo: &LabTopology) -> String {
         let label = edge.label.as_deref().unwrap_or("");
         let kind_str = match edge.kind {
             EdgeKind::ProxyRoute => "route",
-            EdgeKind::SecretCopy => "secret",
             EdgeKind::DeployDependency => "depends",
             EdgeKind::Provisions => "provisions",
         };
@@ -315,7 +354,6 @@ fn render_dot(topo: &LabTopology) -> String {
         };
         let edge_style = match edge.kind {
             EdgeKind::ProxyRoute => ", color=blue",
-            EdgeKind::SecretCopy => ", color=red, style=dashed",
             EdgeKind::Provisions => ", color=green",
             EdgeKind::DeployDependency => ", style=dotted",
         };
@@ -358,4 +396,32 @@ fn resolve_dot_id(topo: &LabTopology, endpoint: &str) -> String {
         return sanitize_dot_id(endpoint);
     }
     sanitize_dot_id(endpoint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_version_gains_a_v_only_when_it_lacks_one() {
+        assert_eq!(version_suffix(Some("1.2.3")), " v1.2.3");
+        assert_eq!(version_suffix(Some("v1.2.3")), " v1.2.3");
+    }
+
+    #[test]
+    fn an_absent_or_empty_version_renders_nothing() {
+        assert_eq!(version_suffix(None), "");
+        assert_eq!(version_suffix(Some("")), "");
+    }
+
+    #[test]
+    fn every_edge_kind_has_a_label() {
+        for kind in [
+            EdgeKind::ProxyRoute,
+            EdgeKind::DeployDependency,
+            EdgeKind::Provisions,
+        ] {
+            assert!(!edge_kind_label(&kind).is_empty());
+        }
+    }
 }

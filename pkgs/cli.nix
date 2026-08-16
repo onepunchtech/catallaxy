@@ -12,7 +12,15 @@ let
       path: type:
       (craneLib.filterCargoSources path type)
       || (type == "directory")
-      || (lib.hasSuffix ".json" path && lib.hasInfix "/tests/fixtures/" path);
+      || (
+        lib.any (ext: lib.hasSuffix ext path) [
+          ".json"
+          ".crt"
+          ".key"
+        ]
+        && lib.hasInfix "/tests/fixtures/" path
+      )
+      || (lib.hasSuffix ".nix" path && lib.hasInfix "/src/commands/templates/" path);
   };
 
   commonArgs = {

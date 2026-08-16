@@ -7,7 +7,14 @@ use serde::{Deserialize, Serialize};
 use crate::domain::LabSpec;
 pub use crate::domain::diagnostic::{Diagnostic, Severity};
 
-pub const CHECK_NAMES: [&str; 5] = ["clusters", "services", "rollouts", "endpoints", "chainsaw"];
+pub const CHECK_NAMES: [&str; 6] = [
+    "clusters",
+    "services",
+    "rollouts",
+    "endpoints",
+    "certificates",
+    "chainsaw",
+];
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -79,23 +86,31 @@ impl VerifyContext<'_> {
     }
 
     pub fn ingress(&self) -> Option<(&'static str, u16)> {
-        let published: Vec<u16> = self
+        let published: Vec<(u16, u16)> = self
             .lab
             .services
             .get("proxy")?
             .ports
             .iter()
-            .filter_map(|p| p.split(':').next()?.parse().ok())
+            .filter_map(|p| published_port(p))
             .collect();
 
-        if published.contains(&443) {
-            Some(("https", 443))
-        } else if published.contains(&80) {
-            Some(("http", 80))
-        } else {
-            None
-        }
+        ingress_endpoint(&published)
     }
+}
+
+fn published_port(mapping: &str) -> Option<(u16, u16)> {
+    let mapping = mapping.split('/').next().unwrap_or(mapping);
+    let (host, container) = mapping.split_once(':')?;
+    Some((host.parse().ok()?, container.parse().ok()?))
+}
+
+pub fn ingress_endpoint(published: &[(u16, u16)]) -> Option<(&'static str, u16)> {
+    let on_container_port = |want: u16| published.iter().find(|(_, c)| *c == want).map(|(h, _)| *h);
+
+    on_container_port(443)
+        .map(|host| ("https", host))
+        .or_else(|| on_container_port(80).map(|host| ("http", host)))
 }
 
 pub async fn run(ctx: &VerifyContext<'_>, only: Option<&str>) -> Vec<Diagnostic> {
@@ -113,6 +128,9 @@ pub async fn run(ctx: &VerifyContext<'_>, only: Option<&str>) -> Vec<Diagnostic>
     }
     if wanted("endpoints") {
         diags.extend(checks::endpoints::run(ctx).await);
+    }
+    if wanted("certificates") {
+        diags.extend(checks::certificates::run(ctx));
     }
     if wanted("chainsaw")
         && let Some(package) = ctx.package
@@ -449,5 +467,46 @@ mod endpoint_status_tests {
         for status in [500, 502, 503] {
             assert!(!answered(status), "{status} must fail");
         }
+    }
+}
+
+#[cfg(test)]
+mod ingress_endpoint_tests {
+    use super::ingress_endpoint;
+
+    #[test]
+    fn the_default_ports_resolve_as_they_always_did() {
+        assert_eq!(ingress_endpoint(&[(80, 80)]), Some(("http", 80)));
+        assert_eq!(
+            ingress_endpoint(&[(80, 80), (443, 443)]),
+            Some(("https", 443))
+        );
+    }
+
+    #[test]
+    fn a_remapped_host_port_is_still_the_ingress() {
+        assert_eq!(
+            ingress_endpoint(&[(8080, 80)]),
+            Some(("http", 8080)),
+            "a lab that moves off port 80 to share a machine still has an ingress"
+        );
+        assert_eq!(
+            ingress_endpoint(&[(8080, 80), (8443, 443)]),
+            Some(("https", 8443))
+        );
+    }
+
+    #[test]
+    fn tls_wins_over_plaintext_whatever_the_host_port() {
+        assert_eq!(
+            ingress_endpoint(&[(9443, 443), (9080, 80)]),
+            Some(("https", 9443))
+        );
+    }
+
+    #[test]
+    fn a_proxy_publishing_neither_has_no_ingress() {
+        assert_eq!(ingress_endpoint(&[]), None);
+        assert_eq!(ingress_endpoint(&[(5353, 53)]), None);
     }
 }

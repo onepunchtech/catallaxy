@@ -60,10 +60,9 @@ advice rather than error codes.
 Run after every cluster, with access to all clusters' resources plus the
 deployment plan.
 
-| Rule                   | Checks                                                                                                                     |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `cross-cluster-secret` | every `cross-cluster-secret-copy` step names real clusters, and the source Secret exists in the source cluster's manifests |
-| `plan`                 | no step names an undeclared cluster. No cluster created twice. No secret copied before both endpoints exist                |
+| Rule   | Checks                                                                                                      |
+| ------ | ----------------------------------------------------------------------------------------------------------- |
+| `plan` | no step names an undeclared cluster. No cluster created twice. No secret copied before both endpoints exist |
 
 These catch what no per-cluster rule can: a copy step whose source cluster
 renders no such Secret is invisible from either cluster alone.
@@ -142,3 +141,38 @@ checks.<lab>-lint = pkgs.runCommand "<lab>-lint" {
 
 `--path` is what makes this sandbox-safe: the package is already a store
 path, so the check never shells out to `nix eval`.
+
+## A floe declares its own
+
+A floe knows what a wrong rendering of itself looks like, so it says so once
+rather than in every lab that enables it:
+
+```nix
+floes.gateway.lint.route-listener-exists = {
+  description = "Every HTTPRoute attaches to a listener some Gateway declares";
+  severity = "error";
+  scope = "per-cluster";
+  format = "json";
+  command = builtins.readFile ./lint/route-listener-exists.sh;
+};
+```
+
+The check runs on every cluster the floe is enabled on and nowhere else. Its
+name in reports is `<floe>-<name>`, so two floes can call a check the same
+thing.
+
+This is the static counterpart to [`verify`](./verify.md): lint reads what
+was rendered and needs no cluster, verify reads a running one.
+
+Precedence when two of them share a name is floe, then lab, then cluster:
+the narrower scope wins, because it is the one that knows about the
+exception.
+
+## Where the scripts land
+
+`$out/lint/<cluster>/<name>`, one directory per cluster, because a floe's
+check applies only where that floe is enabled.
+
+A check that walks the manifest tree itself must use `find -L`. A wave
+directory is a symlink into the store and `find` does not descend into one
+without it, so a check without `-L` inspects nothing and passes.

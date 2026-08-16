@@ -18,8 +18,9 @@ Each directory holds a `labs/default.nix` (the topology) plus one
 ## Docker subnets
 
 A docker network owns its subnet exclusively, so two labs on the same range
-cannot be up at once; the second `lab up` fails at the network step with
-"Pool overlaps with other one on this address space". Each example therefore
+cannot be up at once. `cata lab up` now checks this before it starts
+anything and suggests a free range, rather than failing partway through with
+"Pool overlaps with other one on this address space". Each example still
 sets its own `lab.network.dockerSubnet`, rather than sharing the
 `172.19.0.0/16` module default:
 

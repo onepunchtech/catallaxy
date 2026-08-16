@@ -8,7 +8,6 @@ pub mod config;
 pub mod crossplane;
 pub mod docs;
 pub mod domain;
-pub mod error;
 pub mod generators;
 pub mod host;
 pub mod images;

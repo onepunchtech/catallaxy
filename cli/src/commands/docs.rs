@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -51,7 +50,7 @@ fn render(
     out_dir: &Path,
     root: &clap::Command,
 ) -> Result<()> {
-    let raw = fs::read_to_string(options_json)
+    let raw = crate::io::fs::read_to_string(options_json)
         .with_context(|| format!("reading {}", options_json.display()))?;
     let all: BTreeMap<String, options::OptionDoc> = serde_json::from_str(&raw)
         .with_context(|| format!("parsing {}", options_json.display()))?;
@@ -85,9 +84,11 @@ fn render(
     for page in &pages {
         let target = out_dir.join(&page.path);
         if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+            crate::io::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
         }
-        fs::write(&target, &page.body).with_context(|| format!("writing {}", target.display()))?;
+        crate::io::fs::write(&target, &page.body)
+            .with_context(|| format!("writing {}", target.display()))?;
         paths.push(page.path.clone());
     }
 
@@ -97,11 +98,12 @@ fn render(
     if !undescribed.is_empty() {
         undescribed.push('\n');
     }
-    fs::write(out_dir.join("undescribed.txt"), undescribed).context("writing undescribed.txt")?;
+    crate::io::fs::write(out_dir.join("undescribed.txt"), undescribed)
+        .context("writing undescribed.txt")?;
 
-    let summary_text = fs::read_to_string(summary_md)
+    let summary_text = crate::io::fs::read_to_string(summary_md)
         .with_context(|| format!("reading {}", summary_md.display()))?;
-    fs::write(
+    crate::io::fs::write(
         out_dir.join("SUMMARY.md"),
         summary::splice_nav(&summary_text, &paths),
     )
@@ -117,7 +119,7 @@ fn render(
 
 fn write_llms(src: &Path, base_url: &str, out_dir: &Path) -> Result<()> {
     let summary_path = src.join("SUMMARY.md");
-    let summary_text = fs::read_to_string(&summary_path)
+    let summary_text = crate::io::fs::read_to_string(&summary_path)
         .with_context(|| format!("reading {}", summary_path.display()))?;
     let entries = summary::parse(&summary_text);
 
@@ -130,16 +132,18 @@ fn write_llms(src: &Path, base_url: &str, out_dir: &Path) -> Result<()> {
             continue;
         }
         let page_path = src.join(&entry.path);
-        let Ok(body) = fs::read_to_string(&page_path) else {
+        let Ok(body) = crate::io::fs::read_to_string(&page_path) else {
             continue;
         };
         pages.push(llms::Page { entry, body });
     }
 
     let out = llms::render(&pages, omitted, base_url);
-    fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
-    fs::write(out_dir.join("llms.txt"), &out.index).context("writing llms.txt")?;
-    fs::write(out_dir.join("llms-full.txt"), &out.full).context("writing llms-full.txt")?;
+    crate::io::fs::create_dir_all(out_dir)
+        .with_context(|| format!("creating {}", out_dir.display()))?;
+    crate::io::fs::write(out_dir.join("llms.txt"), &out.index).context("writing llms.txt")?;
+    crate::io::fs::write(out_dir.join("llms-full.txt"), &out.full)
+        .context("writing llms-full.txt")?;
 
     println!(
         "llms.txt: {} pages indexed, {} option pages omitted",

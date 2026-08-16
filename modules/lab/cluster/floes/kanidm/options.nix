@@ -8,6 +8,7 @@
 
 let
   inherit (lib) mkOption mkEnableOption types;
+  inherit (import ../../../../../lib/floe { inherit lib; }) gatewayOptions;
 in
 {
 
@@ -19,6 +20,7 @@ in
     chart = mkOption {
       type = types.package;
       default = cataCharts.kanidm.chart;
+      description = "Helm chart to install. Defaults to the chart catallaxy pins.";
     };
 
     domain = mkOption {
@@ -52,20 +54,26 @@ in
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the issuer.";
+              };
               kind = mkOption {
                 type = types.str;
                 default = "ClusterIssuer";
+                description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
               };
             };
           }
         );
 
         default = config.floes.cert-manager.exports.defaultIssuerRef or null;
+        description = "Issuer that signs the serving certificate. Null mints none.";
       };
       secretName = mkOption {
         type = types.str;
         default = "kanidm-tls";
+        description = "Secret the issued certificate lands in.";
       };
     };
 
@@ -73,31 +81,42 @@ in
       size = mkOption {
         type = types.str;
         default = "10Gi";
+        description = "Size of the volume holding the identity database.";
       };
       storageClass = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "StorageClass for it. Null takes the cluster default.";
       };
     };
 
     replicas = mkOption {
       type = types.ints.positive;
       default = 1;
+      description = "How many kanidm replicas to run.";
     };
 
     users = mkOption {
       type = types.attrsOf (
         types.submodule {
           options = {
-            displayName = mkOption { type = types.str; };
-            email = mkOption { type = types.str; };
+            displayName = mkOption {
+              type = types.str;
+              description = "Name shown for this person in the UI.";
+            };
+            email = mkOption {
+              type = types.str;
+              description = "Address mail for this person is sent to.";
+            };
             legalName = mkOption {
               type = types.nullOr types.str;
               default = null;
+              description = "Legal name, when it differs from the display name. Null omits it.";
             };
             credentialsTokenTtl = mkOption {
               type = types.int;
               default = 3600;
+              description = "Seconds a credential-reset token stays valid.";
             };
             accountValidFrom = mkOption {
               type = types.nullOr types.str;
@@ -121,6 +140,7 @@ in
                     loginshell = mkOption {
                       type = types.str;
                       default = "/bin/bash";
+                      description = "Login shell recorded in the POSIX attributes.";
                     };
                   };
                 }
@@ -132,6 +152,7 @@ in
         }
       );
       default = { };
+      description = "People to provision in kanidm. Each becomes a KanidmPersonAccount the operator reconciles.";
     };
 
     groups = mkOption {
@@ -141,6 +162,7 @@ in
             members = mkOption {
               type = types.listOf types.str;
               default = [ ];
+              description = "Names of accounts or groups that belong to this group.";
             };
             mail = mkOption {
               type = types.listOf types.str;
@@ -159,11 +181,13 @@ in
                     gidnumber = mkOption {
                       type = types.nullOr types.int;
                       default = null;
+                      description = "Numeric group id. Null lets kanidm allocate one.";
                     };
                   };
                 }
               );
               default = null;
+              description = "POSIX attributes for this group, for systems that resolve users through it. Null omits them.";
             };
             accountPolicy = mkOption {
               type = types.nullOr (
@@ -177,28 +201,34 @@ in
                         "attested_passkey"
                       ];
                       default = "any";
+                      description = "Weakest credential a member may authenticate with.";
                     };
                     passwordMinimumLength = mkOption {
                       type = types.int;
                       default = 12;
+                      description = "Shortest password accepted.";
                     };
                     authSessionExpiry = mkOption {
                       type = types.int;
                       default = 86400;
+                      description = "Seconds a session stays authenticated.";
                     };
                     privilegeExpiry = mkOption {
                       type = types.int;
                       default = 900;
+                      description = "Seconds an elevated-privilege window lasts before it has to be re-established.";
                     };
                   };
                 }
               );
               default = null;
+              description = "Authentication policy for members of this group. Null leaves kanidm's default.";
             };
           };
         }
       );
       default = { };
+      description = "Groups to provision. Membership is what drives authorisation everywhere else, since scopes and roles are mapped from groups rather than set per user.";
     };
 
     oauth2ClientNamespaceSelector = mkOption {
@@ -229,8 +259,12 @@ in
             displayName = mkOption {
               type = types.str;
               default = "";
+              description = "Name shown for this client on the consent screen.";
             };
-            origin = mkOption { type = types.str; };
+            origin = mkOption {
+              type = types.str;
+              description = "Origin the client is served from, which kanidm checks redirects against.";
+            };
             namespace = mkOption {
               type = types.nullOr types.str;
               default = null;
@@ -239,6 +273,7 @@ in
             redirectUrls = mkOption {
               type = types.listOf types.str;
               default = [ ];
+              description = "Redirect URLs the client may be sent back to after login.";
             };
             public = mkOption {
               type = types.bool;
@@ -269,7 +304,10 @@ in
               type = types.listOf (
                 types.submodule {
                   options = {
-                    group = mkOption { type = types.str; };
+                    group = mkOption {
+                      type = types.str;
+                      description = "Group the scopes are granted to.";
+                    };
                     scopes = mkOption {
                       type = types.listOf types.str;
                       default = [
@@ -277,18 +315,26 @@ in
                         "email"
                         "groups"
                       ];
+                      description = "Scopes its members receive.";
                     };
                   };
                 }
               );
               default = [ ];
+              description = "Scopes granted to members of a group, so authorisation follows group membership rather than being set per user.";
             };
             supScopeMap = mkOption {
               type = types.listOf (
                 types.submodule {
                   options = {
-                    group = mkOption { type = types.str; };
-                    scopes = mkOption { type = types.listOf types.str; };
+                    group = mkOption {
+                      type = types.str;
+                      description = "Group the supplemental scopes are granted to.";
+                    };
+                    scopes = mkOption {
+                      type = types.listOf types.str;
+                      description = "Scopes its members receive in addition to the mapped ones.";
+                    };
                   };
                 }
               );
@@ -299,7 +345,10 @@ in
               type = types.listOf (
                 types.submodule {
                   options = {
-                    name = mkOption { type = types.str; };
+                    name = mkOption {
+                      type = types.str;
+                      description = "Claim name to emit.";
+                    };
                     joinStrategy = mkOption {
                       type = types.enum [
                         "csv"
@@ -307,16 +356,24 @@ in
                         "array"
                       ];
                       default = "array";
+                      description = "How several values are combined into the claim: as an array, or joined by spaces or commas.";
                     };
                     valuesMap = mkOption {
                       type = types.listOf (
                         types.submodule {
                           options = {
-                            group = mkOption { type = types.str; };
-                            values = mkOption { type = types.listOf types.str; };
+                            group = mkOption {
+                              type = types.str;
+                              description = "Group whose members get these values.";
+                            };
+                            values = mkOption {
+                              type = types.listOf types.str;
+                              description = "Values they get.";
+                            };
                           };
                         }
                       );
+                      description = "Values to put in the claim, per group.";
                     };
                   };
                 }
@@ -327,10 +384,12 @@ in
             preferShortUsername = mkOption {
               type = types.bool;
               default = false;
+              description = "Send the short username rather than the full SPN as the subject. Some clients cannot handle an SPN.";
             };
             allowLocalhostRedirect = mkOption {
               type = types.bool;
               default = false;
+              description = "Permit redirects to localhost, which a desktop or CLI client needs and a web client should not have.";
             };
             disableConsentPrompt = mkOption {
               type = types.bool;
@@ -351,13 +410,17 @@ in
         }
       );
       default = { };
+      description = "OAuth2 clients to provision, one per relying party that authenticates against kanidm.";
     };
 
     serviceAccounts = mkOption {
       type = types.attrsOf (
         types.submodule {
           options = {
-            displayName = mkOption { type = types.str; };
+            displayName = mkOption {
+              type = types.str;
+              description = "Name shown for this account in the UI.";
+            };
             entryManagedBy = mkOption {
               type = types.str;
               description = "Group or account that manages this service account";
@@ -365,28 +428,38 @@ in
             mail = mkOption {
               type = types.listOf types.str;
               default = [ ];
+              description = "Mail addresses for this account.";
             };
             accountValidFrom = mkOption {
               type = types.nullOr types.str;
               default = null;
+              description = "RFC 3339 time before which the account cannot authenticate. Null means no lower bound.";
             };
             accountExpire = mkOption {
               type = types.nullOr types.str;
               default = null;
+              description = "RFC 3339 time after which it cannot. Null means it does not expire.";
             };
             apiTokens = mkOption {
               type = types.listOf (
                 types.submodule {
                   options = {
-                    label = mkOption { type = types.str; };
+                    label = mkOption {
+                      type = types.str;
+                      description = "Label for this API token, shown in kanidm.";
+                    };
                     purpose = mkOption {
                       type = types.enum [
                         "readonly"
                         "readwrite"
                       ];
                       default = "readonly";
+                      description = "What the token may do.";
                     };
-                    secretName = mkOption { type = types.str; };
+                    secretName = mkOption {
+                      type = types.str;
+                      description = "Secret the token is written to.";
+                    };
                     expiry = mkOption {
                       type = types.nullOr types.str;
                       default = null;
@@ -396,6 +469,7 @@ in
                 }
               );
               default = [ ];
+              description = "API tokens to mint for this service account.";
             };
             generateCredentials = mkOption {
               type = types.bool;
@@ -418,38 +492,12 @@ in
     instanceName = mkOption {
       type = types.str;
       default = "kanidm";
+      description = "Name of the Kanidm custom resource, which the operator uses to name what it creates.";
     };
 
-    gateway = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      mode = mkOption {
-        type = types.enum [
-          "terminate"
-          "passthrough"
-        ];
-        default = "terminate";
-        description = "TLS mode: 'terminate' uses HTTPRoute + BackendTLSPolicy, 'passthrough' uses TLSRoute (raw TLS to backend)";
-      };
-      gatewayRef = mkOption {
-        type = types.str;
-        default = "default-gateway";
-      };
-      gatewayNamespace = mkOption {
-        type = types.nullOr types.str;
-        default = "kube-system";
-      };
-      tier = mkOption {
-        type = types.enum [
-          "public"
-          "internal"
-        ];
-
-        default = lab.policy.exposure.defaultTier or "public";
-        description = "Lab network tier (public | internal).";
-      };
+    gateway = gatewayOptions {
+      inherit lab;
+      withMode = true;
     };
 
   };

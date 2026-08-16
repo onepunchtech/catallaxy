@@ -8,7 +8,6 @@
   "cert-generate" = import ./cert-generate.nix { inherit lib; };
   "colima-network-route" = import ./colima-network-route.nix { inherit lib; };
   "create-cluster" = import ./create-cluster.nix { inherit lib; };
-  "cross-cluster-secret-copy" = import ./cross-cluster-secret-copy.nix { inherit lib; };
   "delete-managed-resource" = import ./delete-managed-resource.nix { inherit lib; };
   "deploy-manifests" = import ./deploy-manifests.nix { inherit lib; };
   "destroy-cluster" = import ./destroy-cluster.nix { inherit lib; };

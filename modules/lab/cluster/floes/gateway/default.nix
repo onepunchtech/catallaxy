@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -380,6 +381,19 @@ in
         }
       ];
 
+      # The one mistake a route can make that nothing else catches: a lab with
+      # `tls.enable = false` exports the listener name "http", and a route
+      # naming "https" attaches to a listener that is not there. It fails at
+      # apply time with a message about a parent that does not exist, which is
+      # a long way from the line that caused it.
+      floes.gateway.lint.route-listener-exists = {
+        description = "Every HTTPRoute and TLSRoute attaches to a listener some Gateway declares";
+        severity = "error";
+        scope = "per-cluster";
+        format = "json";
+        command = builtins.readFile ./lint/route-listener-exists.sh;
+      };
+
       floes.gateway.exports = {
         routing = {
           publicReady = "gateway/public/ready";
@@ -447,6 +461,38 @@ in
           '';
         }
       ];
+
+      floes.gateway.network = {
+
+        declared = true;
+
+        serves.web = {
+
+          port = 80;
+
+          fromExternal = true;
+
+        };
+
+        serves.websecure = {
+
+          port = 443;
+
+          fromExternal = true;
+
+        };
+
+      };
+
+      floes.gateway.imagesComplete = true;
+
+      floes.gateway.images.traefik = {
+
+        repository = "traefik";
+
+        tag = "v3.3.6";
+
+      };
 
       bundles.gateway-api-crds = {
         owner = {

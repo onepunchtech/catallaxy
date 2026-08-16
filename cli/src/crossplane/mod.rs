@@ -1,33 +1,22 @@
-use std::process::Command;
-
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::crossplane::ManagedState;
 use crate::io;
-use crate::io::process::run_capture;
 
 pub fn sync_kubeconfig(mgmt_context: &str, cluster_name: &str) -> Result<()> {
     let (secret_name, secret_ns) = connection_secret_ref(mgmt_context, cluster_name)?;
     let kubeconfig = read_connection_kubeconfig(mgmt_context, &secret_name, &secret_ns)?;
-    let kube_dir = dirs::home_dir().unwrap_or_default().join(".kube");
-    std::fs::create_dir_all(&kube_dir)?;
+    let kube_dir = io::fs::home_dir()?.join(".kube");
     let kube_path = kube_dir.join(format!("{cluster_name}.kubeconfig"));
-    std::fs::write(&kube_path, kubeconfig.as_bytes())?;
+    io::fs::write_atomic(&kube_path, kubeconfig.as_bytes())?;
 
-    let mut current = Command::new("kubectl");
-    current
-        .env("KUBECONFIG", kube_path.display().to_string())
-        .args(["config", "current-context"]);
-    let orig_ctx = run_capture(&mut current).ok().map(|o| o.trim().to_string());
+    let orig_ctx = io::kubectl::current_context_of(&kube_path);
 
     if let Some(ref orig) = orig_ctx
         && orig != cluster_name
     {
-        let mut rename = Command::new("kubectl");
-        rename
-            .env("KUBECONFIG", kube_path.display().to_string())
-            .args(["config", "rename-context", orig, cluster_name]);
-        let _ = run_capture(&mut rename);
+        io::kubectl::rename_context_in(&kube_path, orig, cluster_name);
     }
 
     io::kubectl::merge_kubeconfig(&kube_path, cluster_name)?;
@@ -44,17 +33,8 @@ fn connection_secret_ref(mgmt_context: &str, cluster_name: &str) -> Result<(Stri
 
     let mut cr_json: Option<serde_json::Value> = None;
     for kind in cluster_kinds {
-        let mut cmd = Command::new("kubectl");
-        cmd.args([
-            "--context",
-            mgmt_context,
-            "get",
-            kind,
-            cluster_name,
-            "-o",
-            "json",
-        ]);
-        if let Ok(out) = run_capture(&mut cmd)
+        if let Ok(out) =
+            io::kubectl::capture(mgmt_context, &["get", kind, cluster_name, "-o", "json"])
             && let Ok(v) = serde_json::from_str::<serde_json::Value>(&out)
         {
             cr_json = Some(v);
@@ -93,19 +73,11 @@ fn read_connection_kubeconfig(
     secret_name: &str,
     secret_ns: &str,
 ) -> Result<String> {
-    let mut cmd = Command::new("kubectl");
-    cmd.args([
-        "--context",
+    let secret_output = io::kubectl::capture(
         mgmt_context,
-        "get",
-        "secret",
-        secret_name,
-        "-n",
-        secret_ns,
-        "-o",
-        "json",
-    ]);
-    let secret_output = run_capture(&mut cmd).with_context(|| {
+        &["get", "secret", secret_name, "-n", secret_ns, "-o", "json"],
+    )
+    .with_context(|| {
         format!(
             "reading connection secret {secret_ns}/{secret_name}; \
              is the Crossplane resource Synced+Ready?"
@@ -177,6 +149,40 @@ pub fn reconcile_managed_resource(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DiscoveryFailure {
+    Exited { code: i32, stderr: String },
+    EmptyOutput,
+}
+
+impl DiscoveryFailure {
+    fn describe(&self, kind: &str, name: &str) -> String {
+        match self {
+            DiscoveryFailure::Exited { code, stderr } => {
+                format!("Reconcile: discovery for {kind}/{name} exited {code}: {stderr}")
+            }
+            DiscoveryFailure::EmptyOutput => {
+                format!("Reconcile: discovery for {kind}/{name} succeeded but emitted empty output")
+            }
+        }
+    }
+}
+
+fn interpret_discovery(out: &std::process::Output) -> Result<String, DiscoveryFailure> {
+    if !out.status.success() {
+        return Err(DiscoveryFailure::Exited {
+            code: out.status.code().unwrap_or(-1),
+            stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        });
+    }
+
+    let discovered = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if discovered.is_empty() {
+        return Err(DiscoveryFailure::EmptyOutput);
+    }
+    Ok(discovered)
+}
+
 fn try_discover_and_annotate(kube_ctx: &str, kind: &str, name: &str, bin: &str) -> bool {
     println!(
         "{} Reconcile: {}/{} missing external-name; running discovery {}",
@@ -185,9 +191,7 @@ fn try_discover_and_annotate(kube_ctx: &str, kind: &str, name: &str, bin: &str) 
         name,
         bin,
     );
-    let mut discovery = Command::new(bin);
-    discovery.env("KUBECONTEXT", kube_ctx).env("MR_NAME", name);
-    let out = match crate::io::process::run_output(&mut discovery) {
+    let out = match io::discovery::run(bin, kube_ctx, name) {
         Ok(o) => o,
         Err(e) => {
             println!(
@@ -199,38 +203,21 @@ fn try_discover_and_annotate(kube_ctx: &str, kind: &str, name: &str, bin: &str) 
             return false;
         }
     };
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        println!(
-            "{} Reconcile: discovery for {}/{} exited {}: {}",
-            style(">>>").yellow(),
-            kind,
-            name,
-            out.status.code().unwrap_or(-1),
-            stderr.trim(),
-        );
-        return false;
-    }
-    let discovered = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if discovered.is_empty() {
-        println!(
-            "{} Reconcile: discovery for {}/{} succeeded but emitted empty output",
-            style(">>>").yellow(),
-            kind,
-            name,
-        );
-        return false;
-    }
-    let mut annotate = Command::new("kubectl");
-    annotate.args([
-        "--context",
+
+    let discovered = match interpret_discovery(&out) {
+        Ok(d) => d,
+        Err(failure) => {
+            println!("{} {}", style(">>>").yellow(), failure.describe(kind, name));
+            return false;
+        }
+    };
+
+    match io::kubectl::annotate(
         kube_ctx,
-        "annotate",
         &format!("{kind}/{name}"),
         &format!("crossplane.io/external-name={discovered}"),
-        "--overwrite",
-    ]);
-    match run_capture(&mut annotate) {
+        true,
+    ) {
         Ok(_) => {
             println!(
                 "{} Reconcile: {}/{} adopted (external-name={})",
@@ -269,41 +256,17 @@ fn reconcile_context(ctx: &str, targets: &[Target]) {
             name,
             discovery_bin,
         } = t;
-        let mut get = Command::new("kubectl");
-        get.args([
-            "--context",
-            ctx,
-            "get",
-            &format!("{kind}/{name}"),
-            "-o",
-            "json",
-        ]);
-        let cr = run_capture(&mut get)
-            .ok()
-            .and_then(|o| serde_json::from_str::<serde_json::Value>(&o).ok());
+        let cr = io::kubectl::resource_json(ctx, &format!("{kind}/{name}"));
         let cr = match cr {
             Some(v) => v,
             None => continue,
         };
 
-        let external_name_ok = cr
-            .pointer("/metadata/annotations/crossplane.io~1external-name")
-            .and_then(|v| v.as_str())
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
-        let has_xp_finalizer = cr
-            .pointer("/metadata/finalizers")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter().any(|f| {
-                    f.as_str()
-                        .map(|s| s.contains("crossplane.io"))
-                        .unwrap_or(false)
-                })
-            })
-            .unwrap_or(false);
+        let state = ManagedState::of(&cr);
+        let external_name_ok = state.external_name.is_some();
+        let has_xp_finalizer = state.has_finalizer;
 
-        if external_name_ok && has_xp_finalizer {
+        if state.is_deletable() {
             continue;
         }
 
@@ -322,26 +285,10 @@ fn reconcile_context(ctx: &str, targets: &[Target]) {
             if external_name_ok { "ok" } else { "missing" },
             if has_xp_finalizer { "ok" } else { "missing" },
         );
-        let mut pause = Command::new("kubectl");
-        pause.args([
-            "--context",
-            ctx,
-            "annotate",
-            &format!("{kind}/{name}"),
-            "crossplane.io/paused=true",
-            "--overwrite",
-        ]);
-        let _ = run_capture(&mut pause);
+        let resource = format!("{kind}/{name}");
+        let _ = io::kubectl::annotate(ctx, &resource, "crossplane.io/paused=true", true);
         std::thread::sleep(std::time::Duration::from_secs(3));
-        let mut unpause = Command::new("kubectl");
-        unpause.args([
-            "--context",
-            ctx,
-            "annotate",
-            &format!("{kind}/{name}"),
-            "crossplane.io/paused-",
-        ]);
-        let _ = run_capture(&mut unpause);
+        let _ = io::kubectl::annotate(ctx, &resource, "crossplane.io/paused-", false);
         let _ = io::kubectl::wait_managed_ready(ctx, 60);
     }
 }

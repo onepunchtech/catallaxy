@@ -16,19 +16,29 @@ pub async fn list(ctx: &CataContext) -> Result<()> {
         return Ok(());
     }
 
-    for (name, cluster_count) in &labs {
-        let unit = if *cluster_count == 1 {
+    for (name, summary) in &labs {
+        let unit = if summary.clusters == 1 {
             "cluster"
         } else {
             "clusters"
         };
-        println!("  {} ({} {})", style(name).green(), cluster_count, unit);
+        println!("  {} ({} {})", style(name).green(), summary.clusters, unit);
+        if !summary.eligible {
+            for reason in &summary.reasons {
+                println!("      {} {}", style("needs").yellow(), reason);
+            }
+        }
     }
 
     Ok(())
 }
 
-pub async fn topology_cmd(ctx: &CataContext, name: &str, format: &str, live: bool) -> Result<()> {
+pub async fn topology_cmd(
+    ctx: &CataContext,
+    name: &str,
+    format: crate::topology::TopologyFormat,
+    live: bool,
+) -> Result<()> {
     let lab = crate::io::nix::get_lab_spec(ctx, name)?;
     let mut topo = crate::topology::extract::extract_static(&lab);
 
@@ -36,8 +46,8 @@ pub async fn topology_cmd(ctx: &CataContext, name: &str, format: &str, live: boo
         crate::topology::extract::enrich_live(ctx, &mut topo)?;
     }
 
-    let fmt = format.parse::<crate::topology::TopologyFormat>()?;
-    crate::topology::render::render(&topo, fmt)
+    print!("{}", crate::topology::render::render(&topo, format)?);
+    Ok(())
 }
 
 #[derive(serde::Serialize)]
@@ -115,10 +125,20 @@ pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
 
     let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
+    if !io::docker::daemon_reachable() {
+        println!(
+            "  {} the docker daemon is not reachable, so every container below \
+             reads as stopped whether or not the lab was ever started.",
+            style("ERROR").red(),
+        );
+        println!("  Start docker (or check DOCKER_HOST) and run this again.");
+        println!();
+    }
+
     let strategy = lab.cd.strategy.tag();
     let zone = lab.dns_info.as_ref().map_or("?", |d| d.zone.as_str());
     println!(
-        "  {} {} {}  {} {}",
+        "  {} {} {} {} {}",
         style("strategy:").dim(),
         strategy,
         style("|").dim(),

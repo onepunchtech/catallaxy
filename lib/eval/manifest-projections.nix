@@ -55,12 +55,16 @@ rec {
       _: b:
       b
       // {
-        requires =
+        # Deduped because a bundle may already name the token itself, which
+        # is what a bundle does when it consumes the Secret somewhere this
+        # walk cannot see, such as a helm value.
+        requires = lib.unique (
           b.requires
           ++ map (n: "secret:${projectionSet.${n}.namespace}/${n}") (consumedProjections {
             bundle = b;
             inherit projectionSet;
-          });
+          })
+        );
       }
     ) bundles;
 }

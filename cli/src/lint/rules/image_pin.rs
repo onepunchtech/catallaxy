@@ -1,6 +1,7 @@
 use serde_yaml::Value;
 
 use crate::domain::diagnostic::{Diagnostic, Severity};
+use crate::images::ImageRef;
 
 use crate::lint::manifest::K8sResource;
 
@@ -14,49 +15,6 @@ impl CheckRule for ImagePin {
     }
     fn check(&self, ctx: &CheckContext<'_>) -> Vec<Diagnostic> {
         check(ctx.resources, ctx.cluster, ctx.images)
-    }
-}
-
-struct ImageRef {
-    registry: String,
-    _repository: String,
-    tag: Option<String>,
-    digest: Option<String>,
-}
-
-fn parse_image_ref(image: &str) -> ImageRef {
-    let (image_part, digest) = if let Some((img, dig)) = image.split_once('@') {
-        (img, Some(dig.to_string()))
-    } else {
-        (image, None)
-    };
-
-    let (repo_part, tag) = if let Some((r, t)) = image_part.rsplit_once(':') {
-        if t.contains('/') {
-            (image_part, None)
-        } else {
-            (r, Some(t.to_string()))
-        }
-    } else {
-        (image_part, None)
-    };
-
-    let registry = if repo_part.contains('/') {
-        let first_part = repo_part.split('/').next().unwrap_or("");
-        if first_part.contains('.') || first_part.contains(':') {
-            first_part.to_string()
-        } else {
-            "docker.io".to_string()
-        }
-    } else {
-        "docker.io".to_string()
-    };
-
-    ImageRef {
-        registry,
-        _repository: repo_part.to_string(),
-        tag,
-        digest,
     }
 }
 
@@ -83,6 +41,18 @@ fn extract_images(resource: &K8sResource) -> Vec<String> {
             "template",
             "spec",
             "containers",
+        ],
+        // A CronJob's init containers. Missing here while the scrape that
+        // feeds `cata images lock` had it, so those images were lockable and
+        // unlintable: the lock rewrote a digest into something requireDigest
+        // could not have flagged.
+        &[
+            "spec",
+            "jobTemplate",
+            "spec",
+            "template",
+            "spec",
+            "initContainers",
         ],
     ];
 
@@ -112,16 +82,19 @@ fn check(resources: &[K8sResource], cluster: &str, policy: &super::ImagePolicy) 
 
         let images = extract_images(r);
         for image in &images {
-            let parsed = parse_image_ref(image);
+            let parsed = ImageRef::parse(image);
 
-            if parsed.tag.as_deref() == Some("latest") {
+            // An untagged image resolves to `latest` and is mutable in
+            // exactly the same way, so it is the same finding. It used to be
+            // silent because the tag was simply absent.
+            if parsed.tag.as_deref() == Some("latest") || parsed.tag.is_none() {
                 diags.push(Diagnostic {
                     severity: Severity::Warning,
                     check: "image-pin",
                     cluster: cluster.to_string(),
                     file: r.source_file.clone(),
                     resource: r.display_id(),
-                    message: format!("uses ':latest' tag: {image}"),
+                    message: format!("resolves to the mutable ':latest' tag: {image}"),
                 });
             }
 
@@ -176,11 +149,61 @@ mod tests {
         }
     }
 
+    // Only `spec.template.spec.containers` had a test, so the other five
+    // paths were carried by nothing. One is what let a CronJob's init
+    // containers go unlinted while the lock rewrote them.
+    #[test]
+    fn every_container_path_is_read() {
+        let cases: &[(&str, &str)] = &[
+            (
+                "pod containers",
+                "apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\nspec:\n  containers:\n  - name: c\n    image: a:latest\n",
+            ),
+            (
+                "pod initContainers",
+                "apiVersion: v1\nkind: Pod\nmetadata:\n  name: p\nspec:\n  initContainers:\n  - name: c\n    image: a:latest\n",
+            ),
+            (
+                "template initContainers",
+                "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: d\nspec:\n  template:\n    spec:\n      initContainers:\n      - name: c\n        image: a:latest\n",
+            ),
+            (
+                "cronjob containers",
+                "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: cj\nspec:\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          containers:\n          - name: c\n            image: a:latest\n",
+            ),
+            (
+                "cronjob initContainers",
+                "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: cj\nspec:\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          initContainers:\n          - name: c\n            image: a:latest\n",
+            ),
+        ];
+
+        for (what, yaml) in cases {
+            let diags = check(&[make_resource(yaml)], "c", &policy(false, &[]));
+            assert!(
+                diags.iter().any(|d| d.message.contains("':latest'")),
+                "{what}: the image at this path was never read"
+            );
+        }
+    }
+
     #[test]
     fn latest_tag_always_warns() {
         let r = dep_with_image("nginx:latest");
         let diags = check(&[r], "c", &policy(false, &[]));
         assert!(diags.iter().any(|d| d.message.contains("':latest'")));
+    }
+
+    // An untagged image resolves to `latest`, so it is the same mutable
+    // reference. It used to pass silently because the tag was absent rather
+    // than being the string "latest".
+    #[test]
+    fn an_untagged_image_warns_like_latest() {
+        let r = dep_with_image("nginx");
+        let diags = check(&[r], "c", &policy(false, &[]));
+        assert!(
+            diags.iter().any(|d| d.message.contains("':latest'")),
+            "an untagged image is as mutable as a :latest one"
+        );
     }
 
     #[test]

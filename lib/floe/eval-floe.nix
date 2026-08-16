@@ -10,29 +10,7 @@ let
 
     contracts = import ../contracts { inherit lib; };
 
-    k8sHelpers = {
-      mkGatewayParent = args: args;
-      mkHttpRoute = args: {
-        apiVersion = "gateway.networking.k8s.io/v1";
-        kind = "HTTPRoute";
-        inherit (args) name namespace;
-        spec = args;
-      };
-      mkTlsRoute = args: {
-        apiVersion = "gateway.networking.k8s.io/v1alpha2";
-        kind = "TLSRoute";
-        inherit (args) name namespace;
-        spec = args;
-      };
-      mkCertificate = args: {
-        apiVersion = "cert-manager.io/v1";
-        kind = "Certificate";
-        inherit (args) name namespace;
-        spec = args;
-      };
-
-      wait = import ../util/wait.nix { inherit lib; };
-    };
+    k8sHelpers = import ./stub-k8s-helpers.nix { inherit lib; };
 
     lab = {
       name = "test-lab";
@@ -122,8 +100,11 @@ in
               };
               default = { };
             };
+            # Two levels, matching the real option. A single `attrsOf attrs`
+            # accepts the nested shape one level shallower, which lets a test
+            # assert on the wrong depth and pass.
             options.ops = lib.mkOption {
-              type = lib.types.attrsOf lib.types.attrs;
+              type = lib.types.attrsOf (lib.types.attrsOf lib.types.attrs);
               default = { };
             };
             options.secrets.projections = lib.mkOption {

@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -74,6 +75,20 @@ in
     in
     mkMerge [
       {
+        floes.external-dns.network = {
+          declared = true;
+
+          egress.internet.ports = [ 443 ];
+        };
+
+        floes.external-dns.imagesComplete = true;
+
+        floes.external-dns.images.controller = {
+          registry = "registry.k8s.io";
+          repository = "external-dns/external-dns";
+          tag = "v0.16.1";
+        };
+
         bundles.external-dns = {
 
           owner = {

@@ -107,7 +107,7 @@ in
 
     containerName = mkOption {
       type = types.str;
-      default = "catallaxy-registry";
+      default = "catallaxy-${config.lab.name}-registry";
       description = "Docker container name for the registry";
     };
 

@@ -29,18 +29,28 @@ github, tag a release, and consumers reference it as a normal flake input.
     hello.url    = "github:you/hello-floe";
   };
 
-  outputs = { catallaxy, hello, ... }: catallaxy.lib.mkLab {
-    modules = [
-      hello.floes.hello       # ← import the external floe
-      ({ ... }: {
-        floes.hello = {
-          enable = true;
-          replicas = 3;
-          overrides.extraLabels."app.kubernetes.io/instance" = "prod";
+  outputs = { nixpkgs, flake-utils, catallaxy, hello, ... }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        lab = catallaxy.legacyPackages.${system}.mkLab {
+          modules = [
+            hello.floes.hello       # ← import the external floe
+            ({ ... }: {
+              floes.hello = {
+                enable = true;
+                replicas = 3;
+                overrides.extraLabels."app.kubernetes.io/instance" = "prod";
+              };
+            })
+          ];
         };
-      })
-    ];
-  };
+      in
+      {
+        legacyPackages = {
+          labs."my-lab.local" = lab.config.lab.out.cliConfig;
+          labPackages."my-lab.local" = lab.config.lab.out.package;
+        };
+      });
 }
 ```
 

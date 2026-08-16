@@ -37,6 +37,8 @@ let
 
         isRealDomain = d: d != "" && d != "idm.example.com";
 
+        # `gw` is `{ }` for a floe with no gateway block at all, which is why
+        # this cannot read gw.tier directly.
         publiclyExposed = gw: (gw.tier or "public") != "internal";
 
         entriesFor =
@@ -246,7 +248,7 @@ in
 
     containerName = mkOption {
       type = types.str;
-      default = "catallaxy-ingress";
+      default = "catallaxy-${config.lab.name}-ingress";
       description = "Docker container name for the ingress";
     };
 
@@ -256,10 +258,25 @@ in
         readOnly = true;
         description = "Computed container service definition for the lab ingress";
       };
+
+      hosts = mkOption {
+        type = types.listOf types.str;
+        readOnly = true;
+        description = ''
+          Every hostname the lab ingress routes, terminated and passthrough
+          alike.
+
+          This is the same list the generated haproxy config is built from.
+          Publishing it means a check can ask what is routed without parsing
+          haproxy's syntax back out of the rendered file.
+        '';
+      };
     };
   };
 
   config.lab.proxy.out = mkIf cfg.enable {
+    hosts = unique (map (svc: svc.domain) exposedServices);
+
     service = {
       description = "HAProxy lab ingress (${config.lab.dns.zone})";
       container = cfg.containerName;

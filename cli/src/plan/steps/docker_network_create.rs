@@ -1,9 +1,8 @@
-use std::process::{Command, Stdio};
-
 use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::domain::plan::DockerNetworkCreateParams;
+use crate::io;
 use crate::plan::StepContext;
 
 pub async fn run(sctx: &StepContext<'_>, p: &DockerNetworkCreateParams) -> Result<()> {
@@ -31,31 +30,11 @@ pub async fn run(sctx: &StepContext<'_>, p: &DockerNetworkCreateParams) -> Resul
         subnet
     );
 
-    let already = Command::new("docker")
-        .args(["network", "inspect", name])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-
-    if already {
+    if io::docker::network_exists(name) {
         return Ok(());
     }
 
-    let output = Command::new("docker")
-        .args([
-            "network",
-            "create",
-            "-d",
-            "bridge",
-            "--subnet",
-            subnet,
-            "--gateway",
-            gateway,
-            name,
-        ])
-        .output()
+    let output = io::docker::create_network(name, subnet, gateway)
         .context("failed to invoke `docker network create`")?;
 
     if !output.status.success() {

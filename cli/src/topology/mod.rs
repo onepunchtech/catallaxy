@@ -59,7 +59,7 @@ pub struct ComponentSummary {
     pub health: Option<ComponentHealthState>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status")]
 pub enum ComponentHealthState {
     #[serde(rename = "healthy")]
@@ -105,7 +105,6 @@ pub struct TopologyEdge {
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     ProxyRoute,
-    SecretCopy,
     DeployDependency,
     Provisions,
 }
@@ -118,22 +117,11 @@ pub struct PlanStep {
     pub target: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[clap(rename_all = "lowercase")]
 pub enum TopologyFormat {
     Json,
     Table,
     Mermaid,
     Dot,
-}
-
-impl std::str::FromStr for TopologyFormat {
-    type Err = std::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "json" => Self::Json,
-            "mermaid" => Self::Mermaid,
-            "dot" => Self::Dot,
-            _ => Self::Table,
-        })
-    }
 }

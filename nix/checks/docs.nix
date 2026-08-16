@@ -21,6 +21,37 @@
     echo "every generated option page linked from SUMMARY.md exists" > $out
   '';
 
+  docs-summary-resolves = pkgs.runCommand "docs-summary-resolves" { } ''
+    missing=""
+    while read -r page; do
+      # step-kinds.md and changelog.md are copied in by the docs derivation
+      # rather than living in the book source.
+      case "$page" in
+        reference/step-kinds.md | changelog.md) continue ;;
+      esac
+
+      # optionDocs is rooted at reference/, the same mapping the docs
+      # derivation uses when it copies the generated pages in.
+      generated="${optionDocs}/''${page#reference/}"
+
+      if [ -f "${../../docs/book/src}/$page" ] || [ -f "$generated" ]; then
+        continue
+      fi
+      missing="$missing $page"
+    done < <(grep -oE '\]\(\./[^)]+\.md\)' ${optionDocs}/SUMMARY.md \
+             | sed 's|](\./||; s|)||')
+
+    if [ -n "$missing" ]; then
+      echo "SUMMARY.md links pages that do not exist, so mdBook emits them blank:" >&2
+      for p in $missing; do echo "  $p" >&2; done
+      echo "" >&2
+      echo "Either write the page, copy it in from pkgs/default.nix as the" >&2
+      echo "changelog and step-kind reference are, or drop the nav entry." >&2
+      exit 1
+    fi
+    echo "every SUMMARY.md entry resolves to real content" > $out
+  '';
+
   docs-option-links = pkgs.runCommand "docs-option-links" { } ''
     broken=""
     while read -r link; do
@@ -46,29 +77,26 @@
     echo "every option deep link resolves" > $out
   '';
 
-  option-descriptions =
-    pkgs.runCommand "option-descriptions" { nativeBuildInputs = [ pkgs.diffutils ]; }
-      ''
-        if ! diff -u ${../../docs/book/undescribed-options.txt} \
-                ${optionDocs}/undescribed.txt > drift.txt; then
+  option-descriptions = pkgs.runCommand "option-descriptions" { } ''
+        count=$(grep -c . ${optionDocs}/undescribed.txt || true)
+
+        if [ "$count" -ne 0 ]; then
           cat >&2 <<'EOF'
 
-        Options without a `description` changed.
+        These options have no `description`:
 
-        Lines prefixed `+` are options you added or renamed that have no
-        description. Give them one: the description is the API's
-        documentation and renders into the options book.
+    EOF
+          cat ${optionDocs}/undescribed.txt >&2
+          cat >&2 <<'EOF'
 
-        Lines prefixed `-` are options that gained a description or went
-        away. Refresh the baseline so it can only ever shrink:
+        A description is the API's documentation. It renders into the options
+        book, and an option nobody can explain is one nobody can use. Say what
+        the option does and, where it is not obvious, what happens if you leave
+        it alone.
 
-          nix build .#option-docs
-          install -m 644 result/undescribed.txt docs/book/undescribed-options.txt
-
-        EOF
-          cat drift.txt >&2
+    EOF
           exit 1
         fi
-        echo "undescribed options match the baseline" > $out
-      '';
+        echo "every option has a description" > $out
+  '';
 }

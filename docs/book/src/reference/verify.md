@@ -19,17 +19,25 @@ wants to do something with them.
 In this order, because each is only meaningful when the ones before it
 passed:
 
-| Check       | Question                                                             |
-| ----------- | -------------------------------------------------------------------- |
-| `clusters`  | does every cluster's apiserver answer at its runtime context         |
-| `services`  | is every host service running, and does its ready probe pass         |
-| `rollouts`  | does every lab-owned namespace exist, with every workload rolled out |
-| `endpoints` | does every hostname the lab routes answer                            |
-| `declared`  | do the lab's own `lab.verify.checks` pass                            |
+| Check          | Question                                                             |
+| -------------- | -------------------------------------------------------------------- |
+| `clusters`     | does every cluster's apiserver answer at its runtime context         |
+| `services`     | is every host service running, and does its ready probe pass         |
+| `rollouts`     | does every lab-owned namespace exist, with every workload rolled out |
+| `endpoints`    | does every hostname the lab routes answer                            |
+| `certificates` | is the lab CA, or the certificate it signed, close to expiring       |
+| `chainsaw`     | do the lab's own `lab.verify.checks` pass                            |
 
 `rollouts` reads the namespaces from the lab rather than from the cluster,
 so a namespace the lab declares and the cluster does not have is a finding
 rather than an absence nobody notices.
+
+`certificates` warns 30 days out and errors once something has expired.
+Nothing else tracks this: a lab CA is minted for 10 years and the ingress
+certificate it signs for one, so without the check a lab simply stops
+serving TLS one day with no prior warning. `lab up` reissues the ingress
+certificate when it is inside that window or when the CA that signed it has
+been replaced, so acting on the warning usually means running `lab up`.
 
 ## The endpoint check is the one that earns its keep
 

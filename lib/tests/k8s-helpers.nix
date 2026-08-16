@@ -3,6 +3,8 @@
 let
   helpers = import ../k8s-helpers.nix { inherit lib; };
   inherit (helpers)
+    mkGatewayExposure
+    mkGatewayParentFor
     mkGatewayParent
     mkHttpRoute
     mkTlsRoute
@@ -173,6 +175,183 @@ lib.runTests {
         };
         dnsNames = [ "grafana.homelab.test" ];
       };
+    };
+  };
+
+  # Eight floes built this by hand and five of them hand-rolled the whole
+  # HTTPRoute alongside it.
+
+  testExposureRendersARouteAndACertificate = {
+    expr =
+      let
+        r = mkGatewayExposure {
+          name = "grafana";
+          namespace = "monitoring";
+          domain = "grafana.lab.test";
+          gateway = {
+            enable = true;
+            tier = "public";
+            gatewayRef = "public-gateway";
+            gatewayNamespace = "kube-system";
+          };
+          internalGatewayName = "internal-gateway";
+          sectionName = "https";
+          backend = {
+            name = "grafana";
+            port = 80;
+          };
+          tls = {
+            secretName = "grafana-tls";
+            issuerRef = {
+              name = "lab-ca";
+              kind = "ClusterIssuer";
+            };
+          };
+        };
+        route = r."grafana-route";
+        cert = r."grafana-tls";
+      in
+      [
+        (builtins.attrNames r)
+        route.kind
+        (builtins.head route.spec.parentRefs)
+        route.spec.hostnames
+        (builtins.head (builtins.head route.spec.rules).matches).path.value
+        cert.kind
+        cert.spec.dnsNames
+      ];
+    expected = [
+      [
+        "grafana-route"
+        "grafana-tls"
+      ]
+      "HTTPRoute"
+      {
+        name = "public-gateway";
+        namespace = "kube-system";
+        sectionName = "https";
+      }
+      [ "grafana.lab.test" ]
+      "/"
+      "Certificate"
+      [ "grafana.lab.test" ]
+    ];
+  };
+
+  # The listener is the field the hand-written copies disagreed about: five
+  # read the Gateway's exported name and three took a hardcoded "https". A
+  # plaintext lab exports "http", so those three named a listener that was not
+  # there. It has no default now.
+  testExposureTakesTheListenerItIsGiven = {
+    expr =
+      let
+        r = mkGatewayExposure {
+          name = "x";
+          namespace = "ns";
+          domain = "x.lab.test";
+          gateway = {
+            enable = true;
+            tier = "internal";
+            gatewayRef = "public-gateway";
+            gatewayNamespace = null;
+          };
+          internalGatewayName = "internal-gateway";
+          sectionName = "http";
+          backend = {
+            name = "x";
+            port = 8080;
+          };
+        };
+      in
+      builtins.head r."x-route".spec.parentRefs;
+    expected = {
+      name = "internal-gateway";
+      sectionName = "http";
+    };
+  };
+
+  # A floe with the gateway off renders nothing to attach, but still wants the
+  # certificate: it may be reached some other way. Every caller did this.
+  testACertificateIsNotGatedOnTheGateway = {
+    expr =
+      let
+        r = mkGatewayExposure {
+          name = "x";
+          namespace = "ns";
+          domain = "x.lab.test";
+          gateway = {
+            enable = false;
+            tier = "public";
+            gatewayRef = "g";
+            gatewayNamespace = null;
+          };
+          internalGatewayName = "i";
+          sectionName = "https";
+          backend = {
+            name = "x";
+            port = 80;
+          };
+          tls = {
+            secretName = "x-tls";
+            issuerRef = {
+              name = "lab-ca";
+              kind = "ClusterIssuer";
+            };
+          };
+        };
+      in
+      builtins.attrNames r;
+    expected = [ "x-tls" ];
+  };
+
+  testAFloeWithNoDomainIsNotExposedAtAll = {
+    expr =
+      let
+        r = mkGatewayExposure {
+          name = "x";
+          namespace = "ns";
+          domain = "";
+          gateway = {
+            enable = true;
+            tier = "public";
+            gatewayRef = "g";
+            gatewayNamespace = null;
+          };
+          internalGatewayName = "i";
+          sectionName = "https";
+          backend = {
+            name = "x";
+            port = 80;
+          };
+          tls = {
+            secretName = "x-tls";
+            issuerRef = {
+              name = "lab-ca";
+              kind = "ClusterIssuer";
+            };
+          };
+        };
+      in
+      r;
+    expected = { };
+  };
+
+  # kanidm publishes a second route on the internal Gateway regardless of its
+  # own tier, so the name can be overridden.
+  testAParentCanBePinnedToANamedGateway = {
+    expr = mkGatewayParentFor {
+      gateway = {
+        tier = "public";
+        gatewayRef = "public-gateway";
+        gatewayNamespace = null;
+      };
+      internalGatewayName = "internal-gateway";
+      sectionName = "tls-passthrough";
+      name = "internal-gateway";
+    };
+    expected = {
+      name = "internal-gateway";
+      sectionName = "tls-passthrough";
     };
   };
 }

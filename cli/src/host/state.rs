@@ -1,4 +1,3 @@
-use std::fs;
 use std::net::ToSocketAddrs;
 use std::path::PathBuf;
 
@@ -41,7 +40,7 @@ pub fn wait_for_dns(host: &str, timeout: std::time::Duration) -> Result<()> {
 }
 
 pub fn service_state_dir(lab_name: &str, svc_name: &str) -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let home = crate::io::fs::home_or_tmp();
     PathBuf::from(home)
         .join(".local/share/catallaxy/labs")
         .join(lab_name)
@@ -49,10 +48,17 @@ pub fn service_state_dir(lab_name: &str, svc_name: &str) -> PathBuf {
 }
 
 pub fn lab_state_dir(lab_name: &str) -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let home = crate::io::fs::home_or_tmp();
     PathBuf::from(home)
         .join(".local/share/catallaxy/labs")
         .join(lab_name)
+}
+
+pub fn cluster_pki_dir(cluster_name: &str) -> PathBuf {
+    let home = crate::io::fs::home_or_tmp();
+    PathBuf::from(home)
+        .join(".local/share/catallaxy/pki")
+        .join(cluster_name)
 }
 
 pub fn project_host_secrets(
@@ -60,8 +66,6 @@ pub fn project_host_secrets(
     cache: &crate::domain::SecretsCache,
     lab_name: &str,
 ) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
     if projections.is_empty() {
         return Ok(());
     }
@@ -101,7 +105,7 @@ pub fn project_host_secrets(
         let target = PathBuf::from(resolved);
 
         if target.exists()
-            && let Ok(existing) = fs::read_to_string(&target)
+            && let Ok(existing) = crate::io::fs::read_to_string(&target)
             && existing == *value
         {
             skipped += 1;
@@ -109,17 +113,17 @@ pub fn project_host_secrets(
         }
 
         if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).with_context(|| {
+            crate::io::fs::create_dir_all(parent).with_context(|| {
                 format!(
                     "creating parent dir for host-projection {}",
                     target.display()
                 )
             })?;
         }
-        fs::write(&target, value)
+        crate::io::fs::write(&target, value)
             .with_context(|| format!("writing host-projection to {}", target.display()))?;
         let mode: u32 = if key.ends_with(".crt") { 0o644 } else { 0o600 };
-        fs::set_permissions(&target, fs::Permissions::from_mode(mode))
+        crate::io::fs::set_mode(&target, mode)
             .with_context(|| format!("chmod {:o} on {}", mode, target.display()))?;
         println!(
             "{} wrote {} (mode {:o})",

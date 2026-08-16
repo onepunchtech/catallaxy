@@ -91,8 +91,10 @@ issuerUrl = lab.clusters.core.floes.my-idp.exports.externalUrl;
 ```
 
 Reading across clusters gives you the right _address_ for something
-elsewhere. It moves no data; copying an actual Secret between clusters is a
-`cross-cluster-secret-copy` plan step.
+elsewhere. It moves no data. A Secret two clusters both need is authored
+once in a store and projected into each of them. One that only the running
+lab can produce is published by the cluster that mints it and subscribed to
+by the others; see [Secrets](../using/secrets.md#sharing-between-clusters).
 
 ## Floe
 

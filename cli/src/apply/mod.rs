@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -73,6 +72,73 @@ pub fn parse_projections(projections: &serde_json::Value) -> HashMap<String, Pro
     }
 }
 
+/// Whether the caller narrates the manifest build. `apply` has always printed
+/// as it goes and `diff` has always been silent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Narration {
+    Announce,
+    Quiet,
+}
+
+/// The cluster and the lab it belongs to. Resolving these is separate from
+/// building the manifests because `diff` refuses an unreachable cluster in
+/// between, and a refusal should not cost a nix build.
+fn resolve_lab<'a>(
+    ctx: &CataContext,
+    args: &ApplyRequest<'a>,
+) -> Result<std::borrow::Cow<'a, LabSpec>> {
+    Ok(match args.lab {
+        Some(lab) => std::borrow::Cow::Borrowed(lab),
+        None => {
+            let lab_name = ctx.resolve_lab_name(None)?;
+            std::borrow::Cow::Owned(nix::get_lab_spec(ctx, &lab_name)?)
+        }
+    })
+}
+
+fn kube_context_for<'a>(args: &ApplyRequest<'a>, spec: &'a ClusterSpec) -> &'a str {
+    args.kube_context_override
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&spec.kube_context)
+}
+
+fn cluster_manifests(
+    ctx: &CataContext,
+    args: &ApplyRequest<'_>,
+    cluster: &str,
+    narrate: Narration,
+) -> Result<PathBuf> {
+    let announce = narrate == Narration::Announce;
+
+    let manifests_path = match args.manifests_dir {
+        Some(dir) => {
+            if announce {
+                println!("{} Using pre-built manifests: {dir}", style(">>>").green());
+            }
+            dir.to_string()
+        }
+        None => {
+            if announce {
+                println!("{} Building manifests...", style(">>>").cyan());
+            }
+            let lab_name = ctx.resolve_lab_name(None)?;
+            let lab_pkg = nix::build_lab_package(ctx, &lab_name)?;
+            let path = format!("{lab_pkg}/manifests");
+            if announce {
+                println!("{} Manifests built: {path}", style(">>>").green());
+            }
+            path
+        }
+    };
+
+    let cluster_subdir = Path::new(&manifests_path).join(cluster);
+    Ok(if cluster_subdir.is_dir() {
+        cluster_subdir
+    } else {
+        PathBuf::from(&manifests_path)
+    })
+}
+
 pub async fn apply(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<()> {
     let cluster = ctx.resolve_cluster_name(args.cluster)?;
 
@@ -82,15 +148,7 @@ pub async fn apply(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<()> {
     );
     println!();
 
-    let owned_lab;
-    let lab = match args.lab {
-        Some(lab) => lab,
-        None => {
-            let lab_name = ctx.resolve_lab_name(None)?;
-            owned_lab = nix::get_lab_spec(ctx, &lab_name)?;
-            &owned_lab
-        }
-    };
+    let lab = resolve_lab(ctx, &args)?;
     let spec = lab.cluster(&cluster)?;
 
     let strategy = spec.deploy.strategy;
@@ -98,31 +156,100 @@ pub async fn apply(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<()> {
         return Err(deployed_through_git(strategy));
     }
 
-    let kube_context = args
-        .kube_context_override
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&spec.kube_context);
+    let kube_context = kube_context_for(&args, spec);
+    let manifests = cluster_manifests(ctx, &args, &cluster, Narration::Announce)?;
 
-    let manifests_path = if let Some(dir) = args.manifests_dir {
-        println!("{} Using pre-built manifests: {dir}", style(">>>").green());
-        dir.to_string()
+    apply_kapp(
+        ctx,
+        kube_context,
+        &manifests.display().to_string(),
+        &args,
+        &lab,
+        spec,
+    )
+    .await
+}
+
+pub async fn diff(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<bool> {
+    let cluster = ctx.resolve_cluster_name(args.cluster)?;
+    let lab = resolve_lab(ctx, &args)?;
+    let spec = lab.cluster(&cluster)?;
+    let kube_context = kube_context_for(&args, spec);
+
+    if !io::kubectl::api_reachable(kube_context) {
+        bail!(
+            "cannot reach cluster '{cluster}' (context: {kube_context}), so there is \
+             nothing to compare against. `cata lab plan` shows what would run without \
+             a cluster."
+        );
+    }
+
+    let cluster_manifests = cluster_manifests(ctx, &args, &cluster, Narration::Quiet)?;
+
+    let mut bundles = discover_bundles(&cluster_manifests)?;
+    if let Some(key) = args.bundle {
+        bundles.retain(|b| b.key == key);
+        if bundles.is_empty() {
+            bail!("{}", unknown_bundle(key, &cluster_manifests));
+        }
+    }
+
+    println!(
+        "{} Diffing cluster '{}' against {} bundle(s)",
+        style("catallaxy").cyan().bold(),
+        style(&cluster).green(),
+        bundles.len(),
+    );
+
+    let mut changed = Vec::new();
+    for bundle in &bundles {
+        println!(
+            "\n{} Bundle: {} (wave {:03})",
+            style(">>>").cyan(),
+            style(&bundle.key).bold(),
+            bundle.wave,
+        );
+        if io::kapp::diff(
+            kube_context,
+            &kapp_app_name(&bundle.key),
+            &bundle.dir.display().to_string(),
+        )? {
+            changed.push(bundle.key.clone());
+        }
+    }
+
+    println!();
+    if changed.is_empty() {
+        println!(
+            "{} '{cluster}' already matches what the lab declares",
+            style(">>>").green(),
+        );
     } else {
-        println!("{} Building manifests...", style(">>>").cyan());
-        let lab_name = ctx.resolve_lab_name(None)?;
-        let lab_pkg = nix::build_lab_package(ctx, &lab_name)?;
-        let path = format!("{lab_pkg}/manifests");
-        println!("{} Manifests built: {path}", style(">>>").green());
-        path
-    };
+        println!(
+            "{} {} of {} bundle(s) would change: {}",
+            style(">>>").yellow(),
+            changed.len(),
+            bundles.len(),
+            changed.join(", "),
+        );
+    }
 
-    let cluster_subdir = Path::new(&manifests_path).join(&cluster);
-    let effective_path = if cluster_subdir.is_dir() {
-        cluster_subdir.display().to_string()
-    } else {
-        manifests_path.clone()
-    };
+    Ok(!changed.is_empty())
+}
 
-    apply_kapp(ctx, kube_context, &effective_path, &args, lab, spec).await
+fn unknown_bundle(key: &str, cluster_manifests: &Path) -> String {
+    let known: Vec<String> = discover_bundles(cluster_manifests)
+        .map(|bundles| bundles.into_iter().map(|b| b.key).collect())
+        .unwrap_or_default();
+
+    format!(
+        "bundle '{key}' is not in the rendered manifests. Available: {}",
+        if known.is_empty() {
+            "(none)".to_string()
+        } else {
+            known.join(", ")
+        },
+    )
 }
 
 fn kapp_app_name(bundle_key: &str) -> String {
@@ -141,7 +268,7 @@ fn kapp_app_name(bundle_key: &str) -> String {
 
 fn discover_bundles(cluster_manifests: &Path) -> Result<Vec<BundleDir>> {
     let wave_meta_path = cluster_manifests.join(".wave-meta");
-    let raw = fs::read_to_string(&wave_meta_path).with_context(|| {
+    let raw = crate::io::fs::read_to_string(&wave_meta_path).with_context(|| {
         format!(
             "reading {}: the manifest tree was rendered by an older \
              catallaxy. Re-render the lab.",
@@ -169,7 +296,7 @@ fn discover_bundles(cluster_manifests: &Path) -> Result<Vec<BundleDir>> {
 
 fn read_deploy_timeout(cluster_manifests: &Path) -> String {
     let config_file = cluster_manifests.join(".deploy-config");
-    if let Ok(content) = fs::read_to_string(&config_file) {
+    if let Ok(content) = crate::io::fs::read_to_string(&config_file) {
         for line in content.lines() {
             let trimmed = line.trim();
             if let Some(val) = trimmed.strip_prefix("waitTimeout:") {
@@ -199,7 +326,7 @@ async fn apply_kapp(
     if let Some(key) = args.bundle {
         bundles.retain(|b| b.key == key);
         if bundles.is_empty() {
-            bail!("Bundle '{key}' not found in rendered manifests");
+            bail!("{}", unknown_bundle(key, cluster_manifests));
         }
     }
 
@@ -254,7 +381,7 @@ async fn apply_kapp(
 
         let crd_wait_file = bundle.dir.join(".crd-wait");
         if crd_wait_file.exists()
-            && let Ok(content) = fs::read_to_string(&crd_wait_file)
+            && let Ok(content) = crate::io::fs::read_to_string(&crd_wait_file)
         {
             for crd in content.lines().map(|l| l.trim()).filter(|l| !l.is_empty()) {
                 println!("{} Waiting for CRD: {crd}...", style(">>>").cyan());
@@ -411,8 +538,8 @@ where
 
         let yaml = serde_yaml::to_string(&secret_manifest)?;
         let secret_dir = secrets_tmp.path().join(format!("secrets-{proj_name}"));
-        fs::create_dir_all(&secret_dir)?;
-        fs::write(secret_dir.join("secret.yaml"), &yaml)?;
+        crate::io::fs::create_dir_all(&secret_dir)?;
+        crate::io::fs::write(secret_dir.join("secret.yaml"), &yaml)?;
 
         apply_fn(&secret_dir, proj_name)?;
     }
@@ -426,18 +553,17 @@ fn cleanup_bootstrap_resources(kube_context: &str, spec: &ClusterSpec) {
     }
 
     for kind in &["deployments", "daemonsets"] {
-        let output = std::process::Command::new("kubectl")
-            .args([
-                "--context",
-                kube_context,
+        let output = crate::io::kubectl::output(
+            kube_context,
+            &[
                 "get",
                 kind,
                 "-n",
                 "kube-system",
                 "-o",
                 "jsonpath={range .items[*]}{.metadata.name},{.metadata.labels.kapp\\.k14s\\.io/app}{'\\n'}{end}",
-            ])
-            .output();
+            ],
+        );
 
         let output = match output {
             Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
@@ -474,20 +600,17 @@ fn cleanup_bootstrap_resources(kube_context: &str, spec: &ClusterSpec) {
         );
 
         for name in &unmanaged {
-            let _ = std::process::Command::new("kubectl")
-                .args([
-                    "--context",
-                    kube_context,
+            let _ = crate::io::kubectl::quiet_status(
+                kube_context,
+                &[
                     "delete",
                     kind_singular,
                     name,
                     "-n",
                     "kube-system",
                     "--ignore-not-found",
-                ])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
+                ],
+            );
         }
     }
 }

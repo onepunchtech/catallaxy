@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::Subcommand;
 
 use crate::config::Context as CataContext;
+use crate::domain::Direction;
 
 pub mod apply;
 pub mod destroy;
@@ -66,6 +67,16 @@ pub enum LabCommands {
     Destroy {
         #[arg(help = LAB_NAME_HELP)]
         name: Option<String>,
+
+        #[arg(long, help = "Print what would be destroyed without destroying it")]
+        dry_run: bool,
+
+        #[arg(
+            long,
+            value_name = "KIND",
+            help = "Stop after the last step of this kind"
+        )]
+        up_to: Option<String>,
     },
 
     #[command(about = "Show the ordered deploy plan")]
@@ -104,6 +115,18 @@ pub enum LabCommands {
         diff: Option<std::path::PathBuf>,
     },
 
+    #[command(about = "Show what applying would change in the running clusters")]
+    Diff {
+        #[arg(help = LAB_NAME_HELP)]
+        name: Option<String>,
+
+        #[arg(long, help = "Diff only this bundle")]
+        bundle: Option<String>,
+
+        #[arg(long, help = "Diff only this cluster")]
+        cluster: Option<String>,
+    },
+
     #[command(about = "Apply manifests to existing clusters, without the provisioning steps")]
     Apply {
         #[arg(help = LAB_NAME_HELP)]
@@ -111,6 +134,9 @@ pub enum LabCommands {
 
         #[arg(long, help = "Apply only this bundle")]
         bundle: Option<String>,
+
+        #[arg(long, help = "Apply only to this cluster")]
+        cluster: Option<String>,
 
         #[arg(long, help = "Print what would happen without doing it")]
         dry_run: bool,
@@ -125,8 +151,9 @@ pub enum LabCommands {
         name: Option<String>,
         #[arg(
             long,
+            value_parser = crate::verify::CHECK_NAMES,
             value_name = "CHECK",
-            help = "Run only this check: clusters, services, rollouts, endpoints or declared"
+            help = "Run only this check"
         )]
         check: Option<String>,
         #[arg(long, help = "Emit diagnostics as JSON instead of a report")]
@@ -193,11 +220,12 @@ pub enum LabCommands {
         #[arg(
             long,
             short,
+            value_enum,
             default_value = "table",
             value_name = "FORMAT",
-            help = "table, json, mermaid or dot"
+            help = "Output format"
         )]
-        format: String,
+        format: crate::topology::TopologyFormat,
 
         #[arg(long, help = "Query the clusters for real status instead of [unknown]")]
         live: bool,
@@ -240,11 +268,20 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
         LabCommands::Apply {
             name,
             bundle,
+            cluster,
             dry_run,
             force,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            apply::run(ctx, &name, bundle, dry_run, force).await
+            apply::run(ctx, &name, bundle, cluster, dry_run, force).await
+        }
+        LabCommands::Diff {
+            name,
+            bundle,
+            cluster,
+        } => {
+            let name = ctx.resolve_lab_name(name.as_deref())?;
+            apply::diff(ctx, &name, bundle, cluster).await
         }
         LabCommands::Plan {
             name,
@@ -258,7 +295,15 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
             } else {
                 Some(ctx.resolve_lab_name(name.as_deref())?)
             };
-            plan::run(ctx, resolved.as_deref(), teardown, stable, from_file, diff).await
+            plan::run(
+                ctx,
+                resolved.as_deref(),
+                Direction::of_teardown_flag(teardown),
+                stable,
+                from_file,
+                diff,
+            )
+            .await
         }
         LabCommands::PlanManifests {
             name,
@@ -286,9 +331,13 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
             let name = ctx.resolve_lab_name(name.as_deref())?;
             down::run(ctx, &name).await
         }
-        LabCommands::Destroy { name } => {
+        LabCommands::Destroy {
+            name,
+            dry_run,
+            up_to,
+        } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            destroy::run(ctx, &name).await
+            destroy::run(ctx, &name, dry_run, up_to.as_deref()).await
         }
         other => run_tooling(ctx, other).await,
     }
@@ -320,11 +369,11 @@ async fn run_tooling(ctx: &CataContext, command: LabCommands) -> Result<()> {
             teardown,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            dns::dns(ctx, &name, setup, teardown).await
+            dns::dns(ctx, &name, dns::DnsAction::of(setup, teardown)?).await
         }
         LabCommands::Topology { name, format, live } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            display::topology_cmd(ctx, &name, &format, live).await
+            display::topology_cmd(ctx, &name, format, live).await
         }
         _ => unreachable!("lifecycle commands are handled by run"),
     }

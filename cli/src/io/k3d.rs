@@ -21,6 +21,8 @@ pub struct ClusterCreate<'a> {
     pub auto_deploy_manifests: &'a [(String, String)],
     pub ports: &'a [&'a str],
     pub network: Option<&'a str>,
+    pub extra_api_server_args: &'a [String],
+    pub extra_volumes: &'a [(String, String)],
 }
 
 pub fn cluster_create(opts: ClusterCreate<'_>) -> Result<()> {
@@ -40,6 +42,8 @@ pub fn cluster_create(opts: ClusterCreate<'_>) -> Result<()> {
         auto_deploy_manifests,
         ports,
         network,
+        extra_api_server_args,
+        extra_volumes,
     } = opts;
     println!("{} Creating k3d cluster '{name}'...", style(">>>").cyan());
 
@@ -58,6 +62,15 @@ pub fn cluster_create(opts: ClusterCreate<'_>) -> Result<()> {
         service_cidr,
         pod_cidr,
     );
+    for arg in extra_api_server_args {
+        cmd.args(["--k3s-arg", &format!("--kube-apiserver-arg={arg}@server:*")]);
+    }
+    for (host_path, container_path) in extra_volumes {
+        cmd.args([
+            "--volume",
+            &format!("{host_path}:{container_path}@server:*"),
+        ]);
+    }
     mount_auto_deploy_manifests(&mut cmd, name, auto_deploy_manifests)?;
 
     for port in ports {
@@ -244,4 +257,32 @@ fn mount_auto_deploy_manifests(
     }
 
     Ok(())
+}
+
+pub fn list_cluster_names(docker_host: Option<&str>) -> Vec<String> {
+    let mut cmd = Command::new("k3d");
+    cmd.args(["cluster", "list", "-o", "json"]);
+    cmd.stderr(Stdio::null());
+    if let Some(host) = docker_host {
+        cmd.env("DOCKER_HOST", host);
+    }
+
+    let Ok(out) = cmd.output() else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+
+    serde_json::from_slice::<serde_json::Value>(&out.stdout)
+        .ok()
+        .and_then(|v| {
+            v.as_array().map(|clusters| {
+                clusters
+                    .iter()
+                    .filter_map(|c| c["name"].as_str().map(String::from))
+                    .collect()
+            })
+        })
+        .unwrap_or_default()
 }

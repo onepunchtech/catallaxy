@@ -13,18 +13,25 @@ in
           "bool"
         ];
         default = "string";
+        description = ''
+          How the flag is parsed. `bool` takes no value and is present or
+          absent; `enum` is validated against `values`.
+        '';
       };
       description = mkOption {
         type = types.str;
         default = "";
+        description = "One-line help text, shown beside the flag.";
       };
       required = mkOption {
         type = types.bool;
         default = false;
+        description = "Whether the generated tool refuses to run without it.";
       };
       default = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "Value used when the flag is not passed.";
       };
       values = mkOption {
         type = types.listOf types.str;
@@ -36,14 +43,22 @@ in
 
   argType = types.submodule {
     options = {
-      name = mkOption { type = types.str; };
+      name = mkOption {
+        type = types.str;
+        description = "Placeholder shown in the usage line, e.g. `CLUSTER`.";
+      };
       description = mkOption {
         type = types.str;
         default = "";
+        description = "One-line help text for this argument.";
       };
       required = mkOption {
         type = types.bool;
         default = true;
+        description = ''
+          Whether the generated tool refuses to run without it. Positional
+          arguments are required by default, unlike flags.
+        '';
       };
     };
   };
@@ -55,11 +70,6 @@ in
         description = mkOption {
           type = types.str;
           description = "One-line description shown in help";
-        };
-        category = mkOption {
-          type = types.str;
-          default = "general";
-          description = "Subcommand group (e.g. 'backup', 'database')";
         };
         options = mkOption {
           type = types.attrsOf optionType;

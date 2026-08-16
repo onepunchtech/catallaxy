@@ -180,6 +180,13 @@ let
       };
     };
 
+    openbao = {
+      repo = "https://openbao.github.io/openbao-helm";
+      chart = "openbao";
+      version = "0.16.1";
+      chartHash = "sha256-1O89lZcZXkIJduFA8hy64XVK8bOf6oK/5gR5Ik6dEQg=";
+    };
+
     external-secrets = {
       repo = "https://charts.external-secrets.io";
       chart = "external-secrets";

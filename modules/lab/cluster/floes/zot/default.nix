@@ -6,6 +6,7 @@
   k8sSpecs,
   k8sHelpers,
   contracts,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -22,30 +23,37 @@ in
       host = lib.mkOption {
         type = lib.types.str;
         default = "zot.zot.svc.cluster.local";
+        description = "In-cluster DNS name of the registry Service.";
       };
       namespace = lib.mkOption {
         type = lib.types.str;
         default = "zot";
+        description = "Namespace zot runs in.";
       };
       port = lib.mkOption {
         type = lib.types.port;
         default = 5000;
+        description = "Port the registry Service listens on.";
       };
       url = lib.mkOption {
         type = lib.types.str;
         default = "http://zot.zot.svc.cluster.local:5000";
+        description = "In-cluster URL, for peers that pull over plain HTTP inside the mesh.";
       };
       externalUrl = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Public HTTPS URL, or empty when no domain is set.";
       };
       registryUrl = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Host:port a container runtime should be pointed at, without a scheme. This is the form an image reference needs.";
       };
       domain = lib.mkOption {
         type = lib.types.str;
         default = "";
+        description = "Public hostname, or empty when the registry is internal only.";
       };
     };
   module =
@@ -226,6 +234,28 @@ in
         url = "http://${host}:${toString cfg.http.port}";
         externalUrl = if cfg.domain != "" then "https://${cfg.domain}" else "";
         registryUrl = if cfg.domain != "" then cfg.domain else "${host}:${toString cfg.http.port}";
+      };
+
+      floes.zot.network = {
+
+        declared = true;
+
+        serves.registry.port = 5000;
+
+        egress.internet.ports = [ 443 ];
+
+      };
+
+      floes.zot.imagesComplete = true;
+
+      floes.zot.images.zot = {
+
+        registry = "ghcr.io";
+
+        repository = "project-zot/zot";
+
+        tag = "v2.1.16";
+
       };
 
       bundles.zot = {

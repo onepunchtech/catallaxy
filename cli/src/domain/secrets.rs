@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-
-use crate::error::CataError;
 
 pub type StoreValues = HashMap<String, HashMap<String, String>>;
 pub type SecretsByStore = HashMap<String, StoreValues>;
@@ -100,7 +99,10 @@ pub enum StoreProblem {
     MissingSecret { secret: String },
     MissingKey { secret: String, key: String },
     BlankKey { secret: String, key: String },
+    PlaceholderKey { secret: String, key: String },
 }
+
+pub const PLACEHOLDER: &str = "PLACEHOLDER_USE_SECRETS_EDIT";
 
 pub fn env_var_name(store: &str, secret: &str, key: &str) -> String {
     format!(
@@ -124,12 +126,11 @@ fn env_component(part: &str) -> String {
 }
 
 impl SecretsSpec {
-    pub fn from_lab_config(lab: &serde_json::Value) -> Result<Self, CataError> {
+    pub fn from_lab_config(lab: &serde_json::Value) -> Result<Self> {
         match lab.get("secrets") {
             None => Ok(Self::default()),
-            Some(value) => serde_json::from_value(value.clone()).map_err(|e| {
-                CataError::Config(format!("lab.secrets is not a shape the CLI knows: {e}"))
-            }),
+            Some(value) => serde_json::from_value(value.clone())
+                .context("configuration error: lab.secrets is not a shape the CLI knows"),
         }
     }
 
@@ -194,6 +195,12 @@ pub fn validate_store(spec: &SecretsSpec, store: &str, values: &StoreValues) -> 
                     secret: secret_name.to_string(),
                     key: key.clone(),
                 }),
+                Some(value) if value == PLACEHOLDER => {
+                    problems.push(StoreProblem::PlaceholderKey {
+                        secret: secret_name.to_string(),
+                        key: key.clone(),
+                    })
+                }
                 Some(_) => {}
             }
         }
@@ -247,6 +254,10 @@ fn describe_env_problems(
                 "  {} is set but empty   secret '{secret}', key '{key}'\n",
                 env_var_name(store, secret, key),
             )),
+            StoreProblem::PlaceholderKey { secret, key } => msg.push_str(&format!(
+                "  {} is still the generated placeholder   secret '{secret}', key '{key}'\n",
+                env_var_name(store, secret, key),
+            )),
         }
     }
 
@@ -284,12 +295,16 @@ fn describe_file_problems(
             StoreProblem::BlankKey { secret, key } => msg.push_str(&format!(
                 "  - secret '{secret}': key '{key}' is empty (operator-supplied, fill it in)\n"
             )),
+            StoreProblem::PlaceholderKey { secret, key } => msg.push_str(&format!(
+                "  - secret '{secret}': key '{key}' is still the generated placeholder \
+                 (operator-supplied, fill it in)\n"
+            )),
         }
     }
 
     msg.push_str(&format!(
-        "\nRun:\n  cata secrets generate   # mint values for generator-backed keys\n  \
-         cata secrets edit {lab_name} {store}   # fill operator-supplied keys"
+        "\nRun:\n  cata --flake .#{lab_name} secrets generate   # mint values for generator-backed keys\n  \
+         cata --flake .#{lab_name} secrets edit {store}   # fill operator-supplied keys"
     ));
     msg
 }
@@ -302,7 +317,7 @@ pub fn describe_store_source(spec: &SecretsSpec, lab_name: &str, store: &str) ->
             ),
             None => format!("Store '{store}' takes its values from the environment."),
         },
-        _ => format!("Run `cata secrets edit {lab_name} {store}` to add it."),
+        _ => format!("Run `cata --flake .#{lab_name} secrets edit {store}` to add it."),
     }
 }
 
@@ -319,7 +334,7 @@ pub fn describe_missing_value(
             "{head}. Store '{store}' takes its values from the environment, so set {}.",
             env_var_name(store, secret, key),
         ),
-        _ => format!("{head}. Run `cata secrets edit {lab_name} {store}` to add it."),
+        _ => format!("{head}. Run `cata --flake .#{lab_name} secrets edit {store}` to add it."),
     }
 }
 
@@ -483,8 +498,38 @@ mod tests {
         let problems = validate_store(&spec, "trust", &StoreValues::from([]));
         let msg = describe_store_problems(&spec, "mesh.local", "trust", &problems);
 
-        assert!(msg.contains("cata secrets edit mesh.local trust"), "{msg}");
+        assert!(
+            msg.contains("cata --flake .#mesh.local secrets edit trust"),
+            "{msg}"
+        );
         assert!(!msg.contains("CATA_SECRET"), "{msg}");
+    }
+
+    #[test]
+    fn the_generated_placeholder_is_not_a_usable_value() {
+        let spec = spec_from(serde_json::json!({
+            "secrets": {
+                "stores": { "trust": { "backend": "sops" } },
+                "managed": { "token": { "store": "trust", "keys": { "value": {} } } }
+            }
+        }));
+        let values = StoreValues::from([(
+            "token".to_string(),
+            [("value".to_string(), PLACEHOLDER.to_string())]
+                .into_iter()
+                .collect(),
+        )]);
+
+        let problems = validate_store(&spec, "trust", &values);
+
+        assert_eq!(
+            problems,
+            vec![StoreProblem::PlaceholderKey {
+                secret: "token".to_string(),
+                key: "value".to_string(),
+            }],
+            "a store still holding the minted placeholder must not pass validation"
+        );
     }
 
     #[test]

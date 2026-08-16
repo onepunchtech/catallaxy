@@ -7,6 +7,7 @@
 
 let
   inherit (lib) mkOption mkEnableOption types;
+  inherit (import ../../../../../lib/floe { inherit lib; }) gatewayOptions;
 in
 {
   options.floes.prometheus = {
@@ -104,7 +105,7 @@ in
       description = "Override default alert rule groups (e.g., { kubeEtcd = false; } to disable etcd rules)";
     };
 
-    gateway = {
+    gateway = gatewayOptions { inherit lab; } // {
       enable = mkOption {
         type = types.bool;
         default = false;
@@ -114,23 +115,6 @@ in
         type = types.str;
         default = "";
         description = "Domain for external remote-write ingestion";
-      };
-      gatewayRef = mkOption {
-        type = types.str;
-        default = "default-gateway";
-      };
-      gatewayNamespace = mkOption {
-        type = types.nullOr types.str;
-        default = "kube-system";
-      };
-      tier = mkOption {
-        type = types.enum [
-          "public"
-          "internal"
-        ];
-
-        default = lab.policy.exposure.defaultTier or "public";
-        description = "Lab network tier (public | internal).";
       };
     };
   };

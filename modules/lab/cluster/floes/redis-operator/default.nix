@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -18,6 +19,18 @@ in
   module =
     { cfg, ... }:
     {
+      floes.redis-operator.network = {
+        declared = true;
+      };
+
+      floes.redis-operator.imagesComplete = true;
+
+      floes.redis-operator.images.operator = {
+        registry = "ghcr.io";
+        repository = "ot-container-kit/redis-operator/redis-operator";
+        tag = "v0.18.0";
+      };
+
       bundles.redis-operator = {
         includeInBootstrap = false;
         helmCharts.redis-operator = {

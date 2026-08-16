@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -179,7 +180,7 @@ in
                   containers = [
                     {
                       name = "kube-rbac-proxy";
-                      imageUrl = "quay.io/brancz/kube-rbac-proxy:v0.18.1";
+                      imageUrl = cfg.images.rbac-proxy.ref;
                     }
                   ];
                 };
@@ -692,6 +693,30 @@ in
     lib.mkMerge [
 
       (mkIf cfg.isManagementCluster {
+        floes.cluster-api.images.rbac-proxy = {
+          registry = "quay.io";
+          repository = "brancz/kube-rbac-proxy";
+          tag = "v0.18.1";
+        };
+
+        floes.cluster-api.network = {
+
+          declared = true;
+
+        };
+
+        floes.cluster-api.imagesComplete = true;
+
+        floes.cluster-api.images.operator = {
+
+          registry = "registry.k8s.io";
+
+          repository = "capi-operator/cluster-api-operator";
+
+          tag = "v0.27.0";
+
+        };
+
         bundles.cluster-api = {
           helmCharts.capi-operator = {
             chart = chartRef;

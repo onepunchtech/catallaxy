@@ -94,6 +94,11 @@
           inherit (packages') tools cataWrapped;
         };
 
+        labChecks = import ./lib/lab-checks.nix {
+          inherit lib pkgs;
+          inherit (packages') cataWrapped;
+        };
+
         exampleLabDefs = labs.discoverExampleLabs;
 
         e2eLabs = lib.mapAttrs (_: lab: lab.config.lab.out.selfContained) exampleLabDefs;
@@ -106,6 +111,7 @@
       {
         legacyPackages = {
           inherit (labs) mkLab mkLabShell k8sTypegenConfig;
+          inherit (labChecks) mkLabChecks;
           inherit (packages') tools;
           inherit e2eLabs;
           labs = lib.mapAttrs (_: lab: lab.config.lab.out.cliConfig) exampleLabDefs;
@@ -168,6 +174,7 @@
             ;
           packages = packages';
           inherit (labs) mkLab;
+          inherit (labChecks) mkLabChecks;
         };
       }
     );

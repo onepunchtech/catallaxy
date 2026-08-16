@@ -1,8 +1,7 @@
-use std::process::Command;
-
 use anyhow::{Context, Result, bail};
 use console::style;
 
+use crate::domain::StepFailure;
 use crate::domain::plan::PlannedStep;
 use crate::domain::plan::RunScriptParams;
 use crate::domain::plan::ScriptEnv;
@@ -33,8 +32,9 @@ pub fn run(sctx: &StepContext<'_>, step: &PlannedStep, p: &RunScriptParams) -> R
         );
         if continue_on_failure {
             println!("{} {hook_name} skipped: {msg}", style("ERROR").red());
-            sctx.failures.borrow_mut().push(format!(
-                "run-script {hook_name}: binary not realized ({bin})"
+            sctx.failures.borrow_mut().push(StepFailure::new(
+                "run-script",
+                format!("hook '{hook_name}' binary not realized ({bin})"),
             ));
             return Ok(());
         }
@@ -43,14 +43,7 @@ pub fn run(sctx: &StepContext<'_>, step: &PlannedStep, p: &RunScriptParams) -> R
 
     let resolved = resolve_env(sctx, hook_name, env)?;
 
-    let mut cmd = Command::new(bin);
-    for (name, value) in &resolved {
-        cmd.env(name, value);
-    }
-    if let Some(ctx) = kube_context {
-        cmd.env("KUBECONTEXT", ctx);
-    }
-    let status = crate::io::process::run_status(&mut cmd)
+    let status = crate::io::hook::run(bin, &resolved, kube_context)
         .with_context(|| format!("executing lifecycle hook '{hook_name}' ({bin})"))?;
     if !status.success() {
         let code = status.code().unwrap_or(-1);
@@ -59,9 +52,10 @@ pub fn run(sctx: &StepContext<'_>, step: &PlannedStep, p: &RunScriptParams) -> R
                 "{} hook '{hook_name}' failed (exit {code}), continuing",
                 style("ERROR").red(),
             );
-            sctx.failures
-                .borrow_mut()
-                .push(format!("run-script {hook_name} (exit {code})"));
+            sctx.failures.borrow_mut().push(StepFailure::new(
+                "run-script",
+                format!("hook '{hook_name}' exited {code}"),
+            ));
             return Ok(());
         }
         bail!(

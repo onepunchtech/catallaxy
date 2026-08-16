@@ -5,7 +5,6 @@ pub mod bootstrap_forgejo_repos;
 pub mod cert_generate;
 pub mod colima_network_route;
 pub mod create_cluster;
-pub mod cross_cluster_secret_copy;
 pub mod delete_managed_resource;
 pub mod deploy_manifests;
 pub mod destroy_cluster;

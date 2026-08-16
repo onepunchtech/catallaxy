@@ -65,11 +65,10 @@ from your personal one.
 
 `cata --flake .#mesh.local lab plan` prints the usual local-lab preamble
 (certificates, network, host trust, services, then a cluster each), and then
-two steps this lab added: a `run-script` that joins the mesh, and a
-`cross-cluster-secret-copy` that carries a Secret from `mgmt` to `apps`.
+one step this lab added: a `run-script` that joins the mesh.
 
-Neither names a position. They land at the tail because of what they
-declared, which is the point of the rest of this page.
+It names no position. It lands at the tail because of what it declared,
+which is the point of the rest of this page.
 
 ## The mechanisms
 
@@ -88,36 +87,60 @@ at every consumer, with the framework default set to the _permissive_ value.
 A security property enforced by copy-paste holds until the first time
 someone copies imperfectly.
 
-### A step that moves a credential
+### A credential both clusters need
 
-The netbird operator on mgmt mints a setup key as a Kubernetes Secret. The
-apps cluster needs its value. Reading an export would give apps the right
-_address_ for something on mgmt. This is a value that has to be transported.
+The apps router has to present a netbird setup key to join the mesh. Reading
+an export would give apps the right _address_ for something on mgmt, but
+this is a value, and values do not travel that way.
+
+The key is minted by the netbird operator on mgmt, through the netbird API,
+after mgmt comes up. Nothing could have authored it ahead of time. So mgmt
+publishes it:
 
 ```nix
-lab.steps.xcs-netbird-router-key = {
-  kind = "cross-cluster-secret-copy";
-  after = map (c: t.needs (t.cluster c).reachable) [ "mgmt" "apps" ];
-  params = {
-    sourceCluster = "mgmt";  sourceNamespace = "netbird";
-    sourceSecret  = "setup-key-cluster-router-apps";
-    targetCluster = "apps";  targetNamespace = "netbird";
-    targetSecret  = "setup-key-cluster-router-apps";
-  };
+secrets.publish.setup-key-cluster-router-apps.namespace = "netbird";
+```
+
+and apps subscribes:
+
+```nix
+secrets.subscribe.setup-key-cluster-router-apps = {
+  from = "mgmt";
+  namespace = "netbird";
 };
 ```
 
-Both anchors are hard, and both are load-bearing: the source has to have
-minted the key, and the target cluster has to exist to receive it. The first
-draft of this example anchored only on mgmt, and the plan cheerfully
-scheduled the copy _before the apps cluster was created_, visible
-immediately in `lab plan`, which is the point of printing it.
+That renders a `PushSecret` on mgmt and an `ExternalSecret` on apps, and
+external-secrets carries the value through the lab's runtime store, which
+this lab hosts with `floes.openbao`.
 
-Neither anchor names a step. `t.cluster "mgmt"` is `lib.planTokens`, which
-carries the framework's own token strings, and `cluster/mgmt/reachable` is
-published by whatever brings that cluster up: `create-cluster` locally, or a
-`pivot` in an environment that bootstraps a cloud cluster. Anchoring on the
-capability is what lets the same line hold in both.
+Neither side asks the other anything. The address in the store is derived
+from where the secret lives,
+`mesh.local/mgmt/netbird/setup-key-cluster-router-apps`, so mgmt computes it
+from its own name and apps computes the same string from the cluster it
+named. mgmt never learns that apps reads it, any number of clusters could,
+and naming a secret mgmt does not publish fails `nix build` rather than
+leaving an `ExternalSecret` waiting forever.
+
+The value now arrives during the deploy rather than after it, so the agent
+waits on the Secret with a `readyProbe` instead of opting out of waiting
+altogether.
+
+This example used to do the other thing: a plan step copied the Secret from
+`mgmt` to `apps` at deploy time. It is worth recording why that went,
+because the failure was instructive. The step needed hard anchors on _both_
+clusters, and the first draft anchored only on `mgmt` — so the plan
+cheerfully scheduled the copy before the apps cluster existed, visible
+immediately in `lab plan`. Anchoring correctly fixed the ordering but not
+the design: the copy still ran once, from a laptop holding credentials for
+two clusters, and nothing kept the two Secrets in step afterwards.
+
+Anchors name capabilities, not steps. `t.cluster "mgmt"` is
+`lib.planTokens`, which carries the framework's own token strings, and
+`cluster/mgmt/reachable` is published by whatever brings that cluster up:
+`create-cluster` locally, or a `pivot` in an environment that bootstraps a
+cloud cluster. Anchoring on the capability is what lets the same line hold
+in both.
 
 ### A step the lab does not have to write
 
@@ -128,9 +151,9 @@ Nothing in this lab says so. Enabling `floes.netbird` is what produces the
 step:
 
 ```
+[012] deploy-manifests  name=deploy-manifests-apps params.target=apps
 [013] deploy-manifests  name=deploy-manifests-mgmt  params.target=mgmt
 [014] run-script        name=mgmt-netbird-mesh-join policy.interactive=true
-[015] cross-cluster-secret-copy  name=xcs-netbird-router-key ...
 ```
 
 The floe declares it, in the same DSL a lab would use:
@@ -159,9 +182,9 @@ because a floe had no way to declare one.
 The step has no `before` list, and that is the interesting half.
 `t.lab.reachable` is `host/lab-reachable`: a claim that the lab's endpoints
 now answer from this machine. Each step kind declares whether it dials one,
-in `modules/lab/planner/kinds/`, and the planner adds the edge. So the copy
-at [015] waits without the mesh floe having heard of it, and so would a
-`publish-images` or an argocd root application, in a lab that had them.
+in `modules/lab/planner/kinds/`, and the planner adds the edge. So a
+`publish-images` or an argocd root application would wait, in a lab that had
+them, without the mesh floe having heard of either.
 
 An earlier draft did enumerate them,
 `before = [ "optional:kind:publish-images" ... ]`, and it was wrong in a way

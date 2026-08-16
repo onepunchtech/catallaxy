@@ -6,6 +6,14 @@ let
     inherit lib;
     k8sVersion = config.cluster.kubernetes.version;
   };
+
+  resourcesIn =
+    bundleName: bundle:
+    lib.mapAttrsToList (resourceName: resource: {
+      inherit bundleName resourceName resource;
+    }) bundle.resources;
+
+  declaredResources = lib.concatLists (lib.mapAttrsToList resourcesIn config.bundles);
 in
 {
   options.bundles = mkOption {
@@ -18,4 +26,11 @@ in
       directory in the rendered manifest tree.
     '';
   };
+
+  config.assertions = map (r: {
+    assertion = r.resource.kind != "";
+    message =
+      "bundles.${r.bundleName}.resources.${r.resourceName} declares no `kind`, "
+      + "so nothing can say which Kubernetes type it is or check its spec";
+  }) declaredResources;
 }

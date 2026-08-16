@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -113,6 +114,40 @@ in
         queryUrl = "http://${host}:3100";
 
         otlpUrl = "http://${host}:3100/otlp";
+      };
+
+      floes.loki.network = {
+
+        declared = true;
+
+        serves.api.port = 3100;
+
+      };
+
+      floes.loki.imagesComplete = true;
+
+      floes.loki.images.loki = {
+
+        repository = "grafana/loki";
+
+        tag = "3.5.0";
+
+      };
+
+      floes.loki.images.canary = {
+
+        repository = "grafana/loki-canary";
+
+        tag = "3.5.0";
+
+      };
+
+      floes.loki.images.sidecar = {
+
+        repository = "kiwigrid/k8s-sidecar";
+
+        tag = "1.30.3";
+
       };
 
       bundles.loki = {

@@ -87,10 +87,19 @@ in
       cataCharts ? null,
       k8sSpecs ? null,
       k8sHelpers ? null,
+      # Not optional. The module system passes arguments by the formals each
+      # floe file declares, so a floe that does not name `lab` would silently
+      # get retargeting that does nothing. Failing to evaluate is the only
+      # way that stays noticed.
+      lab,
       ...
     }:
     let
       cfg = config.floes.${name};
+
+      imageTypes = import ../../modules/lab/image-types.nix { inherit lib; };
+
+      labImages = lab.images or { };
 
       peers = lib.mapAttrs (_: floeCfg: floeCfg.exports or { }) (
         builtins.removeAttrs config.floes [ name ]
@@ -114,6 +123,69 @@ in
             once here rather than in every lab that enables it. This is the
             live counterpart to `readyProbe`: that one gates the install
             wave, this one answers "is it still right".
+          '';
+        };
+
+        lint = mkOption {
+          type = types.attrsOf (import ../../modules/lab/lint-types.nix { inherit lib; }).checkType;
+          default = { };
+          description = ''
+            Checks this floe makes about its own rendered manifests, run on
+            every cluster the floe is enabled on.
+
+            The static counterpart to `verify`: lint reads what was rendered
+            and needs no cluster, verify reads a running one.
+          '';
+        };
+
+        images = mkOption {
+          type = types.attrsOf imageTypes.imageType;
+          default = { };
+          apply = imageTypes.retarget {
+            registry = labImages.registry or null;
+            pinned = labImages.pinned.${name} or { };
+          };
+          description = ''
+            Every image this floe needs, including the ones its chart pulls,
+            keyed by a label that is part of the floe's interface.
+
+            A floe wrapper is curated the way a chart is: declaring the images
+            is what says this combination was tested, and it is what gives a
+            consumer something to override. Read `cfg.images.<label>.ref`
+            rather than writing a reference by hand.
+
+            What is read back is what the lab settled on, not only what the
+            floe wrote: `lab.images.registry` and `lab.images.pinned.${name}`
+            are folded in here, so a floe gets retargeting without knowing it
+            exists.
+          '';
+        };
+
+        imagesComplete = mkOption {
+          type = types.bool;
+          default = false;
+          description = ''
+            Whether `images` names every image this floe renders, chart ones
+            included. When true, a check scrapes what the floe actually
+            renders and fails naming anything undeclared.
+
+            Off by default so a floe part-way through declaring is not a
+            build failure. Turning it on is the floe saying its image set is
+            the whole set.
+          '';
+        };
+
+        network = mkOption {
+          type = (import ../../modules/lab/network-policy-types.nix { inherit lib; }).networkType;
+          default = { };
+          description = ''
+            Traffic this floe needs, as intent rather than as policy, used
+            when a cluster turns `security.networkPolicies` on.
+
+            Both halves of a cross-floe flow are declared, one by each floe,
+            because a default-deny namespace refuses in both directions and a
+            rule written at only one end is traffic that silently does not
+            flow. An assertion pairs them up.
           '';
         };
 
@@ -185,8 +257,15 @@ in
       // (normaliseOptions options);
 
       config = mkIf cfg.enable (
+        let
+          moduleOutput = module (moduleArgs // { inherit cfg peers; });
+          provenance = import ./bundle-provenance.nix { inherit lib; };
+        in
         lib.mkMerge (
-          [ (module (moduleArgs // { inherit cfg peers; })) ]
+          [
+            moduleOutput
+            (provenance.stampFloe { inherit name moduleOutput; })
+          ]
           ++ lib.optional (requires != [ ]) {
             assertions = map (req: {
               assertion = (config.floes.${req} or { }).enable or false;

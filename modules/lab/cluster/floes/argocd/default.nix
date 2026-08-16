@@ -5,7 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
-  lab ? { },
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -53,7 +53,6 @@ in
         inherit (driftOut) entries aggregateManagers;
       };
 
-      redisSecretInitImage = "quay.io/argoproj/argocd:v3.0.1";
       redisSecretInitName = "argocd-redis-secret-init";
       redisSecretInitSa = {
         apiVersion = "v1";
@@ -107,11 +106,15 @@ in
           }
         ];
       };
+      # Not a secrets.generate entry, unlike harbor's and netbird's. The
+      # randomness is inside `argocd admin redis-initial-password`, which also
+      # writes the value in the shape argocd's own controllers read back. A
+      # Password generator produces a string; it does not produce that.
       redisSecretInitJob = catalLib.mkIdempotentJob {
         name = redisSecretInitName;
         namespace = cfg.namespace;
         contentInputs = {
-          image = redisSecretInitImage;
+          image = cfg.images.redis-secret-init.ref;
           command = "argocd admin redis-initial-password";
         };
         podSpec = {
@@ -120,7 +123,7 @@ in
           containers = [
             {
               name = "secret-init";
-              image = redisSecretInitImage;
+              image = cfg.images.redis-secret-init.ref;
               command = [
                 "argocd"
                 "admin"
@@ -373,6 +376,47 @@ in
         else
           [ ];
 
+      floes.argocd.images.redis-secret-init = {
+        registry = "quay.io";
+        repository = "argoproj/argocd";
+        tag = "v3.0.1";
+      };
+
+      floes.argocd.network = {
+
+        declared = true;
+
+        serves.http.port = 80;
+
+        egress.internet.ports = [
+          443
+          22
+        ];
+
+      };
+
+      floes.argocd.imagesComplete = true;
+
+      floes.argocd.images.dex = {
+
+        registry = "ghcr.io";
+
+        repository = "dexidp/dex";
+
+        tag = "v2.42.1";
+
+      };
+
+      floes.argocd.images.redis = {
+
+        registry = "public.ecr.aws";
+
+        repository = "docker/library/redis";
+
+        tag = "7.2.8-alpine";
+
+      };
+
       bundles.argocd = {
 
         owner = {
@@ -498,69 +542,16 @@ in
             "${redisSecretInitName}-rb" = redisSecretInitRb;
           }
           // redisSecretInitJob.resources
-          // optionalAttrs (cfg.tls.issuerRef != null && cfg.domain != "") {
-            "${cfg.tls.secretName}" = {
-              apiVersion = "cert-manager.io/v1";
-              kind = "Certificate";
-              metadata = {
-                name = cfg.tls.secretName;
-                namespace = cfg.namespace;
-              };
-              spec = {
-                secretName = cfg.tls.secretName;
-                issuerRef = {
-                  name = cfg.tls.issuerRef.name;
-                  kind = cfg.tls.issuerRef.kind;
-                };
-                dnsNames = [ cfg.domain ];
-              };
-            };
-          }
-          // optionalAttrs (cfg.gateway.enable && cfg.domain != "") {
-            "argocd-httproute" = {
-              apiVersion = "gateway.networking.k8s.io/v1";
-              kind = "HTTPRoute";
-              metadata = {
-                name = "argocd";
-                namespace = cfg.namespace;
-              };
-              spec = {
-                parentRefs = [
-                  (
-                    {
-                      name =
-                        if cfg.gateway.tier == "internal" then
-                          config.floes.gateway.exports.internalGatewayName
-                        else
-                          cfg.gateway.gatewayRef;
-
-                      sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
-                    }
-                    // optionalAttrs (cfg.gateway.gatewayNamespace != null) {
-                      namespace = cfg.gateway.gatewayNamespace;
-                    }
-                  )
-                ];
-                hostnames = [ cfg.domain ];
-                rules = [
-                  {
-                    matches = [
-                      {
-                        path = {
-                          type = "PathPrefix";
-                          value = "/";
-                        };
-                      }
-                    ];
-                    backendRefs = [
-                      {
-                        name = "argocd-server";
-                        port = 80;
-                      }
-                    ];
-                  }
-                ];
-              };
+          // k8sHelpers.mkGatewayExposure {
+            name = "argocd";
+            routeName = "argocd-httproute";
+            namespace = cfg.namespace;
+            inherit (cfg) domain gateway tls;
+            inherit (config.floes.gateway.exports) internalGatewayName;
+            sectionName = config.floes.gateway.exports.terminatingListenerName or "https";
+            backend = {
+              name = "argocd-server";
+              port = 80;
             };
           };
 

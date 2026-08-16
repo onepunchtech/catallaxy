@@ -8,6 +8,7 @@
 
 let
   inherit (lib) mkOption mkEnableOption types;
+  inherit (import ../../../../../lib/floe { inherit lib; }) gatewayOptions;
   contracts = import ../../../../../lib/contracts { inherit lib; };
 in
 {
@@ -28,52 +29,70 @@ in
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the issuer.";
+              };
               kind = mkOption {
                 type = types.str;
                 default = "ClusterIssuer";
+                description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
               };
             };
           }
         );
 
         default = config.floes.cert-manager.exports.defaultIssuerRef or null;
+        description = "Issuer that signs the serving certificate. Null mints none.";
       };
 
       secretName = mkOption {
         type = types.str;
         default = "forgejo-tls";
+        description = "Secret the issued certificate lands in.";
       };
     };
 
     database = {
-      host = mkOption { type = types.str; };
+      host = mkOption {
+        type = types.str;
+        description = "Hostname of the Postgres server.";
+      };
       port = mkOption {
         type = types.port;
         default = 5432;
+        description = "Port it listens on.";
       };
       name = mkOption {
         type = types.str;
         default = "forgejo";
+        description = "Database name.";
       };
       user = mkOption {
         type = types.str;
         default = "forgejo";
+        description = "Role Forgejo connects as.";
       };
       secretRef = mkOption {
         type = types.submodule {
           options = {
-            name = mkOption { type = types.str; };
+            name = mkOption {
+              type = types.str;
+              description = "Name of that Secret.";
+            };
             key = mkOption {
               type = types.str;
               default = "password";
+              description = "Key within it.";
             };
           };
         };
+        description = "Secret holding that role's password.";
       };
       ssl = mkOption {
         type = types.bool;
         default = false;
+        description = "Require TLS on the database connection.";
       };
     };
 
@@ -82,6 +101,7 @@ in
       clientId = mkOption {
         type = types.str;
         default = "forgejo";
+        description = "Client ID Forgejo presents to the issuer.";
       };
       client = mkOption {
         type = contracts.oidc.nullableClient;
@@ -99,12 +119,16 @@ in
       issuerUrl = mkOption {
         type = types.str;
         default = "";
+        description = "OIDC issuer URL. Usually read from the identity floe's exports rather than written out.";
       };
       clientSecretRef = mkOption {
         type = types.nullOr (
           types.submodule {
             options = {
-              name = mkOption { type = types.str; };
+              name = mkOption {
+                type = types.str;
+                description = "Name of the Secret holding the client secret.";
+              };
               namespace = mkOption {
                 type = types.nullOr types.str;
                 default = null;
@@ -119,11 +143,13 @@ in
               key = mkOption {
                 type = types.str;
                 default = "client-secret";
+                description = "Key within that Secret.";
               };
             };
           }
         );
         default = null;
+        description = "Secret holding the OIDC client secret. Null means the bootstrap mints one.";
       };
       scopes = mkOption {
         type = types.listOf types.str;
@@ -133,26 +159,32 @@ in
           "profile"
           "groups"
         ];
+        description = "Scopes requested at login. `groups` is what `adminGroup` reads.";
       };
       autoDiscoverUrl = mkOption {
         type = types.str;
         default = "";
+        description = "Discovery document URL, when it is not the issuer's well-known path.";
       };
       providerName = mkOption {
         type = types.str;
         default = "Kanidm";
+        description = "Label for the login button.";
       };
       usernameClaim = mkOption {
         type = types.str;
         default = "preferred_username";
+        description = "Claim to read the username from.";
       };
       groupsClaim = mkOption {
         type = types.str;
         default = "groups";
+        description = "Claim to read group membership from.";
       };
       adminGroup = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "Group whose members administer Forgejo. Null grants nobody admin through OIDC.";
       };
     };
 
@@ -160,10 +192,12 @@ in
       size = mkOption {
         type = types.str;
         default = "10Gi";
+        description = "Size of the volume holding repositories.";
       };
       storageClass = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "StorageClass for it. Null takes the cluster default.";
       };
     };
 
@@ -171,14 +205,17 @@ in
       sshPort = mkOption {
         type = types.port;
         default = 22;
+        description = "Port Forgejo serves SSH git traffic on.";
       };
       httpPort = mkOption {
         type = types.port;
         default = 3000;
+        description = "Port it serves HTTP on.";
       };
       lfsEnabled = mkOption {
         type = types.bool;
         default = true;
+        description = "Store large files through git-lfs.";
       };
     };
 
@@ -186,36 +223,18 @@ in
       existingSecret = mkOption {
         type = types.nullOr types.str;
         default = null;
+        description = "Existing Secret holding Forgejo's admin credentials. Null lets the bootstrap mint them.";
       };
     };
 
     replicas = mkOption {
       type = types.ints.positive;
       default = 1;
+      description = "How many Forgejo replicas to run. Above one needs shared storage.";
     };
 
-    gateway = {
-      enable = mkOption {
-        type = types.bool;
-        default = true;
-      };
-      gatewayRef = mkOption {
-        type = types.str;
-        default = "default-gateway";
-      };
-      gatewayNamespace = mkOption {
-        type = types.nullOr types.str;
-        default = "kube-system";
-      };
-      tier = mkOption {
-        type = types.enum [
-          "public"
-          "internal"
-        ];
-
-        default = lab.policy.exposure.defaultTier or "public";
-        description = "Lab network tier (public | internal).";
-      };
+    gateway = gatewayOptions {
+      inherit lab;
     };
   };
 }

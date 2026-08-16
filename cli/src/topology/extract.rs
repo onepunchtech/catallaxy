@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::process::{Command, Stdio};
 
 use anyhow::Result;
 
@@ -105,12 +104,6 @@ fn extract_edges_from_plan(lab: &LabSpec) -> Vec<TopologyEdge> {
 
     for step in &lab.deployment_plan {
         match &step.params {
-            StepParams::CrossClusterSecretCopy(p) => edges.push(TopologyEdge {
-                kind: EdgeKind::SecretCopy,
-                source: p.source_cluster.clone(),
-                target: p.target_cluster.clone(),
-                label: Some(p.source_secret.clone()),
-            }),
             StepParams::SyncKubeconfig(p) => {
                 for provisioned in &p.clusters {
                     edges.push(TopologyEdge {
@@ -231,60 +224,105 @@ pub fn enrich_live(_ctx: &CataContext, topo: &mut LabTopology) -> Result<()> {
 }
 
 pub fn check_namespace_health(context: &str, namespace: &str) -> ComponentHealthState {
-    let output = Command::new("kubectl")
-        .args([
-            "--context",
-            context,
-            "get",
-            "pods",
-            "-n",
-            namespace,
-            "-o",
-            "json",
-            "--request-timeout=3s",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output();
+    match crate::io::kubectl::pods_in_namespace(context, namespace, Some("3s")) {
+        Some(pods) => health_of(&pods),
+        None => ComponentHealthState::NoPods,
+    }
+}
 
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return ComponentHealthState::NoPods,
-    };
+fn pod_is_ready(pod: &serde_json::Value) -> bool {
+    match pod["status"]["phase"].as_str().unwrap_or("") {
+        "Succeeded" | "Completed" => true,
+        "Running" => pod["status"]["containerStatuses"]
+            .as_array()
+            .is_some_and(|statuses| {
+                statuses
+                    .iter()
+                    .all(|cs| cs["ready"].as_bool() == Some(true))
+            }),
+        _ => false,
+    }
+}
 
-    let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
-        Ok(v) => v,
-        Err(_) => return ComponentHealthState::NoPods,
-    };
+pub fn health_of(pods: &[serde_json::Value]) -> ComponentHealthState {
+    if pods.is_empty() {
+        return ComponentHealthState::NoPods;
+    }
 
-    let items = match json["items"].as_array() {
-        Some(items) if !items.is_empty() => items,
-        _ => return ComponentHealthState::NoPods,
-    };
-
-    let total = items.len();
-    let ready = items
-        .iter()
-        .filter(|pod| {
-            let phase = pod["status"]["phase"].as_str().unwrap_or("");
-            match phase {
-                "Succeeded" | "Completed" => true,
-                "Running" => pod["status"]["containerStatuses"]
-                    .as_array()
-                    .map(|statuses| {
-                        statuses
-                            .iter()
-                            .all(|cs| cs["ready"].as_bool() == Some(true))
-                    })
-                    .unwrap_or(false),
-                _ => false,
-            }
-        })
-        .count();
+    let total = pods.len();
+    let ready = pods.iter().filter(|p| pod_is_ready(p)).count();
 
     if ready == total {
         ComponentHealthState::Healthy { pod_count: total }
     } else {
         ComponentHealthState::Degraded { ready, total }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn pod(phase: &str, ready: &[bool]) -> serde_json::Value {
+        json!({
+            "status": {
+                "phase": phase,
+                "containerStatuses": ready.iter().map(|r| json!({ "ready": r })).collect::<Vec<_>>(),
+            }
+        })
+    }
+
+    #[test]
+    fn no_pods_is_not_the_same_as_unhealthy() {
+        assert_eq!(health_of(&[]), ComponentHealthState::NoPods);
+    }
+
+    #[test]
+    fn every_container_ready_is_healthy() {
+        let pods = vec![pod("Running", &[true, true]), pod("Running", &[true])];
+        assert_eq!(
+            health_of(&pods),
+            ComponentHealthState::Healthy { pod_count: 2 }
+        );
+    }
+
+    #[test]
+    fn one_container_not_ready_degrades_its_pod() {
+        let pods = vec![pod("Running", &[true, false]), pod("Running", &[true])];
+        assert_eq!(
+            health_of(&pods),
+            ComponentHealthState::Degraded { ready: 1, total: 2 }
+        );
+    }
+
+    #[test]
+    fn a_finished_pod_counts_as_ready() {
+        for phase in ["Succeeded", "Completed"] {
+            assert_eq!(
+                health_of(&[pod(phase, &[])]),
+                ComponentHealthState::Healthy { pod_count: 1 },
+                "{phase} is a job that finished, not a workload that is down"
+            );
+        }
+    }
+
+    #[test]
+    fn a_pending_or_failed_pod_is_not_ready() {
+        for phase in ["Pending", "Failed", "Unknown"] {
+            assert_eq!(
+                health_of(&[pod(phase, &[true])]),
+                ComponentHealthState::Degraded { ready: 0, total: 1 },
+                "{phase}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_running_pod_with_no_container_statuses_is_not_ready() {
+        assert_eq!(
+            health_of(&[json!({ "status": { "phase": "Running" } })]),
+            ComponentHealthState::Degraded { ready: 0, total: 1 }
+        );
     }
 }

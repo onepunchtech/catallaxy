@@ -5,6 +5,15 @@ use anyhow::Result;
 
 use crate::io::process::run_streaming;
 
+pub fn daemon_reachable() -> bool {
+    Command::new("docker")
+        .args(["info", "--format", "{{.ServerVersion}}"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
 pub fn container_running(name: &str) -> bool {
     let output = Command::new("docker")
         .args(["inspect", "-f", "{{.State.Running}}", name])
@@ -177,4 +186,154 @@ pub fn stop_container(name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn network_subnets() -> Vec<String> {
+    let names = match Command::new("docker")
+        .args(["network", "ls", "--format", "{{.Name}}"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => return Vec::new(),
+    };
+
+    names
+        .lines()
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .flat_map(subnets_of)
+        .collect()
+}
+
+fn subnets_of(network: &str) -> Vec<String> {
+    let out = Command::new("docker")
+        .args([
+            "network",
+            "inspect",
+            network,
+            "-f",
+            "{{range .IPAM.Config}}{{.Subnet}}\n{{end}}",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+pub fn network_subnets_of(network: &str) -> Vec<String> {
+    subnets_of(network)
+}
+
+pub fn first_network_ip(container: &str) -> Option<String> {
+    let output = Command::new("docker")
+        .args([
+            "inspect",
+            "--format",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}\n{{end}}",
+            container,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .map(str::to_string)
+}
+
+pub fn containers_publishing(port: u16) -> Vec<String> {
+    let out = Command::new("docker")
+        .args([
+            "ps",
+            "--filter",
+            &format!("publish={port}"),
+            "--format",
+            "{{.Names}}",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+pub fn network_exists(name: &str) -> bool {
+    Command::new("docker")
+        .args(["network", "inspect", name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+pub fn create_network(
+    name: &str,
+    subnet: &str,
+    gateway: &str,
+) -> std::io::Result<std::process::Output> {
+    Command::new("docker")
+        .args([
+            "network",
+            "create",
+            "-d",
+            "bridge",
+            "--subnet",
+            subnet,
+            "--gateway",
+            gateway,
+            name,
+        ])
+        .output()
+}
+
+pub fn remove_network(name: &str) {
+    let _ = Command::new("docker")
+        .args(["network", "rm", name])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+pub fn containers_named(prefix: &str) -> std::io::Result<std::process::Output> {
+    Command::new("docker")
+        .args([
+            "ps",
+            "-a",
+            "--format",
+            "{{.Names}}",
+            "--filter",
+            &format!("name={prefix}"),
+        ])
+        .output()
+}
+
+pub fn force_remove_container(name: &str) {
+    let _ = Command::new("docker").args(["rm", "-f", name]).status();
 }

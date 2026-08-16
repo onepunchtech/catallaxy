@@ -60,6 +60,25 @@ it, by asking the lab where its ingress is. You can do the same by hand:
 curl --resolve podinfo.minimal.test:80:127.0.0.1 http://podinfo.minimal.test
 ```
 
+## When something does not come up
+
+`verify` tells you _that_ something is wrong. `diagnose` tells you what:
+
+```bash
+cata --flake .#minimal.local diagnose
+```
+
+It prints node status, per-floe health, pods that are not running along with
+their recent logs, deployments that stopped progressing, and warning events.
+It is the first thing to reach for when a floe will not start.
+
+`cata lab status` is the quicker look, and says whether the docker daemon is
+even reachable:
+
+```bash
+cata --flake .#minimal.local lab status
+```
+
 ## Resolve the zone from your browser
 
 One of the most annoying things about testing Kubernetes locally is

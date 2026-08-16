@@ -1,30 +1,27 @@
-use std::process::Command;
-
 use anyhow::{Context, Result};
 use console::style;
 
 use crate::config::Context as CataContext;
 
 pub async fn ops(ctx: &CataContext, name: &str, args: &[String]) -> Result<()> {
-    let lab_package = crate::io::nix::build_lab_package(ctx, name)?;
-    let ops_bin = format!("{lab_package}/bin/{name}-ops");
+    let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
-    if std::path::Path::new(&ops_bin).exists() {
-        let mut cmd = Command::new(&ops_bin);
-        cmd.args(args);
-        let status = crate::io::process::run_status(&mut cmd)
-            .with_context(|| format!("Failed to run ops tool: {}", ops_bin))?;
-
-        if !status.success() {
-            std::process::exit(status.code().unwrap_or(1));
-        }
-        Ok(())
-    } else {
+    let Some(ops_tool_path) = lab.ops_tool_path.as_deref() else {
         println!(
             "{} No ops commands defined for lab '{name}'.",
             style(">>>").yellow()
         );
         println!("  Define commands in lab.ops.commands in your lab config.");
-        Ok(())
+        return Ok(());
+    };
+
+    crate::io::nix::build_lab_package(ctx, name)?;
+
+    let status = crate::io::process::run_tool(ops_tool_path, args)
+        .with_context(|| format!("Failed to run ops tool: {ops_tool_path}"))?;
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
     }
+    Ok(())
 }

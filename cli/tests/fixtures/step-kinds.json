@@ -166,55 +166,6 @@
       }
     }
   },
-  "cross-cluster-secret-copy": {
-    "directions": [
-      "deploy"
-    ],
-    "dryRunSafe": false,
-    "idempotency": "idempotent",
-    "params": {
-      "name": {
-        "required": true,
-        "sample": "conformance-sample"
-      },
-      "secretType": {
-        "required": false,
-        "sample": "conformance-sample"
-      },
-      "sourceCluster": {
-        "required": true,
-        "sample": "conformance-sample"
-      },
-      "sourceContext": {
-        "required": false,
-        "sample": "conformance-sample"
-      },
-      "sourceNamespace": {
-        "required": true,
-        "sample": "conformance-sample"
-      },
-      "sourceSecret": {
-        "required": true,
-        "sample": "conformance-sample"
-      },
-      "targetCluster": {
-        "required": true,
-        "sample": "conformance-sample"
-      },
-      "targetContext": {
-        "required": false,
-        "sample": "conformance-sample"
-      },
-      "targetNamespace": {
-        "required": true,
-        "sample": "conformance-sample"
-      },
-      "targetSecret": {
-        "required": true,
-        "sample": "conformance-sample"
-      }
-    }
-  },
   "delete-managed-resource": {
     "directions": [
       "teardown"

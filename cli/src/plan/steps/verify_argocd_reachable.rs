@@ -1,9 +1,8 @@
-use std::process::Command;
-
 use anyhow::{Context, Result, bail};
 use console::style;
 
 use crate::domain::plan::VerifyArgocdReachableParams;
+use crate::io;
 use crate::plan::StepContext;
 
 pub fn run(sctx: &StepContext<'_>, p: &VerifyArgocdReachableParams) -> Result<()> {
@@ -30,18 +29,11 @@ pub fn run(sctx: &StepContext<'_>, p: &VerifyArgocdReachableParams) -> Result<()
         );
         return Ok(());
     }
-    let status = Command::new("kubectl")
-        .args([
-            "--context",
-            kube_context,
-            "-n",
-            namespace,
-            "get",
-            "deploy",
-            "argocd-server",
-        ])
-        .status()
-        .context("running kubectl get deploy argocd-server")?;
+    let status = io::kubectl::status(
+        kube_context,
+        &["-n", namespace, "get", "deploy", "argocd-server"],
+    )
+    .context("running kubectl get deploy argocd-server")?;
     if !status.success() {
         bail!(
             "argocd-server Deployment not found in namespace '{namespace}' on '{kube_context}'. \

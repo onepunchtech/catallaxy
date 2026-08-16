@@ -5,6 +5,7 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  lab,
   ...
 }@__floeModuleArgs:
 
@@ -237,6 +238,54 @@ in
           '';
         }
       ];
+
+      floes.cert-manager.network = {
+
+        declared = true;
+
+        serves.webhook = {
+
+          port = 443;
+
+          fromApiServer = true;
+
+        };
+
+        egress.internet.ports = [ 443 ];
+
+      };
+
+      floes.cert-manager.imagesComplete = true;
+
+      floes.cert-manager.images.controller = {
+
+        registry = "quay.io";
+
+        repository = "jetstack/cert-manager-controller";
+
+        tag = "v1.17.2";
+
+      };
+
+      floes.cert-manager.images.cainjector = {
+
+        registry = "quay.io";
+
+        repository = "jetstack/cert-manager-cainjector";
+
+        tag = "v1.17.2";
+
+      };
+
+      floes.cert-manager.images.webhook = {
+
+        registry = "quay.io";
+
+        repository = "jetstack/cert-manager-webhook";
+
+        tag = "v1.17.2";
+
+      };
 
       bundles.cert-manager-crds = {
         owner = {

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
 
@@ -52,7 +51,7 @@ pub async fn run(_ctx: &CataContext, args: GenerateArgs) -> Result<()> {
             .context("Failed to read from stdin")?;
         buffer
     } else {
-        fs::read_to_string(&args.config)
+        crate::io::fs::read_to_string(&args.config)
             .with_context(|| format!("Failed to read config file: {}", args.config))?
     };
 
@@ -69,8 +68,10 @@ pub async fn run(_ctx: &CataContext, args: GenerateArgs) -> Result<()> {
 fn generate(config: GenerateConfig) -> Result<()> {
     let output_dir = Path::new(&config.output_dir);
 
-    fs::create_dir_all(output_dir.join("k8s")).context("Failed to create k8s directory")?;
-    fs::create_dir_all(output_dir.join("crds")).context("Failed to create crds directory")?;
+    crate::io::fs::create_dir_all(output_dir.join("k8s"))
+        .context("Failed to create k8s directory")?;
+    crate::io::fs::create_dir_all(output_dir.join("crds"))
+        .context("Failed to create crds directory")?;
 
     let options = GeneratorOptions::default();
     let emitter_config = EmitterConfig::default();
@@ -85,7 +86,7 @@ fn generate(config: GenerateConfig) -> Result<()> {
             version
         );
 
-        let spec_content = fs::read_to_string(spec_path)
+        let spec_content = crate::io::fs::read_to_string(spec_path)
             .with_context(|| format!("Failed to read spec file: {}", spec_path))?;
 
         let spec = parse_openapi_spec(&spec_content)
@@ -100,7 +101,7 @@ fn generate(config: GenerateConfig) -> Result<()> {
 
         let file_name = format!("{}.nix", version.replace('.', "_"));
         let file_path = output_dir.join("k8s").join(&file_name);
-        fs::write(&file_path, &nix_code)
+        crate::io::fs::write(&file_path, &nix_code)
             .with_context(|| format!("Failed to write {:?}", file_path))?;
 
         eprintln!("    Wrote {:?}", file_path);
@@ -110,7 +111,7 @@ fn generate(config: GenerateConfig) -> Result<()> {
     for (name, crd_path) in &config.crds {
         eprintln!("{} Generating CRD types for {}", style(">>>").cyan(), name);
 
-        let crd_content = fs::read_to_string(crd_path)
+        let crd_content = crate::io::fs::read_to_string(crd_path)
             .with_context(|| format!("Failed to read CRD file: {}", crd_path))?;
 
         let resources = parse_crds_from_yaml(&crd_content, &options)
@@ -122,7 +123,7 @@ fn generate(config: GenerateConfig) -> Result<()> {
 
         let file_name = format!("{}.nix", name.replace(['.', '-'], "_"));
         let file_path = output_dir.join("crds").join(&file_name);
-        fs::write(&file_path, &nix_code)
+        crate::io::fs::write(&file_path, &nix_code)
             .with_context(|| format!("Failed to write {:?}", file_path))?;
 
         eprintln!("    Wrote {:?}", file_path);
@@ -132,7 +133,7 @@ fn generate(config: GenerateConfig) -> Result<()> {
     eprintln!("{} Generating index.nix", style(">>>").cyan());
     let index_code = emit_index(&k8s_versions, &crd_names, emitter_config);
     let index_path = output_dir.join("index.nix");
-    fs::write(&index_path, &index_code).context("Failed to write index.nix")?;
+    crate::io::fs::write(&index_path, &index_code).context("Failed to write index.nix")?;
     eprintln!("    Wrote {:?}", index_path);
 
     eprintln!(

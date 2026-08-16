@@ -11,6 +11,33 @@
     workers = 0;
   };
 
+  floes.external-secrets.enable = true;
+
+  # The lab's runtime store. Exposed because apps reads it, not for humans.
+  floes.openbao = {
+    enable = true;
+    domain = "bao.${lab.dns.zone}";
+    tls.issuerRef = config.floes.cert-manager.exports.defaultIssuerRef;
+  };
+
+  secrets.projections.openbao-root-token = {
+    source = "openbao-root-token";
+    namespace = "openbao";
+    keys.token.from = "token";
+  };
+
+  secrets.projections.vault-token = {
+    source = "openbao-root-token";
+    namespace = "external-secrets";
+    keys.token.from = "token";
+  };
+
+  # The netbird operator mints this after it comes up, so nothing could have
+  # authored it. Publishing is how it reaches the cluster that needs it.
+  secrets.publish.setup-key-cluster-router-apps = {
+    namespace = "netbird";
+  };
+
   floes.cert-manager = {
     enable = true;
     selfSignedCA.enable = true;

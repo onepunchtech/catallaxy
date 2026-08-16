@@ -1,13 +1,16 @@
-use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
 use console::style;
 use serde_json::Value;
 
+use crate::domain::StepFailure;
+use crate::domain::crossplane::ManagedState;
 use crate::domain::plan::DeleteManagedResourceParams;
 use crate::io;
 use crate::plan::StepContext;
+
+const STEP: &str = "delete-managed-resource";
 
 pub fn run(sctx: &StepContext<'_>, p: &DeleteManagedResourceParams) -> Result<()> {
     let DeleteManagedResourceParams {
@@ -30,7 +33,7 @@ pub fn run(sctx: &StepContext<'_>, p: &DeleteManagedResourceParams) -> Result<()
     if kind.is_empty() {
         sctx.failures
             .borrow_mut()
-            .push("delete-managed-resource: missing kind".into());
+            .push(StepFailure::new(STEP, "missing kind"));
         return Ok(());
     }
     if !io::kubectl::api_reachable(&kube_ctx) {
@@ -41,8 +44,11 @@ pub fn run(sctx: &StepContext<'_>, p: &DeleteManagedResourceParams) -> Result<()
             kind,
             resource_name,
         );
-        sctx.failures.borrow_mut().push(format!(
-            "delete-managed-resource {kind}/{resource_name} on {kube_ctx}"
+        sctx.failures.borrow_mut().push(StepFailure::on_resource(
+            STEP,
+            kind,
+            resource_name,
+            format!("'{kube_ctx}' not reachable, so the CR was never deleted"),
         ));
         return Ok(());
     }
@@ -51,8 +57,11 @@ pub fn run(sctx: &StepContext<'_>, p: &DeleteManagedResourceParams) -> Result<()
         None => report_missing_cr(sctx, &kube_ctx, kind, resource_name),
         Some(cr) => {
             if !preflight_safe_to_delete(&cr, &kube_ctx, kind, resource_name) {
-                sctx.failures.borrow_mut().push(format!(
-                    "delete-managed-resource {kind}/{resource_name}: preflight failed"
+                sctx.failures.borrow_mut().push(StepFailure::on_resource(
+                    STEP,
+                    kind,
+                    resource_name,
+                    "preflight refused the delete",
                 ));
                 return Ok(());
             }
@@ -60,8 +69,11 @@ pub fn run(sctx: &StepContext<'_>, p: &DeleteManagedResourceParams) -> Result<()
                 return Ok(());
             }
             if wait && !poll_until_gone(&kube_ctx, kind, resource_name, timeout_secs) {
-                sctx.failures.borrow_mut().push(format!(
-                    "delete-managed-resource {kind}/{resource_name} on {kube_ctx}"
+                sctx.failures.borrow_mut().push(StepFailure::on_resource(
+                    STEP,
+                    kind,
+                    resource_name,
+                    format!("still present on '{kube_ctx}' after {timeout_secs}s"),
                 ));
             }
         }
@@ -70,21 +82,7 @@ pub fn run(sctx: &StepContext<'_>, p: &DeleteManagedResourceParams) -> Result<()
 }
 
 fn fetch_cr(kube_ctx: &str, kind: &str, resource_name: &str) -> Option<Value> {
-    let out = Command::new("kubectl")
-        .args([
-            "--context",
-            kube_ctx,
-            "get",
-            &format!("{kind}/{resource_name}"),
-            "-o",
-            "json",
-        ])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    serde_json::from_slice(&out.stdout).ok()
+    io::kubectl::resource_json(kube_ctx, &format!("{kind}/{resource_name}"))
 }
 
 fn report_missing_cr(sctx: &StepContext<'_>, kube_ctx: &str, kind: &str, resource_name: &str) {
@@ -134,21 +132,23 @@ fn report_missing_cr(sctx: &StepContext<'_>, kube_ctx: &str, kind: &str, resourc
         style(">>>").dim(),
         style(">>>").dim(),
     );
-    sctx.failures.borrow_mut().push(format!(
-        "delete-managed-resource {kind}/{resource_name}: not found; {} orphaned CR(s) present",
-        existing.len(),
+    sctx.failures.borrow_mut().push(StepFailure::on_resource(
+        STEP,
+        kind,
+        resource_name,
+        format!("not found; {} orphaned CR(s) present", existing.len()),
     ));
 }
 
 fn list_all_of_kind(kube_ctx: &str, kind: &str) -> Vec<(String, String)> {
-    let out = Command::new("kubectl")
-        .args([
-            "--context", kube_ctx,
+    let out = io::kubectl::output(
+        kube_ctx,
+        &[
             "get", kind, "-A",
             "-o", r#"jsonpath={range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.crossplane\.io/external-name}{"\n"}{end}"#,
-        ])
-        .output()
-        .ok();
+        ],
+    )
+    .ok();
     let Some(out) = out.filter(|o| o.status.success()) else {
         return Vec::new();
     };
@@ -163,36 +163,14 @@ fn list_all_of_kind(kube_ctx: &str, kind: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-fn preflight_safe_to_delete(cr: &Value, kube_ctx: &str, kind: &str, resource_name: &str) -> bool {
-    let external_name = cr
-        .pointer("/metadata/annotations/crossplane.io~1external-name")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty());
-    let has_xp_finalizer = cr
-        .pointer("/metadata/finalizers")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter().any(|f| {
-                f.as_str()
-                    .map(|s| s.contains("crossplane.io"))
-                    .unwrap_or(false)
-            })
-        })
-        .unwrap_or(false);
-
-    if let Some(name) = external_name
-        && has_xp_finalizer
-    {
-        println!(
-            "{} Preflight OK: external-name='{name}', finalizer attached",
-            style(">>>").green(),
-        );
-        return true;
-    }
-
-    let ext_str = external_name.unwrap_or("<missing>");
-    println!(
-        "{} delete-managed-resource {kind}/{resource_name}: unsafe to delete: external-name='{ext_str}', crossplane-finalizer={has_xp_finalizer}. \n  \
+pub fn describe_unsafe_delete(
+    state: &ManagedState,
+    kube_ctx: &str,
+    kind: &str,
+    resource_name: &str,
+) -> String {
+    format!(
+        "delete-managed-resource {kind}/{resource_name}: unsafe to delete: external-name='{}', crossplane-finalizer={}. \n  \
          A `kubectl delete` here would remove the CR from k8s WITHOUT firing a cloud-side destroy, leaving the underlying resource orphaned. \n  \
          Recover with your provider's tooling:\n    \
          1. Use your cloud provider's CLI/console to look up the resource UUID that corresponds to {kind}/{resource_name}.\n    \
@@ -201,7 +179,27 @@ fn preflight_safe_to_delete(cr: &Value, kube_ctx: &str, kind: &str, resource_nam
          4. Re-run `cata lab destroy`.\n  \
          If the cloud resource is already gone, strip the finalizer:\n    \
          kubectl --context {kube_ctx} patch {kind}/{resource_name} --type merge -p '{{\"metadata\":{{\"finalizers\":[]}}}}'",
+        state.external_name_or_missing(),
+        state.has_finalizer,
+    )
+}
+
+fn preflight_safe_to_delete(cr: &Value, kube_ctx: &str, kind: &str, resource_name: &str) -> bool {
+    let state = ManagedState::of(cr);
+
+    if state.is_deletable() {
+        println!(
+            "{} Preflight OK: external-name='{}', finalizer attached",
+            style(">>>").green(),
+            state.external_name_or_missing(),
+        );
+        return true;
+    }
+
+    println!(
+        "{} {}",
         style("ERROR").red(),
+        describe_unsafe_delete(&state, kube_ctx, kind, resource_name),
     );
     false
 }
@@ -217,17 +215,12 @@ fn issue_delete(
         "{} kubectl --context {kube_ctx} delete {kind}/{resource_name}",
         style(">>>").cyan(),
     );
-    let mut args = vec![
-        "--context".to_string(),
-        kube_ctx.to_string(),
-        "delete".to_string(),
-        format!("{kind}/{resource_name}"),
-        "--ignore-not-found".to_string(),
-    ];
+    let target = format!("{kind}/{resource_name}");
+    let mut args = vec!["delete", target.as_str(), "--ignore-not-found"];
     if !wait {
-        args.push("--wait=false".to_string());
+        args.push("--wait=false");
     }
-    match Command::new("kubectl").args(&args).status() {
+    match io::kubectl::status(kube_ctx, &args) {
         Ok(s) if s.success() => {
             println!("{} delete request accepted", style(">>>").green());
             true
@@ -238,15 +231,24 @@ fn issue_delete(
                 style("Warning:").yellow(),
                 s.code().unwrap_or(-1),
             );
-            sctx.failures.borrow_mut().push(format!(
-                "delete-managed-resource {kind}/{resource_name} on {kube_ctx}"
+            sctx.failures.borrow_mut().push(StepFailure::on_resource(
+                STEP,
+                kind,
+                resource_name,
+                format!(
+                    "kubectl delete on '{kube_ctx}' exited {}",
+                    s.code().unwrap_or(-1)
+                ),
             ));
             false
         }
         Err(e) => {
             println!("{} kubectl invocation failed: {e}", style("ERROR").red());
-            sctx.failures.borrow_mut().push(format!(
-                "delete-managed-resource {kind}/{resource_name} on {kube_ctx}"
+            sctx.failures.borrow_mut().push(StepFailure::on_resource(
+                STEP,
+                kind,
+                resource_name,
+                format!("kubectl could not be run against '{kube_ctx}': {e}"),
             ));
             false
         }
@@ -254,36 +256,41 @@ fn issue_delete(
 }
 
 fn poll_until_gone(kube_ctx: &str, kind: &str, resource_name: &str, timeout_secs: u64) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(timeout_secs);
-    while Instant::now() < deadline {
-        let out = Command::new("kubectl")
-            .args([
-                "--context",
+    let deleted = crate::io::poll::poll_while_time_remains(
+        Duration::from_secs(timeout_secs),
+        Duration::from_secs(20),
+        || {
+            let out = io::kubectl::output(
                 kube_ctx,
-                "get",
-                &format!("{kind}/{resource_name}"),
-                "--no-headers",
-                "--ignore-not-found",
-            ])
-            .output();
-        if let Ok(o) = out
-            && String::from_utf8_lossy(&o.stdout).trim().is_empty()
-        {
-            println!(
-                "{} {}/{} deleted",
-                style(">>>").green(),
-                kind,
-                resource_name
+                &[
+                    "get",
+                    &format!("{kind}/{resource_name}"),
+                    "--no-headers",
+                    "--ignore-not-found",
+                ],
             );
-            return true;
-        }
-        println!(
-            "{} still waiting on Crossplane to destroy {}/{}...",
-            style(">>>").yellow(),
-            kind,
-            resource_name,
-        );
-        std::thread::sleep(Duration::from_secs(20));
+            if let Ok(o) = out
+                && String::from_utf8_lossy(&o.stdout).trim().is_empty()
+            {
+                println!(
+                    "{} {}/{} deleted",
+                    style(">>>").green(),
+                    kind,
+                    resource_name
+                );
+                return Some(());
+            }
+            println!(
+                "{} still waiting on Crossplane to destroy {}/{}...",
+                style(">>>").yellow(),
+                kind,
+                resource_name,
+            );
+            None
+        },
+    );
+    if deleted.is_some() {
+        return true;
     }
     println!(
         "{} Timed out waiting for {}/{} to be deleted",
@@ -292,4 +299,45 @@ fn poll_until_gone(kube_ctx: &str, kind: &str, resource_name: &str, timeout_secs
         resource_name,
     );
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_deletable_resource_produces_no_runbook() {
+        let cr = json!({
+            "metadata": {
+                "annotations": { "crossplane.io/external-name": "uuid-1" },
+                "finalizers": ["finalizer.managedresource.crossplane.io"],
+            }
+        });
+
+        assert!(ManagedState::of(&cr).is_deletable());
+    }
+
+    #[test]
+    fn the_runbook_names_the_resource_and_what_is_missing() {
+        let state = ManagedState::of(&json!({
+            "metadata": { "finalizers": ["finalizer.managedresource.crossplane.io"] }
+        }));
+
+        let text = describe_unsafe_delete(&state, "k3d-mgmt", "clusters.x.io", "prod");
+
+        assert!(text.contains("external-name='<missing>'"), "{text}");
+        assert!(text.contains("crossplane-finalizer=true"), "{text}");
+        assert!(text.contains("clusters.x.io/prod"), "{text}");
+        assert!(text.contains("--context k3d-mgmt"), "{text}");
+    }
+
+    #[test]
+    fn the_runbook_offers_the_finalizer_strip_when_the_cloud_resource_is_gone() {
+        let state = ManagedState::of(&json!({}));
+
+        let text = describe_unsafe_delete(&state, "ctx", "clusters.x.io", "prod");
+
+        assert!(text.contains(r#"{"metadata":{"finalizers":[]}}"#), "{text}");
+    }
 }
