@@ -65,12 +65,9 @@ in
               topology = clusterCfg.cluster.out.topology // {
                 components = lib.filterAttrs (_: c: c.enabled) clusterCfg.cluster.out.topology.components;
               };
-              sbom = clusterCfg.cluster.out.sbom // {
-                components = lib.filterAttrs (_: c: c.enabled) clusterCfg.cluster.out.sbom.components;
-              };
             in
             {
-              inherit topology sbom;
+              inherit topology;
 
               lint.checks = lib.mapAttrs (_: check: {
                 inherit (check)
@@ -263,6 +260,7 @@ in
           )}
           sort -u $out/images-raw.txt | grep -v '^$' | grep -v '^null$' > $out/images.txt || touch $out/images.txt
           rm -f $out/images-raw.txt
+          cp ${config.lab.out.sbom} $out/sbom.json
           ${
             if config.lab.ops.out.tool != null then
               "ln -s ${config.lab.ops.out.tool}/bin/${config.lab.name}-ops $out/bin/${config.lab.name}-ops"

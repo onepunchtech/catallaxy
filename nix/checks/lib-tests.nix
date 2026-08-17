@@ -29,6 +29,7 @@ let
     hcl = testsDir + "/util-hcl.nix";
     image-types = testsDir + "/image-types.nix";
     netpol = testsDir + "/netpol.nix";
+    sbom = testsDir + "/sbom.nix";
     drift-lowering = testsDir + "/drift.nix";
     plan-graph = testsDir + "/plan-graph.nix";
     manifest-graph = testsDir + "/manifest-graph.nix";

@@ -17,6 +17,7 @@ in
     ./cli-config.nix
     ./manifests.nix
     ./package.nix
+    ./sbom.nix
   ];
 
   options.lab.out = {

@@ -5,9 +5,6 @@
 - **Talos on bare metal.** `cluster.provisioner = "talos"` exists today, but
   only as Talos-in-Docker for local development, driven by `talosctl`. There
   is no provisioner module for real hardware.
-- **Richer SBOMs.** `cluster.out.sbom` reports each enabled floe and its
-  version. It does not yet read the rendered manifests, so images pinned
-  inside a Helm chart's own values are not counted.
 
 - **Exercise OpenBao outside `dev` mode.** `standalone` and `ha` initialise
   themselves, mount their KV engine and hand external-secrets a scoped

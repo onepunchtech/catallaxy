@@ -153,11 +153,6 @@ in
       description = "Computed topology/network map";
     };
 
-    sbom = mkOption {
-      type = types.attrs;
-      description = "Software bill of materials";
-    };
-
     imageCompleteness = mkOption {
       type = types.raw;
       default = { };
@@ -393,14 +388,6 @@ in
       };
       network = config.cluster.network;
       components = lib.mapAttrs (_: c: { enabled = c.enable or false; }) config.floes;
-    };
-
-    sbom = {
-      components = lib.mapAttrs (_: c: {
-
-        version = if (c.version or null) == null then "unknown" else c.version;
-        enabled = c.enable or false;
-      }) config.floes;
     };
 
     bundleView = bundleViews.all;

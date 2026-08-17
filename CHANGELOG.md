@@ -7,7 +7,41 @@ The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **A CycloneDX 1.6 bill of materials, at `sbom.json` in every lab
+  package.** Built from the rendered manifests rather than from what floes
+  declare, so an image a chart pins in its own values is counted like any
+  other. Every image is attributed to the floe whose bundle rendered it,
+  alongside the Helm charts themselves, and the build asserts the image set
+  agrees with `images.txt` so the document cannot quietly describe less than
+  the lab renders.
+
+  Scanners read it directly: `grype sbom:result/sbom.json`. An image the lab
+  has no digest for gets no `pkg:oci` purl, because a purl identifies an
+  artefact by digest and a tag cannot stand in for one; `cata images lock`
+  is what turns purls on. See
+  [Software Bill of Materials](./docs/book/src/reference/sbom.md).
+
+### Fixed
+
+- **A bundle declared in a floe's imported submodule carried no provenance
+  stamp.** `mkFloe` stamped only its own module body, so `forgejo-bootstrap`
+  and `kanidm-admin-heal` belonged to no floe as far as anything reading the
+  stamp was concerned. Both floes claim `imagesComplete`, and
+  `cluster.out.imageCompleteness` finds a floe's rendered bundles by that
+  stamp, so `image-sets-are-complete` had never checked either one. Imports
+  are now stamped the same way the module body is. Both bundles turn out to
+  have been honest; they were simply never asked.
+
 ### Removed
+
+- **`cluster.out.sbom`, and `clusters.<name>.sbom` from `metadata.json`.**
+  It reported each floe's name and version and nothing else, which made it a
+  copy of `cluster.out.topology.components` with a different second field.
+  It had no consumer in this repo. `sbom.json` replaces it and answers the
+  question the option was named for; `topology` still answers what runs
+  where.
 
 - **`io/openssl.rs`.** `host/pki.rs` was its only caller.
 

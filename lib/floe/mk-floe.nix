@@ -10,6 +10,62 @@ let
     ;
 
   inherit (import ../../modules/lab/cluster/lib/kubernetes/drift.nix { inherit lib; }) driftEntryType;
+
+  provenance = import ./bundle-provenance.nix { inherit lib; };
+
+  # A floe's own module body is stamped where it is merged, but an imported
+  # submodule is evaluated by the module system and never passes through
+  # there. A bundle it declares would carry no provenance, and provenance is
+  # what tells `imageCompleteness` and the SBOM which floe a rendered bundle
+  # belongs to, so the two would quietly skip it.
+  #
+  # Wrapping the import as a function module reaches its config without
+  # changing what it declares. Only one level: a submodule that imports
+  # another is not covered, and nothing in the repo does that.
+  stampBody =
+    name: out:
+    let
+      body =
+        out.config or (builtins.removeAttrs out [
+          "options"
+          "imports"
+        ]);
+      stamp = provenance.stampFloe {
+        inherit name;
+        moduleOutput = body;
+      };
+    in
+    if out ? config then
+      out
+      // {
+        config = lib.mkMerge [
+          out.config
+          stamp
+        ];
+      }
+    else
+      {
+        options = out.options or { };
+        imports = out.imports or [ ];
+        config = lib.mkMerge [
+          body
+          stamp
+        ];
+      };
+
+  # The wrapper has to declare the same formals as the module it wraps. The
+  # module system reads a module's signature to decide which of
+  # `_module.args` to hand it, so a bare lambda would call a submodule that
+  # names `cataCharts` or `lab` without them.
+  stampImport =
+    name: imp:
+    let
+      raw = if builtins.isFunction imp then imp else import imp;
+    in
+    if builtins.isFunction raw then
+      lib.setFunctionArgs (args: stampBody name (raw args)) (lib.functionArgs raw)
+    else
+      stampBody name raw;
 in
 {
 
@@ -107,7 +163,7 @@ in
     in
     {
 
-      inherit imports;
+      imports = map (stampImport name) imports;
 
       options.floes.${name} = {
         enable = mkEnableOption "the ${name} floe";
@@ -259,7 +315,6 @@ in
       config = mkIf cfg.enable (
         let
           moduleOutput = module (moduleArgs // { inherit cfg peers; });
-          provenance = import ./bundle-provenance.nix { inherit lib; };
         in
         lib.mkMerge (
           [

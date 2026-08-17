@@ -40,6 +40,7 @@ in
   labs = exampleLabDefs // fixtureLabs;
 }
 // import ./image-retarget-lab.nix { inherit lib pkgs mkLab; }
+// import ./sbom.nix { inherit lib pkgs mkLab; }
 // import ./network-policies.nix {
   inherit lib pkgs mkLab;
   inherit (packages) cataWrapped;

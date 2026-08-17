@@ -133,6 +133,21 @@ in
       '';
     };
 
+    manifestViews = mkOption {
+      type = types.attrsOf types.raw;
+      readOnly = true;
+      internal = true;
+      description = ''
+        Per-cluster bundle view that `manifests` was rendered from.
+
+        Which of the three views a cluster gets depends on the CD strategy
+        and whether owner filtering is on. Anything that has to reason about
+        what `manifests` contains reads this rather than repeating that
+        choice, because a copy that drifts by one branch attributes a
+        rendered file to a bundle the lab does not deploy.
+      '';
+    };
+
     stage1Manifests = mkOption {
       type = types.attrsOf types.package;
       readOnly = true;
@@ -150,27 +165,32 @@ in
   };
 
   config.lab.out = {
+    manifestViews =
+      let
+        strategy = config.lab.cd.strategy;
+        useFiltering = config.lab.cd.useOwnerFiltering;
+      in
+      lib.mapAttrs (
+        _: clusterCfg:
+        if !useFiltering then
+          clusterCfg.cluster.out.bundleView
+        else if strategy == "kapp" then
+          clusterCfg.cluster.out.imperativeBundleView
+        else
+          clusterCfg.cluster.out.argocdBundleView
+      ) config.lab.out.allClusters;
+
     manifests =
       let
         strategy = config.lab.cd.strategy;
         renderer = renderers.${strategy};
         cdConfig = config.lab.cd.${strategy};
         prefix = config.lab.prefix;
-
-        useFiltering = config.lab.cd.useOwnerFiltering;
-        viewFor =
-          clusterCfg:
-          if !useFiltering then
-            clusterCfg.cluster.out.bundleView
-          else if strategy == "kapp" then
-            clusterCfg.cluster.out.imperativeBundleView
-          else
-            clusterCfg.cluster.out.argocdBundleView;
       in
       lib.mapAttrs (
         name: clusterCfg:
         let
-          view = viewFor clusterCfg;
+          view = config.lab.out.manifestViews.${name};
           filteredWaves = wavesForView view clusterCfg.cluster.out.manifestWaves;
         in
         renderer (

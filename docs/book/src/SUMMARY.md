@@ -69,6 +69,7 @@
 - [Verifying a Running Lab](./reference/verify.md)
 - [Nix Helpers](./reference/helpers.md)
 - [Images and Registries](./reference/images.md)
+- [Software Bill of Materials](./reference/sbom.md)
 - [Cluster Security](./reference/security.md)
 - [Client Certificates](./reference/pki.md)
 - [Flake Outputs](./reference/flake-outputs.md)
