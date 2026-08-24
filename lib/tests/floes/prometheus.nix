@@ -27,6 +27,9 @@ let
         default = [ ];
       };
       config.floes.gateway.exports.internalGatewayName = "stub-internal";
+      config.floes.gateway.exports.gatewayName = "stub-gateway";
+      config.floes.gateway.exports.defaultTier = "public";
+      config.floes.gateway.exports.namespace = "kube-system";
     };
 
   disabledResult = evalFloe (

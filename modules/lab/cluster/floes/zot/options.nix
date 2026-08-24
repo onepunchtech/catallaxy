@@ -193,8 +193,6 @@ in
       description = "How many zot replicas to run. Above one needs storage that supports shared access.";
     };
 
-    gateway = gatewayOptions {
-      inherit lab;
-    };
+    gateway = gatewayOptions { inherit config; };
   };
 }

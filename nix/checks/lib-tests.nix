@@ -58,6 +58,7 @@ let
     "cert-manager"
     "cnpg"
     "custom"
+    "delivery"
     "exports-defaults"
     "external-dns"
     "forgejo"

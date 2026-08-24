@@ -101,7 +101,7 @@ in
             "internal"
           ];
 
-          default = lab.policy.exposure.defaultTier or "public";
+          default = config.floes.gateway.exports.defaultTier;
           description = "Lab network tier to attach to. `internal` keeps the endpoint off the public gateway.";
         };
       };

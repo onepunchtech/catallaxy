@@ -41,6 +41,22 @@ in
       default = "default-gateway";
       description = "Public Gateway resource name.";
     };
+    defaultTier = lib.mkOption {
+      type = lib.types.enum [
+        "public"
+        "internal"
+      ];
+      default = "public";
+      description = ''
+        Network tier a gateway-exposed floe attaches to unless it sets
+        `gateway.tier` itself.
+
+        Read this rather than `lab.policy.exposure.defaultTier`. The
+        gateway floe owns what exposure means, so it is the one place
+        that reads the lab policy, and a floe that wants the default
+        tier depends on the gateway rather than assuming a lab shape.
+      '';
+    };
     passthroughEnabled = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -394,6 +410,7 @@ in
         };
         inherit (cfg) className gatewayName;
         namespace = cfg.namespace;
+        defaultTier = lab.policy.exposure.defaultTier or "public";
         passthroughEnabled = cfg.tls.passthrough.enable;
         passthroughPort = cfg.tls.passthrough.port;
 

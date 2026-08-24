@@ -58,6 +58,31 @@ The format is based on
 
 ### Changed
 
+- **The netbird floe is split into files you can read one at a time.**
+  `default.nix` was 3264 lines and `options.nix` 1194, the only two files in
+  the tree past the 1000-line rule. `default.nix` is now 544 lines and
+  `options.nix` 976, with the floe spread across sixteen files that each
+  answer one question: `management.nix`, `signal.nix`, `relay.nix`,
+  `routes.nix` and `dashboard.nix` build the control plane; `bootstrap.nix`,
+  `routing.nix`, `admin-reconciler.nix` and `agent.nix` each own their
+  bundles; `ops.nix`, `ops-login.nix` and `ops-check-config.nix` hold the
+  host-side shell; `assertions.nix`, `exports.nix`, `lib.nix` and
+  `names.nix` carry the rest.
+
+  Nothing it renders changed. Every step was checked against
+  `manifest-digest-mesh.local` and `manifest-digest-every-floe`, which hash
+  every rendered file, and the fixtures were never refreshed.
+
+  Two things fell out of the move. The four HTTPRoutes and two Certificates
+  now go through `mkHttpRoute`, `mkGatewayParent` and `mkCertificate` in
+  `lib/k8s-helpers.nix` rather than being written out six times, and the
+  `peers` and `routes` ops commands, which differed only in an API path,
+  collapse onto one builder.
+
+  `assertions` stayed a builder rather than becoming a module: it is a
+  merged list, so contributing it from a second module reorders it, and
+  `metadata.json` records the order.
+
 - **`mkFloe` and `mkLabFloe` are gone. A floe is an ordinary NixOS module.**
   Everything that made a floe a floe already lived in a shared options
   module; the constructors had shrunk to forwarding three arguments and

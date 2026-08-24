@@ -481,7 +481,7 @@ in
     };
 
     gateway = gatewayOptions {
-      inherit lab;
+      inherit config;
       withMode = true;
     };
 

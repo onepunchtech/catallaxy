@@ -9,6 +9,7 @@
     ./cluster-api
     ./crossplane
     ./custom
+    ./delivery
     ./external-dns
     ./external-secrets
     ./forgejo

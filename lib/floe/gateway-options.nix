@@ -6,7 +6,7 @@ in
 {
   gatewayOptions =
     {
-      lab,
+      config,
       withMode ? false,
     }:
     {
@@ -18,14 +18,25 @@ in
 
       gatewayRef = mkOption {
         type = types.str;
-        default = "default-gateway";
-        description = "Name of the Gateway resource to attach to (public tier).";
+        default = config.floes.gateway.exports.gatewayName;
+        defaultText = lib.literalExpression "config.floes.gateway.exports.gatewayName";
+        description = ''
+          Name of the Gateway resource to attach to (public tier).
+
+          Follows the gateway floe rather than restating its name. A
+          literal default here is a second copy of a fact the gateway
+          floe already publishes, and the two only agree by coincidence:
+          renaming `floes.gateway.gatewayName` left every public-tier
+          route pointing at a Gateway that was never created, and no
+          check caught it (2026-08-23).
+        '';
       };
 
       gatewayNamespace = mkOption {
         type = types.nullOr types.str;
-        default = "kube-system";
-        description = "Namespace of the Gateway resource";
+        default = config.floes.gateway.exports.namespace;
+        defaultText = lib.literalExpression "config.floes.gateway.exports.namespace";
+        description = "Namespace of the Gateway resource.";
       };
 
       tier = mkOption {
@@ -33,7 +44,8 @@ in
           "public"
           "internal"
         ];
-        default = lab.policy.exposure.defaultTier or "public";
+        default = config.floes.gateway.exports.defaultTier;
+        defaultText = lib.literalExpression "config.floes.gateway.exports.defaultTier";
         description = ''
           Lab network tier to attach to. `internal` points at
           `floes.gateway.exports.internalGatewayName`. Requires

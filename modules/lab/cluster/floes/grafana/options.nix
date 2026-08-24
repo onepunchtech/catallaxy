@@ -213,8 +213,6 @@ in
       description = "How many Grafana replicas to run. Above one needs shared storage or an external database.";
     };
 
-    gateway = gatewayOptions {
-      inherit lab;
-    };
+    gateway = gatewayOptions { inherit config; };
   };
 }

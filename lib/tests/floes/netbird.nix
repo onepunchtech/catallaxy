@@ -65,6 +65,9 @@ let
         type = lib.types.attrs;
         default = {
           internalDomain = "internal.test.local";
+          gatewayName = "stub-gateway";
+          namespace = "kube-system";
+          defaultTier = "public";
         };
       };
     };

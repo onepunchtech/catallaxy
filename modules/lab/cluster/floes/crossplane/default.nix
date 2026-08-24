@@ -296,66 +296,67 @@ in
             };
           }) cfg.digitalocean.kubernetesClusters;
 
-          bootstrapTool = (lab.cd or { }).bootstrap or "kubectl-ssa";
-          k8sClusterRebase = lib.optionalAttrs (k8sClusters != { } && bootstrapTool == "kapp") {
-            digitalocean-cluster-rebase = {
-              apiVersion = "kapp.k14s.io/v1alpha1";
-              kind = "Config";
-              metadata.name = "digitalocean-cluster-rebase";
-              rebaseRules =
-                let
-                  match = {
-                    apiVersionKindMatcher = {
-                      apiVersion = "kubernetes.digitalocean.crossplane.io/v1alpha1";
-                      kind = "Cluster";
-                    };
-                  };
-                  preserve = path: {
-                    inherit path;
-                    type = "copy";
-                    sources = [ "existing" ];
-                    resourceMatchers = [ match ];
-                  };
-                in
-                [
-                  (preserve [
-                    "metadata"
-                    "annotations"
-                    "crossplane.io/external-name"
-                  ])
-                  (preserve [
-                    "metadata"
-                    "annotations"
-                    "crossplane.io/external-create-pending"
-                  ])
-                  (preserve [
-                    "metadata"
-                    "annotations"
-                    "crossplane.io/external-create-succeeded"
-                  ])
-                  (preserve [
-                    "metadata"
-                    "annotations"
-                    "crossplane.io/external-create-failed"
-                  ])
-                  (preserve [
-                    "metadata"
-                    "annotations"
-                    "crossplane.io/paused"
-                  ])
-                  (preserve [
-                    "metadata"
-                    "annotations"
-                    "upjet.crossplane.io/provider-meta"
-                  ])
-                  (preserve [
-                    "metadata"
-                    "finalizers"
-                  ])
-                  (preserve [ "status" ])
-                ];
-            };
-          };
+          k8sClusterRebase =
+            lib.optionalAttrs (k8sClusters != { } && config.floes.delivery.exports.appliedByKapp)
+              {
+                digitalocean-cluster-rebase = {
+                  apiVersion = "kapp.k14s.io/v1alpha1";
+                  kind = "Config";
+                  metadata.name = "digitalocean-cluster-rebase";
+                  rebaseRules =
+                    let
+                      match = {
+                        apiVersionKindMatcher = {
+                          apiVersion = "kubernetes.digitalocean.crossplane.io/v1alpha1";
+                          kind = "Cluster";
+                        };
+                      };
+                      preserve = path: {
+                        inherit path;
+                        type = "copy";
+                        sources = [ "existing" ];
+                        resourceMatchers = [ match ];
+                      };
+                    in
+                    [
+                      (preserve [
+                        "metadata"
+                        "annotations"
+                        "crossplane.io/external-name"
+                      ])
+                      (preserve [
+                        "metadata"
+                        "annotations"
+                        "crossplane.io/external-create-pending"
+                      ])
+                      (preserve [
+                        "metadata"
+                        "annotations"
+                        "crossplane.io/external-create-succeeded"
+                      ])
+                      (preserve [
+                        "metadata"
+                        "annotations"
+                        "crossplane.io/external-create-failed"
+                      ])
+                      (preserve [
+                        "metadata"
+                        "annotations"
+                        "crossplane.io/paused"
+                      ])
+                      (preserve [
+                        "metadata"
+                        "annotations"
+                        "upjet.crossplane.io/provider-meta"
+                      ])
+                      (preserve [
+                        "metadata"
+                        "finalizers"
+                      ])
+                      (preserve [ "status" ])
+                    ];
+                };
+              };
         in
         droplets // lbs // k8sClusters // k8sClusterRebase;
 

@@ -499,9 +499,7 @@ in
       description = "Expose Harbor's Prometheus metrics.";
     };
 
-    gateway = gatewayOptions {
-      inherit lab;
-    };
+    gateway = gatewayOptions { inherit config; };
 
   };
 }

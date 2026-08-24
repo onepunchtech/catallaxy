@@ -190,6 +190,15 @@ lib.concatLists [
     };
   }) [ ])
 
+  # kapp reads its own Config out of the stream and never applies it, so
+  # nothing ever installs the kind. Derived as a requirement it deadlocks:
+  # crossplane's rebase rules failed eval the moment they first rendered.
+  (assertEq "a kapp Config waits for nobody" (predsOf "rebase" {
+    bundles = {
+      rebase = b { resources.c = cr "kapp.k14s.io" "Config" "rebase-rules" "default"; };
+    };
+  }) [ ])
+
   (assertEq "an ExternalSecret waits for its SecretStore" (predsOf "es" {
     bundles = {
       store = b { resources.s = secretStore "aws-store"; };

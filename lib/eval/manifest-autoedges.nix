@@ -28,6 +28,11 @@ let
   resName = r: r.metadata.name or null;
   isNamespace = r: resKind r == "Namespace";
   isCRD = r: resKind r == "CustomResourceDefinition";
+
+  # kapp reads its own `Config` out of the manifest stream and never applies
+  # it, so nothing installs the kind and waiting for one deadlocks. The
+  # argocd renderer already strips these for the same reason.
+  isApplierConfig = r: groupOf (r.apiVersion or "") == "kapp.k14s.io";
   isSecretStore =
     r:
     builtins.elem (resKind r) [
@@ -118,7 +123,7 @@ let
   autoRequires =
     coreKinds: bundle:
     let
-      wanted = filter (r: !(coreKinds ? ${resKind r})) (resourcesOf bundle);
+      wanted = filter (r: !(coreKinds ? ${resKind r}) && !(isApplierConfig r)) (resourcesOf bundle);
     in
     unique (map (r: "kind:${resRef r}") wanted);
 

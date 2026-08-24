@@ -25,6 +25,9 @@ let
         default = {
           routing = null;
           internalGatewayName = "stub-internal";
+          gatewayName = "stub-gateway";
+          namespace = "kube-system";
+          defaultTier = "public";
         };
       };
       options.floes.cert-manager.exports = lib.mkOption {

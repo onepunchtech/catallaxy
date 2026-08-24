@@ -18,7 +18,11 @@ let
       config._module.freeformType = lib.types.attrs;
       options.floes.gateway.exports = lib.mkOption {
         type = lib.types.attrs;
-        default = { };
+        default = {
+          gatewayName = "stub-gateway";
+          namespace = "kube-system";
+          defaultTier = "public";
+        };
       };
       options.floes.cert-manager.exports = lib.mkOption {
         type = lib.types.attrs;

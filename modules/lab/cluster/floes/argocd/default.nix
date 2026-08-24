@@ -313,12 +313,12 @@ in
                 description = "Verify argocd is already installed on '${clusterName}'";
               };
             }
-            .${lab.cd.bootstrap};
+            .${config.floes.delivery.exports.bootstrapTool};
         in
         {
           bootstrap-argocd = bootstrapStep;
         }
-        // lib.optionalAttrs (lab.cd.git.repo != "") {
+        // lib.optionalAttrs (config.floes.delivery.exports.gitRepo != "") {
           apply-root = {
             kind = "apply-root-application";
             after = [

@@ -59,6 +59,9 @@ let
           internalEnabled = false;
           internalGatewayName = "traefik-internal";
           terminatingListenerName = "https";
+          gatewayName = "stub-gateway";
+          namespace = "kube-system";
+          defaultTier = "public";
         };
       };
       options.floes.kaniop.exports = lib.mkOption {

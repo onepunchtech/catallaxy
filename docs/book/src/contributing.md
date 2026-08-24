@@ -53,8 +53,6 @@ well-defined types.
 **One purpose per file, under about 1000 lines.** If you cannot say what a
 file is for in one sentence, it is not cohesive. A file reduced below the
 limit may not grow back past it.
-`modules/lab/cluster/floes/netbird/default.nix` is the one file well past
-it, and splitting it is outstanding work rather than a precedent.
 
 **Say it in the option, not in a comment.** A floe's options and types are
 the surface a user reads, and `description` is rendered into the generated

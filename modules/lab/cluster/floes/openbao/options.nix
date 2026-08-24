@@ -238,6 +238,6 @@ in
       };
     };
 
-    gateway = gatewayOptions { inherit lab; };
+    gateway = gatewayOptions { inherit config; };
   };
 }

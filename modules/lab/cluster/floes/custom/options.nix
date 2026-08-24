@@ -1,4 +1,5 @@
 {
+  config,
   lab,
   lib,
   ...
@@ -92,7 +93,8 @@ let
               "internal"
             ];
 
-            default = lab.policy.exposure.defaultTier or "public";
+            default = config.floes.gateway.exports.defaultTier;
+            defaultText = lib.literalExpression "config.floes.gateway.exports.defaultTier";
             description = "Lab network tier (public | internal).";
           };
         };

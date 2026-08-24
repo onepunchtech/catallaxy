@@ -1,4 +1,5 @@
 {
+  config,
   lab,
   lib,
   cataCharts,
@@ -105,7 +106,7 @@ in
       description = "Override default alert rule groups (e.g., { kubeEtcd = false; } to disable etcd rules)";
     };
 
-    gateway = gatewayOptions { inherit lab; } // {
+    gateway = gatewayOptions { inherit config; } // {
       enable = mkOption {
         type = types.bool;
         default = false;

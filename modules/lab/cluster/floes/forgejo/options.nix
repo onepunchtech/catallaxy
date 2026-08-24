@@ -217,8 +217,6 @@ in
       description = "How many Forgejo replicas to run. Above one needs shared storage.";
     };
 
-    gateway = gatewayOptions {
-      inherit lab;
-    };
+    gateway = gatewayOptions { inherit config; };
   };
 }

@@ -244,6 +244,18 @@ failed cleanup should not strand the rest of the teardown.
 5. **Consume nothing at `let` scope from outside the floe.** A top-level
    `let` evaluates even when the floe is disabled, so an outside lookup
    there means switching your floe _off_ can break something unrelated.
+6. **Take a lab-level fact from the floe that owns it, never from `lab`.**
+   Reading `lab.*` claims you own that decision, and one decision has one
+   owner: `gateway` owns exposure and the zones, `delivery` owns how
+   manifests reach a cluster. Everything else reads their `exports`. This is
+   the one rule here that nothing enforces, so it is the one that drifts,
+   and it drifts silently both ways. `gatewayRef` defaulted to the literal
+   `"default-gateway"` in every consumer instead of following
+   `floes.gateway.exports.gatewayName`, so renaming the Gateway left five
+   routes across three floes attached to one that was never created, with
+   every check green. `crossplane` guessed at `lab.cd.bootstrap` and
+   compared it against `"kapp"`, which that option cannot hold, so its
+   rebase rules had never rendered at all (2026-08-23).
 
 ## Helpers
 
