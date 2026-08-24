@@ -35,15 +35,24 @@ let
               exit 0
             fi
 
-            args=$(docker inspect "$container" \
-              | jq -r '.[0].Args | join(" ")')
+            # `docker inspect` hands back argv as a JSON array, so read the
+            # flags out of it directly. This used to `join(" ")` the array and
+            # then grep the sentence back apart, which is why the pattern
+            # needed to exclude spaces and `@`: information the array already
+            # carries and the join had thrown away.
+            inspected=$(docker inspect "$container")
 
-            live_service_cidr=$(printf '%s\n' "$args" \
-              | grep -oE -- '--service-cidr=[^@ ]+' \
-              | head -1 | cut -d= -f2 || true)
-            live_pod_cidr=$(printf '%s\n' "$args" \
-              | grep -oE -- '--cluster-cidr=[^@ ]+' \
-              | head -1 | cut -d= -f2 || true)
+            arg_value() {
+              printf '%s' "$inspected" | jq -r --arg flag "$1" '
+                [ .[0].Args[]
+                  | select(startswith($flag + "="))
+                  | ltrimstr($flag + "=")
+                ] | first // ""
+              '
+            }
+
+            live_service_cidr=$(arg_value --service-cidr)
+            live_pod_cidr=$(arg_value --cluster-cidr)
 
             drifted=0
             if [ "$live_service_cidr" != "$desired_service_cidr" ]; then drifted=1; fi

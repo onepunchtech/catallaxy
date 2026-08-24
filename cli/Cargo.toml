@@ -51,6 +51,8 @@ time = "0.3"
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.0"
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+syn = { version = "3.0.4", features = ["full", "visit", "extra-traits"] }
 
 [lib]
 name = "cata"

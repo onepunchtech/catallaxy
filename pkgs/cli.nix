@@ -20,7 +20,10 @@ let
         ]
         && lib.hasInfix "/tests/fixtures/" path
       )
-      || (lib.hasSuffix ".nix" path && lib.hasInfix "/src/commands/templates/" path);
+      || (lib.hasSuffix ".nix" path && lib.hasInfix "/src/commands/templates/" path)
+      # The I/O boundary test's baseline. Without it the test panics rather
+      # than passing, which is the right way round, but it has to be here.
+      || (lib.hasSuffix ".txt" path && lib.hasInfix "/tests/" path);
   };
 
   commonArgs = {

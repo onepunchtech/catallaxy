@@ -4,6 +4,7 @@ pub mod crossplane;
 pub mod diagnostic;
 pub mod exit;
 pub mod inventory;
+pub mod kapp_status;
 pub mod lab;
 pub mod lab_record;
 pub mod plan;
@@ -21,6 +22,7 @@ pub use cluster::{
 };
 pub use diagnostic::{Diagnostic, Severity};
 pub use exit::ExitWith;
+pub use kapp_status::KappStatus;
 pub use lab::{
     BootstrapTool, CdConfig, DnsInfo, ExtraMount, HostService, LabSpec, NetworkInfo, ReadyProbe,
     ServiceVolume,

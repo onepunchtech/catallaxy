@@ -22,6 +22,7 @@ let
         ++ [
           pkgs.kubectl
           pkgs.coreutils
+          pkgs.jq
         ]
         ++ lib.optional pkgs.stdenv.isLinux pkgs.systemd;
 
@@ -34,6 +35,27 @@ let
         export NB_CLI="${client.cli}/bin/${cfg.client.serviceName}"
         export NB_DAEMON_UP="${client.daemon}/bin/${cfg.client.serviceName}-daemon"
         export NB_DAEMON_STOP="${client.stop}/bin/${cfg.client.serviceName}-stop"
+
+        # Whether the daemon says it is attached to the management server.
+        #
+        # `netbird status` renders `Management: Connected` for humans and
+        # `{"management":{"connected":true}}` under `--json`. Five call sites
+        # used to grep the sentence, which ties the login flow to the CLI's
+        # display text: a reworded line, a translation, or a colour code in
+        # the middle of it reads as "not connected" and the flow silently
+        # starts a fresh login against a mesh it is already on.
+        # Takes an optional timeout in seconds, because some callers ask
+        # while the daemon is still coming up and must not block there.
+        nb_management_connected() {
+          if [ -n "''${1:-}" ]; then
+            timeout -k 5 "$1" "$NB_CLI" status --json 2>/dev/null \
+              | jq -e '.management.connected == true' >/dev/null 2>&1
+          else
+            "$NB_CLI" status --json 2>/dev/null \
+              | jq -e '.management.connected == true' >/dev/null 2>&1
+          fi
+        }
+
         ${text}
       '';
     };

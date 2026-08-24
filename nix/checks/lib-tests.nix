@@ -28,6 +28,8 @@ let
     k3d-volumes = testsDir + "/k3d-volumes.nix";
     idempotent-job = testsDir + "/util-idempotent-job.nix";
     wait-helpers = testsDir + "/util-wait.nix";
+    duration = testsDir + "/util-duration.nix";
+    ident = testsDir + "/util-ident.nix";
     hcl = testsDir + "/util-hcl.nix";
     image-types = testsDir + "/image-types.nix";
     netpol = testsDir + "/netpol.nix";

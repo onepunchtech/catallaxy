@@ -141,10 +141,19 @@ in
       ];
       default = "development";
       description = ''
-        Lab environment. Components can adjust defaults based on this:
-        - development: minimal replicas, relaxed resource limits, self-signed TLS
-        - staging: moderate replicas, production-like config, self-signed or ACME TLS
-        - production: HA replicas, strict resource limits, ACME TLS, destructive ops require --force
+        Label for the lab's intended use, available to floes as
+        `lab.environment`.
+
+        Nothing in-tree branches on it today: it is a hook for out-of-tree
+        floes that want one knob to vary replicas or issuers by. Setting it
+        changes no behaviour on its own.
+
+        This used to promise that development, staging and production
+        selected replica counts, resource limits, TLS issuance and a
+        `--force` gate on destructive operations. None of that was ever
+        built, and the `--force` flag it named does not exist. Anything
+        added here should land alongside the behaviour rather than ahead
+        of it.
       '';
     };
 

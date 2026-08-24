@@ -22,8 +22,10 @@ pub struct InfraPublication {
 pub struct LabSpec {
     pub lab_name: String,
 
-    pub environment: String,
-
+    // `lab.environment` is deliberately not read here. Nix carries it to
+    // floes as `lab.environment`, which is where the option's documented
+    // effects belong; the CLI parsed it and never looked at it, so having
+    // the field made it look consumed. serde ignores the key either way.
     pub cluster_names: Vec<String>,
 
     pub clusters: BTreeMap<String, ClusterSpec>,

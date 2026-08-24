@@ -3,7 +3,7 @@ use clap::Args;
 use console::style;
 
 use crate::config::Context as CataContext;
-use crate::domain::{ClusterSpec, FloeSpec};
+use crate::domain::{ClusterSpec, FloeSpec, KappStatus};
 use crate::io;
 
 #[derive(Args)]
@@ -156,14 +156,11 @@ fn print_kapp_status(context: &str) -> Result<()> {
     println!("  {}", style("Kapp Apps:").bold());
     for (name, status, age) in &apps {
         let display_name = name.strip_prefix("cata-").unwrap_or(name);
-        let status_styled =
-            if status.contains("Succeeded") || status.contains("Reconcile succeeded") {
-                style(status).green()
-            } else if status.contains("Failed") {
-                style(status).red()
-            } else {
-                style(status).yellow()
-            };
+        let status_styled = match KappStatus::classify(status) {
+            KappStatus::Succeeded => style(status).green(),
+            KappStatus::Failed => style(status).red(),
+            KappStatus::Pending => style(status).yellow(),
+        };
 
         if age.is_empty() {
             println!("    {} [{}]", style(display_name).cyan(), status_styled);

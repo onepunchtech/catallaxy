@@ -34,10 +34,6 @@ let
   emptyKindsEntries = lib.filter (e: e.kinds == [ ]) allEntries;
   scopedEntries = lib.filter (e: e.name != null || e.namespace != null) allEntries;
   coreGroupEntries = lib.filter (e: e.group == "") allEntries;
-  badManagerNames = lib.concatMap (
-    e: lib.filter (m: builtins.match "[A-Za-z0-9][A-Za-z0-9._-]*" m == null) e.managedBy
-  ) allEntries;
-
 in
 {
   options.cluster.drift = {
@@ -170,16 +166,6 @@ in
       {
         assertion = emptyKindsEntries == [ ];
         message = "cluster.drift: a declaration has an empty `kinds` list; it would match nothing.";
-      }
-      {
-        assertion = badManagerNames == [ ];
-        message = ''
-          cluster.drift: invalid manager name(s): ${
-            lib.concatStringsSep ", " (map (m: "'${m}'") badManagerNames)
-          }.
-          Expected a bare field-manager identifier. A multi-line string here
-          usually means a YAML list was pasted in verbatim.
-        '';
       }
       {
         assertion = scopedEntries == [ ];

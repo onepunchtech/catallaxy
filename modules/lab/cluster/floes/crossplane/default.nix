@@ -38,16 +38,16 @@ in
         ;
       cidrLib = import ../../../../../lib/util/network.nix { inherit lib; };
       kappLib = import ../../../../../lib/util/kapp.nix { inherit lib; };
+      inherit (import ../../../../../lib/util/parse.nix { inherit lib; }) toIntOrNull;
 
       doksClusterExternalNameDiscoverer = pkgs.writeShellApplication {
         name = "discover-doks-cluster-external-name";
         runtimeInputs = with pkgs; [
           kubectl
           coreutils
-          gnugrep
-          gnused
           curl
           jq
+          yq-go
         ];
         text = builtins.readFile ./scripts/doks-cluster-uuid.sh;
       };
@@ -92,14 +92,43 @@ in
         else
           lib.filter (r: cidrLib.cidrsOverlap cidr r) (doRegionReservedCidrs.${region} or [ ]);
 
+      # A DOKS version slug is `<major>.<minor>.<patch>-do.<build>`. Split it
+      # at its own delimiters and read the four pieces as numbers, rather
+      # than asking whether the whole string looks a certain way.
+      #
+      # This was a `builtins.split` carrying `^`/`$` anchors, which is what
+      # `builtins.match` is for; the anchored-split spelling then needed a
+      # length check and two `elemAt`s to reach a capture, and the capture it
+      # reached was named `patch` when it is the `-do.N` build number.
+      parseDoksSlug =
+        v:
+        let
+          halves = lib.splitString "-do." v;
+          components = lib.splitString "." (builtins.head halves);
+          numbers = map toIntOrNull (components ++ [ (lib.last halves) ]);
+        in
+        if
+          builtins.length halves != 2
+          || builtins.length components != 3
+          || lib.any (n: n == null || n < 0) numbers
+        then
+          null
+        else
+          {
+            major = builtins.elemAt numbers 0;
+            minor = builtins.elemAt numbers 1;
+            patch = builtins.elemAt numbers 2;
+            build = builtins.elemAt numbers 3;
+          };
+
+      # DO rarely publishes a `-do.0` slug, so a build of zero is a typo far
+      # more often than it is a real version.
       isValidDoksSlug =
         v:
         let
-          parts = builtins.split "^([0-9]+)\\.([0-9]+)\\.([0-9]+)-do\\.([0-9]+)$" v;
-          matched = builtins.length parts == 3 && (builtins.elemAt parts 1) != null;
-          patch = if matched then builtins.elemAt (builtins.elemAt parts 1) 3 else null;
+          slug = parseDoksSlug v;
         in
-        matched && patch != "0";
+        slug != null && slug.build != 0;
 
       providerPackages = {
         digitalocean = "xpkg.upbound.io/crossplane-contrib/provider-upjet-digitalocean:v${cfg.providerVersions.digitalocean}";
@@ -494,11 +523,11 @@ in
               assertion = false;
               message = ''
                 floes.crossplane.digitalocean.kubernetesClusters.${name}.version
-                = "${c.version}" doesn't match the expected DOKS
-                slug `\d+\.\d+\.\d+-do\.\d+` with a nonzero
-                `.do.N` suffix (e.g. `1.36.0-do.2`). DO rarely
-                publishes `.do.0` slugs; cluster create fails with
-                `invalid version slug`. Check
+                = "${c.version}" is not a DOKS version slug. One reads
+                `<major>.<minor>.<patch>-do.<build>`, all four whole
+                numbers, with a build above zero (e.g. `1.36.0-do.2`).
+                DO rarely publishes `-do.0` slugs; cluster create fails
+                with `invalid version slug`. Check
                 `doctl kubernetes options versions` for valid
                 values.
               '';

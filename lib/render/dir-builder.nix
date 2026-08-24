@@ -177,8 +177,12 @@ in
           crds="$(
             {
               find "$bdir" -name '*.yaml' -type f -exec \
-                yq -rN 'select(.kind == "CustomResourceDefinition") | .metadata.name' {} \; \
-                2>/dev/null | grep -vE '^(|---|null)$' | sort -u
+                yq -rN '
+                  select(.kind == "CustomResourceDefinition")
+                  | .metadata.name
+                  | select(. != null)
+                ' {} \; \
+                2>/dev/null | grep -v '^$' | sort -u
             } || true
           )"
           if [ -n "$crds" ]; then

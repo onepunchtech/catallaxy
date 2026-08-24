@@ -274,7 +274,7 @@ in
               done
             '') config.lab.out.manifests
           )}
-          sort -u $out/images-raw.txt | grep -v '^$' | grep -v '^null$' > $out/images.txt || touch $out/images.txt
+          sort -u $out/images-raw.txt | grep -v '^$' > $out/images.txt || touch $out/images.txt
           rm -f $out/images-raw.txt
           cp ${config.lab.out.sbom} $out/sbom.json
           ${

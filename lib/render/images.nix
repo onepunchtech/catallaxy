@@ -117,5 +117,12 @@ rec {
     ".spec.jobTemplate.spec.template.spec.initContainers"
   ];
 
-  scrapeExpr = "(${lib.concatMapStringsSep ", " (p: "${p}[]?.image") scrapePaths})";
+  # `select(. != null)` belongs here rather than in each caller's pipeline. A
+  # container with no `image` yields null, and both callers used to let that
+  # null through and then strip it with `grep -v '^null$'` — which also
+  # deletes a real image legitimately named `null`, and which had to be
+  # repeated identically everywhere the scrape was used.
+  scrapeExpr = "(${
+    lib.concatMapStringsSep ", " (p: "${p}[]?.image") scrapePaths
+  }) | select(. != null)";
 }

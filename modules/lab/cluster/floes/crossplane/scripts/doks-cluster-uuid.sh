@@ -15,10 +15,22 @@ if [ -n "$secret_ns" ] && [ -n "$secret_name" ]; then
     get secret "$secret_name" \
     -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d || true)
   if [ -n "$kubeconfig" ]; then
-    uuid=$(printf '%s' "$kubeconfig" |
-      grep -oE 'https://[0-9a-f-]+\.k8s\.ondigitalocean\.com' |
-      head -1 |
-      sed -E 's|https://||; s|\.k8s\.ondigitalocean\.com||')
+    # A kubeconfig is YAML, so ask it for the server URL rather than hunting
+    # a URL-shaped substring anywhere in the document. The old grep would
+    # equally have matched a URL in a comment, a `proxy-url`, or a second
+    # cluster's entry, and `head -1` made whichever came first authoritative.
+    server=$(printf '%s' "$kubeconfig" |
+      yq -r '.clusters[0].cluster.server // ""' 2>/dev/null || true)
+
+    # The UUID is the first label of the DOKS API hostname. Take the host out
+    # of the URL by its delimiters, then take the label by its.
+    host=${server#*://}
+    host=${host%%/*}
+    host=${host%%:*}
+    case "$host" in
+    *.k8s.ondigitalocean.com) uuid=${host%%.*} ;;
+    *) uuid="" ;;
+    esac
   fi
 fi
 

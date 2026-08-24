@@ -5,14 +5,13 @@
   peerEnabled,
 }:
 let
+  inherit (import ../../../../../lib/util/parse.nix { inherit lib; }) toIntOrNull;
+
   inherit (nb)
     idpJwksUri
     idpAuthorizationEndpoint
     idpBrowserTokenEndpoint
     ;
-
-  isFqdn =
-    s: builtins.match "[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+" s != null;
 
   controlPlaneRequires =
     map
@@ -35,18 +34,39 @@ let
       ];
 
   clientVersion = cfg.client.package.version or null;
-  serverTag = lib.last (lib.splitString ":" cfg.images.management.ref);
-  majorMinor = v: lib.concatStringsSep "." (lib.take 2 (lib.splitString "." v));
 
-  serverTagComparable = builtins.match "v?[0-9]+\\.[0-9]+\\..*" serverTag != null;
+  # The tag as the field it is, not as a substring of `ref`. `ref` appends
+  # `@${digest}` for a pinned image, so taking the last `:`-separated piece
+  # of it returns the digest's hex rather than the tag, and every check below
+  # then quietly decides it has nothing comparable. That is the wrong way for
+  # this guard to fail: a digest pin is when the version matters most.
+  serverTag = cfg.images.management.tag;
+
+  # A version's leading `<major>.<minor>` as a pair of numbers, or null when
+  # the string is not version-shaped. `latest`, a branch name and a bare
+  # digest all land on null, and null means "cannot compare" rather than
+  # "does not match". `lib.toInt` throwing is what "not a number" looks like
+  # from here, so tryEval is the test.
+  majorMinor =
+    v:
+    let
+      parts = lib.splitString "." (lib.removePrefix "v" (toString v));
+      pair = map toIntOrNull (lib.take 2 parts);
+    in
+    if builtins.length parts < 2 || lib.any (n: n == null) pair then null else pair;
+
+  serverMajorMinor = if serverTag == null then null else majorMinor serverTag;
+  clientMajorMinor = if clientVersion == null then null else majorMinor clientVersion;
+
+  serverTagComparable = serverMajorMinor != null;
 
   netbirdAssertions = controlPlaneRequires ++ [
     {
       assertion =
         !cfg.versionCheck
-        || clientVersion == null
-        || !serverTagComparable
-        || majorMinor (lib.removePrefix "v" serverTag) == majorMinor clientVersion;
+        || clientMajorMinor == null
+        || serverMajorMinor == null
+        || serverMajorMinor == clientMajorMinor;
       message = ''
         netbird: the host client and the management server disagree on version.
           client  ${toString clientVersion}   (floes.netbird.client.package)
@@ -136,15 +156,6 @@ let
           or set `gateway.enable = false` to skip host-side routing.
       '';
     }
-    {
-      assertion = cfg.domain != "" && isFqdn cfg.domain;
-      message = ''
-        netbird: `domain` (${cfg.domain}) is not a valid FQDN.
-          Set `floes.netbird.domain` to the public hostname the management
-          server serves on, e.g. "vpn.example.com".
-      '';
-    }
-
     (
       let
 
@@ -329,9 +340,13 @@ in
   assertions = netbirdAssertions;
 
   warnings = lib.optional (cfg.versionCheck && !serverTagComparable) ''
-    netbird: `managementImage` is pinned to "${serverTag}", which carries no
-    comparable version, so the client↔server version check cannot run. A
-    client/server skew here fails by hanging during registration rather
-    than erroring. Pin a `<major>.<minor>.<patch>` tag to get the check back.
+    netbird: no comparable version tag on the management server.
+      image  ${cfg.images.management.ref}
+      tag    ${if serverTag == null then "<none: the image sets only a digest>" else serverTag}
+    The client↔server version check needs a `<major>.<minor>.<patch>` tag
+    to compare against and has nothing here, so it cannot run. A skew it
+    would have caught fails by hanging during registration rather than
+    erroring. Set `floes.netbird.version`, or give the image pin a version
+    tag alongside its digest, to get the check back.
   '';
 }

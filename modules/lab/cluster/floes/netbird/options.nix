@@ -10,6 +10,7 @@ let
   inherit (lib) mkOption mkEnableOption types;
   inherit (import ../../../../../lib/floe { inherit lib; }) refs;
   contracts = import ../../../../../lib/contracts { inherit lib; };
+  ident = import ../../../../../lib/util/ident.nix { inherit lib; };
   cfg = config.floes.netbird;
 
   inherit (import ./names.nix { })
@@ -56,9 +57,13 @@ in
     };
 
     domain = mkOption {
-      type = types.str;
+      type = ident.types.fqdn;
       default = "vpn.example.com";
-      description = "Hostname the management API and dashboard are served on.";
+      description = ''
+        Hostname the management API and dashboard are served on. Typed as an
+        FQDN so a bare hostname is refused here rather than by an assertion
+        that has already lost track of which option set it.
+      '';
     };
 
     signal.domain = mkOption {

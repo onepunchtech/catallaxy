@@ -6,6 +6,7 @@
 
 let
   inherit (lib) mkOption types;
+  duration = import ../../../../../lib/util/duration.nix { inherit lib; };
 in
 {
   options.floes.external-dns = {
@@ -67,9 +68,13 @@ in
     };
 
     interval = mkOption {
-      type = types.str;
+      type = duration.type;
       default = "1m";
-      description = "Sync interval";
+      description = ''
+        Sync interval. The purge hook's reconcile deadline is computed from
+        this, so it is typed rather than free text: a value nothing can read
+        used to fall back to 60 seconds without saying so.
+      '';
     };
 
     triggerLoopOnEvent = mkOption {

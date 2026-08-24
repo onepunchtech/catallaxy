@@ -12,6 +12,7 @@
 let
   inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
   planTokens = import ../../../../../lib/plan-tokens.nix { inherit lib; };
+  duration = import ../../../../../lib/util/duration.nix { inherit lib; };
   cfg = config.floes.external-dns;
 in
 {
@@ -57,19 +58,9 @@ in
 
       formatExtraArgs = args: mapAttrsToList (k: v: if v == null then "--${k}" else "--${k}=${v}") args;
 
-      intervalSeconds =
-        let
-          parts = builtins.match "([0-9]+)(s|m|h)" cfg.interval;
-          scale = {
-            s = 1;
-            m = 60;
-            h = 3600;
-          };
-        in
-        if parts == null then
-          60
-        else
-          lib.toInt (builtins.elemAt parts 0) * scale.${builtins.elemAt parts 1};
+      # `interval` is typed, so this can no longer be handed something it
+      # cannot read; the fallback that used to sit here hid the typo instead.
+      intervalSeconds = duration.toSeconds "floes.external-dns.interval" cfg.interval;
 
       reconcileDeadline = lib.min 180 (2 * intervalSeconds + 30);
     in
@@ -199,8 +190,28 @@ in
                       2>/dev/null
                   }
 
+                  # Prometheus exposition is `name value` or
+                  # `name{labels} value`. Take the name by its own delimiter
+                  # instead of assuming the whole first field is the name:
+                  # the moment external-dns puts a label on either of the
+                  # series below, `$1 == key` stops matching and this hook
+                  # waits out its full deadline every time, silently.
                   metric() {
-                    printf '%s\n' "$1" | awk -v key="$2" '$1 == key { print $2; exit }'
+                    printf '%s\n' "$1" | awk -v key="$2" '
+                      substr($0, 1, 1) == "#" { next }
+                      {
+                        name = $1
+                        brace = index(name, "{")
+                        if (brace > 0) name = substr(name, 1, brace - 1)
+                        if (name == key) { print $NF; exit }
+                      }
+                    '
+                  }
+
+                  # Numeric zero, whichever float spelling the exporter uses.
+                  metric_is_zero() {
+                    value=$(metric "$1" "$2")
+                    [ -n "$value" ] && awk -v v="$value" 'BEGIN { exit (v + 0 == 0) ? 0 : 1 }'
                   }
 
                   snapshot=$(metrics || true)
@@ -223,10 +234,7 @@ in
                         break
                       fi
                     elif [ -z "$syncBefore" ]; then
-                      if printf '%s\n' "$snapshot" | awk '
-                        $1 == "external_dns_source_endpoints_total" && $2 == 0 { seen = 1 }
-                        END { exit seen ? 0 : 1 }
-                      '; then
+                      if metric_is_zero "$snapshot" external_dns_source_endpoints_total; then
                         syncBefore=$(metric "$snapshot" external_dns_controller_last_sync_timestamp_seconds)
                       fi
                       misses=0

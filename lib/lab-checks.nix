@@ -124,16 +124,26 @@ let
       declaredBundleChecks = lib.mapAttrs' (
         name: lab:
         lib.nameValuePair "${name}-declared-bundles" (
-          pkgs.runCommand "${name}-declared-bundles" { } ''
+          pkgs.runCommand "${name}-declared-bundles" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
             pkg=${lab.config.lab.out.package}
             status=0
 
             for declared in $(find -L "$pkg" -name .declared-bundles); do
               cluster=$(basename "$(dirname "$declared")")
               grep -v '^[[:space:]]*$' "$declared" | sort -u > declared.txt
+
+              # Ask the YAML for the label. Reading it off the line with sed
+              # got the key's own text wrong in every case YAML allows and
+              # the renderer does not currently produce: a quoted or folded
+              # value, a flow mapping, a value containing `: `. `..` keeps
+              # the old reach — the label counts wherever it appears, pod
+              # template included — without the line being the unit.
               find -L "$pkg" -path "*/$cluster/*" -name '*.yaml' -print0 \
-                | xargs -0 -r grep -h 'catallaxy.io/bundle:' \
-                | sed 's/.*catallaxy\.io\/bundle: *//' | tr -d '"' | sort -u > seen.txt
+                | xargs -0 -r yq -N '
+                    .. | select(tag == "!!map" and has("catallaxy.io/bundle"))
+                       | .["catallaxy.io/bundle"]
+                  ' \
+                | sort -u > seen.txt
 
               undeclared=$(comm -23 seen.txt declared.txt)
               if [ -n "$undeclared" ]; then

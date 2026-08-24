@@ -731,7 +731,11 @@ in
         ];
         package = pkgs.writeShellApplication {
           name = "init-user";
-          runtimeInputs = [ pkgs.kubectl ];
+          runtimeInputs = [
+            pkgs.kubectl
+            pkgs.jq
+            pkgs.coreutils
+          ];
           text = ''
             USER="''${1:?Usage: init-user <username>}"
             CONTEXT="''${KUBECONTEXT:-${config.cluster.ref.kubeContext or ""}}"
@@ -739,17 +743,40 @@ in
             POD="${cfg.instanceName}-default-0"
 
             echo "Resetting password for '$USER'..."
-            OUTPUT=$(kubectl --context "$CONTEXT" -n "$NS" exec "$POD" -- \
-              kanidmd recover-account "$USER" 2>&1) || {
+
+            # `-o json` asks kanidmd for the password as a field. This used to
+            # read it back out of the human-readable line with a `\K` PCRE
+            # scrape, which is GNU-grep-only and silently yields nothing the
+            # first time upstream rewords that line — and "nothing" here means
+            # the operator is told no password at all.
+            #
+            # stderr is kept separate rather than folded in with `2>&1`,
+            # because kanidmd logs there and a log line in the middle of the
+            # document is not parseable as one.
+            ERRLOG=$(mktemp)
+            trap 'rm -f "$ERRLOG"' EXIT
+
+            if ! OUTPUT=$(kubectl --context "$CONTEXT" -n "$NS" exec "$POD" -- \
+              kanidmd recover-account "$USER" -o json 2>"$ERRLOG"); then
               echo "Failed:"
+              cat "$ERRLOG" >&2
               echo "$OUTPUT"
               exit 1
-            }
+            fi
 
-            PASSWORD=$(echo "$OUTPUT" | grep -oP 'new_password: "\K[^"]+' || echo "")
+            PASSWORD=$(printf '%s' "$OUTPUT" \
+              | jq -r 'if type == "object" then (.password // .new_password // empty) else empty end' \
+              2>/dev/null || true)
 
             if [ -z "$PASSWORD" ]; then
+              # The reset itself succeeded, so the password exists — this
+              # build just could not find it in the response. Show everything
+              # rather than leaving the operator with nothing.
+              echo "Could not read the new password out of kanidmd's response." >&2
+              echo "Raw output follows:" >&2
               echo "$OUTPUT"
+              cat "$ERRLOG" >&2
+              exit 1
             else
               echo ""
               echo "Account '$USER' password has been reset."

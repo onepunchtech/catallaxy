@@ -21,24 +21,7 @@ let
 
   caBundleVolumeName = "ca-bundle";
 
-  parseDurationSeconds =
-    s:
-    let
-      m = builtins.match "([0-9]+)(s|m|h)" s;
-    in
-    if m == null then
-      throw "wait.nix: invalid duration '${s}' (expected e.g. '5m', '30s', '1h')"
-    else
-      let
-        n = lib.toInt (builtins.elemAt m 0);
-        unit = builtins.elemAt m 1;
-      in
-      if unit == "s" then
-        n
-      else if unit == "m" then
-        n * 60
-      else
-        n * 3600;
+  parseDurationSeconds = (import ./duration.nix { inherit lib; }).toSeconds "wait.nix";
 
   divCeil = a: b: (a + b - 1) / b;
 

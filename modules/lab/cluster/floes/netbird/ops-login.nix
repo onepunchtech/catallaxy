@@ -9,7 +9,7 @@ mkNetbirdOpsScript {
   name = "login";
 
   text = ''
-    if "$NB_CLI" status 2>/dev/null | grep -q "Management: Connected"; then
+    if nb_management_connected; then
       echo ">>> Already on the mesh. Management: Connected"
       exit 0
     fi
@@ -42,7 +42,12 @@ mkNetbirdOpsScript {
       pf_pass "management image matches source ($server_image)"
     fi
 
-    cli_ver=$("$NB_CLI" version 2>/dev/null | head -1 | awk '{print $NF}' | sed 's/^v//' || true)
+    # `netbird version` prints one token, `v0.73.1`. Take the last word and
+    # drop a leading `v` with parameter expansion rather than spawning awk
+    # and sed to do the same two things.
+    cli_ver=$("$NB_CLI" version 2>/dev/null | head -1 || true)
+    cli_ver="''${cli_ver##* }"
+    cli_ver="''${cli_ver#v}"
     if [ -n "$cli_ver" ] && [ "$cli_ver" != "${cfg.client.package.version or ""}" ]; then
       pf_fix "client wrapper is current" "wrapper reports $cli_ver, this tree pins ${
         cfg.client.package.version or "?"
@@ -106,8 +111,7 @@ mkNetbirdOpsScript {
 
     UP_EXIT=0
 
-    if timeout -k 5 5 "$NB_CLI" status 2>&1 \
-      | grep -q "Management: Connected"; then
+    if nb_management_connected 5; then
       echo ">>> Already joined. Management: Connected"
       exit 0
     fi
@@ -200,8 +204,7 @@ mkNetbirdOpsScript {
 
     if [ "$UP_EXIT" -eq 0 ]; then
       echo ">>> Login accepted. Confirming with the daemon…" >&2
-      STATUS=$(timeout -k 5 ${toString cfg.client.statusTimeoutSeconds} "$NB_CLI" status 2>&1 || true)
-      if echo "$STATUS" | grep -q "Management: Connected"; then
+      if nb_management_connected ${toString cfg.client.statusTimeoutSeconds}; then
         echo ">>> Mesh joined. Management: Connected"
       else
         echo ">>> Mesh joined. The daemon did not answer \`status\` within" >&2
@@ -217,8 +220,7 @@ mkNetbirdOpsScript {
 
     grace_deadline=$(( $(date +%s) + ${toString cfg.client.joinGraceSeconds} ))
     while [ "$(date +%s)" -lt "$grace_deadline" ]; do
-      if timeout -k 5 10 "$NB_CLI" status 2>/dev/null \
-        | grep -q "Management: Connected"; then
+      if nb_management_connected 10; then
         echo ">>> Mesh joined. Management: Connected"
         exit 0
       fi

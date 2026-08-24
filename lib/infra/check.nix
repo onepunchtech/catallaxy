@@ -2,6 +2,7 @@
 
 let
   refs = import ./ref.nix { inherit lib; };
+  ident = import ../util/ident.nix { inherit lib; };
 
   refsWithPath =
     prefix: value:
@@ -116,7 +117,11 @@ in
   identifierErrors =
     { resources, stacks }:
     let
-      valid = name: builtins.match "[A-Za-z_][A-Za-z0-9_-]*" name != null;
+      # These names are derived — a resource name is prefixed with its
+      # cluster's, and a stack name comes out of routing — so there is no
+      # single option to hang a type on. The grammar still lives in one
+      # place; this is the aggregate that applies it.
+      valid = ident.isTerraformName;
     in
     map (name: ''
       infra resource '${name}' is not a valid terraform name.

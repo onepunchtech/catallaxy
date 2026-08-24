@@ -197,6 +197,44 @@ let
     // baseStubs
   );
 
+  # The version guard reads `images.management.tag`. These three exercise the
+  # shapes a tag comes in: a plain version, a version alongside a digest, and
+  # a tag that is not a version at all.
+  withServerImage =
+    pin:
+    evalFloe (
+      {
+        floe = netbird;
+        cluster = lib.recursiveUpdate validEnabledCluster {
+          floes.netbird.version = "0.30.0";
+          floes.netbird.client.package = pkgs.emptyDirectory // {
+            version = "0.29.0";
+          };
+          floes.netbird.images.management = pin;
+        };
+      }
+      // baseStubs
+    );
+
+  # The floe writes `tag = cfg.version` itself, so a test that wants a
+  # different tag has to outrank it.
+  skewedPlainTag = withServerImage { tag = lib.mkForce "0.30.0"; };
+  skewedDigestPinned = withServerImage {
+    tag = lib.mkForce "0.30.0";
+    digest = lib.mkForce "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  };
+  floatingTag = withServerImage { tag = lib.mkForce "latest"; };
+  digestOnly = withServerImage {
+    tag = lib.mkForce null;
+    digest = lib.mkForce "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  };
+
+  versionFailures =
+    r:
+    builtins.filter (
+      a: !a.assertion && lib.hasInfix "disagree on version" a.message
+    ) r.config.assertions;
+
   jwksWithoutBrowserEndpoints = evalFloe (
     {
       floe = netbird;
@@ -551,5 +589,40 @@ lib.runTests {
   testThePrechartBundleStillProvidesItsToken = {
     expr = enabledResult.config.bundles.netbird-prechart.provides or [ ];
     expected = [ "netbird/prechart/ready" ];
+  };
+
+  testAMinorSkewIsRefused = {
+    expr = builtins.length (versionFailures skewedPlainTag);
+    expected = 1;
+  };
+
+  # The guard used to read the tag back out of the assembled `ref`, which
+  # appends `@${digest}`. Splitting that on ":" handed the check the digest's
+  # hex, which is not version-shaped, so the check turned itself off for
+  # exactly the images that were pinned most carefully.
+  testADigestPinDoesNotDisableTheVersionCheck = {
+    expr = builtins.length (versionFailures skewedDigestPinned);
+    expected = 1;
+  };
+
+  testAFloatingTagLeavesTheCheckWithNothingToCompare = {
+    expr = builtins.length (versionFailures floatingTag);
+    expected = 0;
+  };
+
+  testAFloatingTagWarnsInsteadOfPassingQuietly = {
+    expr = builtins.length (
+      builtins.filter (w: lib.hasInfix "no comparable version tag" w) floatingTag.config.warnings
+    );
+    expected = 1;
+  };
+
+  # A digest with no tag is the other way the check loses its input, and the
+  # warning has to say which of the two happened.
+  testADigestWithNoTagSaysSoInTheWarning = {
+    expr = builtins.length (
+      builtins.filter (w: lib.hasInfix "the image sets only a digest" w) digestOnly.config.warnings
+    );
+    expected = 1;
   };
 }

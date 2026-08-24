@@ -2,6 +2,7 @@
 
 let
   inherit (lib) mkOption types;
+  ident = import ../../../../../lib/util/ident.nix { inherit lib; };
 in
 {
   driftEntryType = types.submodule {
@@ -49,7 +50,7 @@ in
       };
 
       managedBy = mkOption {
-        type = types.listOf types.str;
+        type = types.listOf ident.types.fieldManagerName;
         default = [ ];
         description = ''
           SSA field managers, other than the CD tool, that legitimately
@@ -59,6 +60,11 @@ in
           Find the name on a live object:
             kubectl get <kind> -A -o json --show-managed-fields \
               | jq -r '.items[].metadata.managedFields[].manager'
+
+          The type refuses anything that is not a bare field-manager
+          identifier, so a multi-line value here — usually a YAML list
+          pasted in verbatim — is reported against this option rather
+          than as a drift rule that quietly never fires.
 
           A name that matches nothing is a silent no-op: the rule never
           fires and the resource stays drifted. Nothing in Nix can

@@ -27,7 +27,7 @@ let
   scrapeInto = quotedDir: label: sink: ''
     for f in $(find -L ${quotedDir} -name '*.yaml' -type f 2>/dev/null); do
       yq -N '${imageUtil.scrapeExpr}' "$f" 2>/dev/null \
-        | grep -v '^$' | grep -v '^null$' \
+        | grep -v '^$' \
         | sed "s|^|${label}|" >> ${sink} || true
     done
   '';
