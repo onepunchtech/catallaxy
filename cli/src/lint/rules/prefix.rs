@@ -60,8 +60,7 @@ fn check(
                 file: r.source_file.clone(),
                 resource: r.display_id(),
                 message: format!(
-                    "namespace '{}' not prefixed (expected '{}{}')",
-                    ns, expected_prefix, ns
+                    "namespace '{ns}' not prefixed (expected '{expected_prefix}{ns}')"
                 ),
             });
         }

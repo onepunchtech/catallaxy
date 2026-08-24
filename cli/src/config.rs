@@ -58,6 +58,10 @@ pub struct Context {
     pub flake_ref: FlakeRef,
 
     pub verbose: bool,
+
+    /// Clusters the operator said may be destroyed and rebuilt to match the
+    /// declaration. Empty means none: `lab up` reports the drift and stops.
+    pub recreate: Vec<String>,
 }
 
 impl Context {
@@ -65,7 +69,16 @@ impl Context {
         crate::io::fs::home_dir()?;
         let flake_ref = FlakeRef::parse(&flake)?;
 
-        Ok(Self { flake_ref, verbose })
+        Ok(Self {
+            flake_ref,
+            verbose,
+            recreate: Vec::new(),
+        })
+    }
+
+    /// Whether this cluster may be destroyed and rebuilt.
+    pub fn may_recreate(&self, cluster: &str) -> bool {
+        self.recreate.iter().any(|c| c == cluster || c == "*")
     }
 
     pub fn flake_uri(&self) -> &str {
@@ -99,6 +112,7 @@ impl Context {
         match explicit.or(self.flake_ref.fragment.as_deref()) {
             Some(name) => {
                 let _ = crate::io::trust::activate(name);
+                let _ = crate::io::kubeconfig::activate(name);
                 Ok(name.to_string())
             }
             None => {
@@ -148,5 +162,43 @@ mod flake_ref_tests {
             fragment: None,
         };
         assert_eq!(r.local_dir(), Some(PathBuf::from("/srv/lab")));
+    }
+}
+
+#[cfg(test)]
+mod recreate_tests {
+    use super::*;
+
+    fn ctx(recreate: &[&str]) -> Context {
+        Context {
+            flake_ref: FlakeRef::parse(".").unwrap(),
+            verbose: false,
+            recreate: recreate.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn nothing_may_be_recreated_by_default() {
+        assert!(!ctx(&[]).may_recreate("core"));
+    }
+
+    #[test]
+    fn only_the_named_cluster_may_be_recreated() {
+        let c = ctx(&["core"]);
+        assert!(c.may_recreate("core"));
+        assert!(!c.may_recreate("obs"), "a sibling must not be swept up");
+    }
+
+    #[test]
+    fn several_clusters_can_be_named() {
+        let c = ctx(&["core", "obs"]);
+        assert!(c.may_recreate("core"));
+        assert!(c.may_recreate("obs"));
+        assert!(!c.may_recreate("edge"));
+    }
+
+    #[test]
+    fn a_star_covers_every_cluster() {
+        assert!(ctx(&["*"]).may_recreate("anything"));
     }
 }

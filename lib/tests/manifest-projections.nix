@@ -127,6 +127,7 @@ lib.concatLists [
     (
       (withProjectionRequires {
         inherit projectionSet;
+        bundles.consumer.declaredBy = "cluster";
         bundles.consumer = {
           requires = [ "already-there" ];
           resources.pc = {

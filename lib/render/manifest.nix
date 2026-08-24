@@ -256,9 +256,35 @@ let
         )}
       '';
 
+  # Stamped on every rendered resource, whoever produced it: a Nix-authored
+  # resource, helm output, or raw upstream YAML. It is what lets `lab up` ask
+  # the cluster which resources it owns and delete the ones the declaration no
+  # longer names. Without it, disabling a floe left everything it created
+  # running and `lab up` reported success.
+  #
+  # The same namespace the containers carry, for the same reason.
+  ownershipLabels = ownership: {
+    "catallaxy.io/lab" = ownership.lab;
+    "catallaxy.io/bundle" = ownership.bundle;
+  };
+
+  stampOwnership =
+    ownership:
+    let
+      assignments = lib.concatStringsSep " | " (
+        lib.mapAttrsToList (k: v: ''.metadata.labels."${k}" = "${v}"'') (ownershipLabels ownership)
+      );
+    in
+    ''
+      find "$out" -name '*.yaml' -type f -print0 | while IFS= read -r -d "" f; do
+        yq -i 'select(.kind != null) |= (${assignments})' "$f"
+      done
+    '';
+
   renderBundle =
     bundleKey: bundleConfig:
     let
+      ownership = bundleConfig.ownership;
       sanitize = builtins.replaceStrings [ "/" ] [ "__" ] bundleKey;
       helmOutputs = lib.mapAttrs renderHelmChart bundleConfig.helmCharts;
       hasResources = bundleConfig.resources != { };
@@ -276,7 +302,7 @@ let
       };
       allOutputs = helmOutputs // resourcesOutput // yamlsOutput;
     in
-    pkgs.runCommand "bundle-${sanitize}" { } ''
+    pkgs.runCommand "bundle-${sanitize}" { nativeBuildInputs = [ pkgs.yq-go ]; } ''
       mkdir -p $out
       ${concatStringsSep "\n" (
         mapAttrsToList (name: drv: ''
@@ -287,6 +313,8 @@ let
           fi
         '') allOutputs
       )}
+      chmod -R u+w $out
+      ${stampOwnership ownership}
       echo "${bundleKey}" > $out/.bundle-key
     '';
 

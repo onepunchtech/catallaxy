@@ -5,7 +5,7 @@ use crate::domain::plan::ColimaNetworkRouteParams;
 use crate::host::network;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &ColimaNetworkRouteParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &ColimaNetworkRouteParams) -> Result<()> {
     let ColimaNetworkRouteParams { subnet, profile } = p;
 
     if !cfg!(target_os = "macos") {

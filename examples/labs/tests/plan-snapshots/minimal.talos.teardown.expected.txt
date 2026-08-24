@@ -1,0 +1,3 @@
+[001] destroy-cluster name=destroy-cluster-app params.name=app params.provisioner=talos
+[002] remove-services name=remove-services
+[003] remove-network name=remove-network

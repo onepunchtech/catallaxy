@@ -8,64 +8,55 @@
   contracts,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.grafana;
 in
-(mkFloe {
-  name = "grafana";
-  version = "8.5.2";
-  imports = [ ./options.nix ];
-
-  requires = [
-    "gateway"
-    "reloader"
+{
+  imports = [
+    (floeOptions {
+      name = "grafana";
+      version = "8.5.2";
+    })
+    ./options.nix
   ];
-  exports =
-    { lib, ... }:
-    {
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "grafana.grafana.svc.cluster.local";
-        description = "In-cluster DNS name of the Grafana Service.";
-      };
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "grafana";
-        description = "Namespace Grafana runs in.";
-      };
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = 80;
-        description = "Port the Service listens on.";
-      };
-      url = lib.mkOption {
-        type = lib.types.str;
-        default = "http://grafana.grafana.svc.cluster.local:80";
-        description = "In-cluster URL, for peers that reach Grafana without leaving the cluster.";
-      };
-      externalUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public HTTPS URL, or empty when no domain is set.";
-      };
-      domain = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public hostname, or empty when Grafana is internal only.";
-      };
+
+  options.floes.grafana.exports = {
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "grafana.grafana.svc.cluster.local";
+      description = "In-cluster DNS name of the Grafana Service.";
     };
-  module =
-    {
-      config,
-      lib,
-      k8sHelpers,
-      cfg,
-      peers,
-      contracts,
-      ...
-    }:
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "grafana";
+      description = "Namespace Grafana runs in.";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 80;
+      description = "Port the Service listens on.";
+    };
+    url = lib.mkOption {
+      type = lib.types.str;
+      default = "http://grafana.grafana.svc.cluster.local:80";
+      description = "In-cluster URL, for peers that reach Grafana without leaving the cluster.";
+    };
+    externalUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public HTTPS URL, or empty when no domain is set.";
+    };
+    domain = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public hostname, or empty when Grafana is internal only.";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         optionalAttrs
@@ -273,7 +264,7 @@ in
 
       };
 
-      bundles.grafana = {
+      floes.grafana.bundles.grafana = {
         helmCharts.grafana = {
           chart = chartRef;
           releaseName = "grafana";
@@ -351,13 +342,13 @@ in
 
         createNamespaces = [ cfg.namespace ];
 
-        requires =
-          refs.needs peers.gateway.routing "publicReady" ++ refs.needs peers.reloader.watching "ready";
+        requires = [ "config-reload/ready" ];
 
-        after =
-          refs.orderAfter peers.prometheus.metrics "scrapeReady"
-          ++ refs.orderAfter peers.loki.logIngest "ready"
-          ++ refs.orderAfter peers.tempo.traceIngest "ready";
+        after = [
+          "optional:metrics/scrape/ready"
+          "optional:logs/ingest/ready"
+          "optional:traces/ingest/ready"
+        ];
         provides = [ "grafana/ui/ready" ];
         readyProbe = {
           kind = "condition";
@@ -367,6 +358,6 @@ in
           timeout = "5m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

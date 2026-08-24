@@ -229,6 +229,7 @@ in
 
     (mkIf (cfg.enable && cfg.rbac != { }) {
       bundles.pki-auth = {
+        declaredBy = "cluster";
 
         resources = rbacResources;
 

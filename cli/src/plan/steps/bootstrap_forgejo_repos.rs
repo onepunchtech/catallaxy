@@ -25,11 +25,7 @@ pub async fn run(sctx: &StepContext<'_>, p: &BootstrapForgejoReposParams) -> Res
     let namespace = namespace.unwrap_or(DEFAULT_NAMESPACE);
     let selector = selector.unwrap_or(DEFAULT_SELECTOR);
     let kube_context = kube_context.ok_or_else(|| {
-        anyhow::anyhow!(
-            "bootstrap-forgejo-repos: missing kubeContext for target '{target}'. \
-             The planner must populate `kubeContext` (see `runtimeCtxOf` in \
-             `lib/eval/deployment-plan.nix`)."
-        )
+        crate::plan::steps::missing_kube_context("bootstrap-forgejo-repos", target)
     })?;
 
     if sctx.dry_run {

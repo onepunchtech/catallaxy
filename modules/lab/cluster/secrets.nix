@@ -200,6 +200,36 @@ let
         inherit (pub) namespace secret;
       };
 
+  labCaBundle = config.floes.cert-manager.exports.caBundle or null;
+
+  # A store the lab hosts is reached at a lab hostname over TLS the lab's own
+  # CA signed, and external-secrets verifies against the pod's trust store,
+  # which has never heard of it. The cluster already carries that CA in every
+  # namespace: `cata lab up` imports it as the cert-manager issuer's secret
+  # and trust-manager distributes it. Nothing pointed the store at it, so
+  # every lab-hosted store failed with `InvalidProviderConfig`.
+  #
+  # A store somewhere else is signed by a public CA and must keep using the
+  # pod's own roots, so this is keyed on the address being one of the lab's.
+  labCaFor =
+    store:
+    let
+      server = store.vault.server or "";
+      inLabZone = lib.hasSuffix ".${lab.dns.zone}" (
+        lib.head (lib.splitString "/" (lib.removePrefix "https://" server))
+      );
+    in
+    if labCaBundle == null || !(lib.hasPrefix "https://" server) || !inLabZone then
+      null
+    else
+      {
+        type = "ConfigMap";
+        inherit (labCaBundle) name key;
+        inherit (store.vault.tokenSecret) namespace;
+      };
+
+  anyStoreUsesLabCa = lib.any (name: labCaFor (storeOf name) != null) sharedStoreNames;
+
   clusterSecretStores = lib.listToAttrs (
     map (
       name:
@@ -218,6 +248,9 @@ let
           auth.tokenSecretRef = {
             inherit (store.vault.tokenSecret) name key namespace;
           };
+        }
+        // lib.optionalAttrs (labCaFor store != null) {
+          caProvider = labCaFor store;
         };
       }
     ) sharedStoreNames
@@ -288,6 +321,19 @@ let
         target = {
           name = sub.secret;
           creationPolicy = "Owner";
+        }
+        // lib.optionalAttrs (sub.labels != { } || sub.annotations != { } || sub.fields != { }) {
+          template = {
+            engineVersion = "v2";
+          }
+          // lib.optionalAttrs (sub.labels != { } || sub.annotations != { }) {
+            metadata =
+              lib.optionalAttrs (sub.labels != { }) { inherit (sub) labels; }
+              // lib.optionalAttrs (sub.annotations != { }) { inherit (sub) annotations; };
+          }
+          // lib.optionalAttrs (sub.fields != { }) {
+            data = sub.fields;
+          };
         };
         dataFrom = [ { extract.key = addressOf name sub; } ];
       };
@@ -545,6 +591,51 @@ let
           default = defaultRuntimeStore;
           description = "Runtime store to read from.";
         };
+
+        labels = mkOption {
+          type = types.attrsOf types.str;
+          default = { };
+          description = ''
+            Labels to put on the Secret materialised here.
+
+            What reads a secret often finds it by label rather than by name:
+            argocd treats a Secret labelled
+            `argocd.argoproj.io/secret-type: repository` as a repository
+            registration. Without this a subscriber can receive the value and
+            still have nothing notice it arrived.
+          '';
+        };
+
+        annotations = mkOption {
+          type = types.attrsOf types.str;
+          default = { };
+          description = "Annotations to put on the Secret materialised here.";
+        };
+
+        fields = mkOption {
+          type = types.attrsOf types.str;
+          default = { };
+          example = lib.literalExpression ''
+            {
+              type = "git";
+              url = "https://git.example.test/org/repo.git";
+              username = "platform-bot";
+              password = "{{ .token }}";
+            }
+          '';
+          description = ''
+            The keys the Secret should have here, when they are not the keys
+            the publisher stored.
+
+            A credential is published as whatever the minting cluster called
+            it, and the consumer usually wants it under different names beside
+            some constants: a token becomes `password`, next to the `url` and
+            `username` that identify what it opens. `{{ .<key> }}` reads a
+            published key; everything else is literal.
+
+            Empty materialises the published keys unchanged.
+          '';
+        };
       };
     }
   );
@@ -601,16 +692,26 @@ in
     bundles = lib.mkMerge [
       (lib.mkIf (clusterSecretStores != { }) {
         secret-stores = {
+          declaredBy = "cluster";
           resources = clusterSecretStores;
           # The external-secrets validating webhook intercepts these kinds, so
           # applying before it answers fails. This token implies the CRD one.
-          requires = [ "external-secrets/webhook/ready" ];
+          #
+          # A store verifying the lab CA also waits for the bundle carrying
+          # it: trust-manager writes that ConfigMap into each namespace, and a
+          # store created first reads as `InvalidProviderConfig` rather than
+          # as waiting.
+          requires = [
+            "external-secrets/webhook/ready"
+          ]
+          ++ lib.optional (anyStoreUsesLabCa && labCaBundle.readyToken != null) labCaBundle.readyToken;
           provides = [ "secrets/stores/ready" ];
         };
       })
 
       (lib.mkIf (pushSecrets != { }) {
         secret-publications = {
+          declaredBy = "cluster";
           resources = pushSecrets;
           # PushSecret gets no automatic edge to its store: the auto-edge
           # resolver reads the singular `secretStoreRef`, and PushSecret uses
@@ -622,6 +723,7 @@ in
 
       (lib.mkIf (externalSecrets != { }) {
         secret-subscriptions = {
+          declaredBy = "cluster";
           resources = externalSecrets;
           requires = [ "secrets/stores/ready" ];
           provides = lib.mapAttrsToList (_: sub: "secret:${sub.namespace}/${sub.secret}") (

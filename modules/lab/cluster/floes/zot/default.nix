@@ -8,63 +8,60 @@
   contracts,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.zot;
 in
-(mkFloe {
-  name = "zot";
-  version = "0.1.62";
-  imports = [ ./options.nix ];
-  exports =
-    { lib, ... }:
-    {
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "zot.zot.svc.cluster.local";
-        description = "In-cluster DNS name of the registry Service.";
-      };
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "zot";
-        description = "Namespace zot runs in.";
-      };
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = 5000;
-        description = "Port the registry Service listens on.";
-      };
-      url = lib.mkOption {
-        type = lib.types.str;
-        default = "http://zot.zot.svc.cluster.local:5000";
-        description = "In-cluster URL, for peers that pull over plain HTTP inside the mesh.";
-      };
-      externalUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public HTTPS URL, or empty when no domain is set.";
-      };
-      registryUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Host:port a container runtime should be pointed at, without a scheme. This is the form an image reference needs.";
-      };
-      domain = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public hostname, or empty when the registry is internal only.";
-      };
+{
+  imports = [
+    (floeOptions {
+      name = "zot";
+      version = "0.1.62";
+    })
+    ./options.nix
+  ];
+
+  options.floes.zot.exports = {
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "zot.zot.svc.cluster.local";
+      description = "In-cluster DNS name of the registry Service.";
     };
-  module =
-    {
-      config,
-      lib,
-      cfg,
-      peers,
-      contracts,
-      ...
-    }:
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "zot";
+      description = "Namespace zot runs in.";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 5000;
+      description = "Port the registry Service listens on.";
+    };
+    url = lib.mkOption {
+      type = lib.types.str;
+      default = "http://zot.zot.svc.cluster.local:5000";
+      description = "In-cluster URL, for peers that pull over plain HTTP inside the mesh.";
+    };
+    externalUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public HTTPS URL, or empty when no domain is set.";
+    };
+    registryUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Host:port a container runtime should be pointed at, without a scheme. This is the form an image reference needs.";
+    };
+    domain = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public hostname, or empty when the registry is internal only.";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib) optionalAttrs optional;
 
@@ -204,15 +201,19 @@ in
       host = "zot.${cfg.namespace}.svc.cluster.local";
     in
     {
+      floes.zot.capabilities.provides.oci-registry = { };
+
       cluster.registryDomains = lib.optional (cfg.domain != "") cfg.domain;
 
       assertions = [
         {
-          assertion = !(cfg.gateway.enable && cfg.domain != "") || (peers.gateway.routing != null);
+          assertion =
+            !(cfg.gateway.enable && cfg.domain != "")
+            || ((config.cluster.capabilities.resolved.api-gateway.routing or null) != null);
           message = "zot HTTPRoute requires floes.gateway to be enabled.";
         }
         {
-          assertion = cfg.tls.issuerRef == null || (peers.cert-manager.issuance != null);
+          assertion = cfg.tls.issuerRef == null || (config.floes.cert-manager.exports.issuance != null);
           message = "zot tls.issuerRef is set but floes.cert-manager is disabled; the Certificate CR will not reconcile.";
         }
         {
@@ -258,7 +259,7 @@ in
 
       };
 
-      bundles.zot = {
+      floes.zot.bundles.zot = {
         resources = tlsCertResource // httpRouteResource;
 
         helmCharts.zot = {
@@ -320,14 +321,13 @@ in
 
         createNamespaces = [ cfg.namespace ];
 
-        requires =
-          refs.needs peers.cert-manager.issuance "webhookReady"
-          ++ refs.needs peers.gateway.routing "publicReady"
-
-          ++ optional (
-            cfg.oidc.enable && cfg.tls.caBundle != null && cfg.tls.caBundle.readyToken != null
-          ) cfg.tls.caBundle.readyToken;
-        provides = [ "zot/registry/ready" ];
+        requires = optional (
+          cfg.oidc.enable && cfg.tls.caBundle != null && cfg.tls.caBundle.readyToken != null
+        ) cfg.tls.caBundle.readyToken;
+        provides = [
+          "zot/registry/ready"
+          "oci-registry"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "statefulset/zot";
@@ -336,6 +336,6 @@ in
           timeout = "5m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

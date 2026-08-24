@@ -25,23 +25,8 @@ in
     };
 
     tls = {
-      issuerRef = mkOption {
-        type = types.nullOr (
-          types.submodule {
-            options = {
-              name = mkOption {
-                type = types.str;
-                description = "Name of the issuer.";
-              };
-              kind = mkOption {
-                type = types.str;
-                default = "ClusterIssuer";
-                description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
-              };
-            };
-          }
-        );
-        default = null;
+      issuerRef = contracts.tls.issuerRefOption {
+        default = contracts.tls.defaultIssuer config;
         description = "Issuer that signs the serving certificate. Null means no certificate is minted and TLS is somebody else's problem.";
       };
       secretName = mkOption {

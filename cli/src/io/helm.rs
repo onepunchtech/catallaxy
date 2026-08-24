@@ -4,6 +4,10 @@ use anyhow::{Context, Result};
 
 use crate::io::process::run_status;
 
+/// # Errors
+///
+/// Only if `helm` cannot be spawned. A failed release is a non-zero
+/// `ExitStatus`, with helm's own output already on the terminal.
 pub fn upgrade_install(
     release: &str,
     chart: &str,

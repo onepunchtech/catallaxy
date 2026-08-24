@@ -31,9 +31,9 @@ pub struct DiagnoseArgs {
     since: u32,
 }
 
-pub async fn run(ctx: &CataContext, args: DiagnoseArgs) -> Result<()> {
+pub fn run(ctx: &CataContext, args: DiagnoseArgs) -> Result<()> {
     if args.all {
-        return diagnose_all(ctx, &args).await;
+        return diagnose_all(ctx, &args);
     }
 
     let lab_name = ctx.resolve_lab_name(None)?;
@@ -53,24 +53,24 @@ pub async fn run(ctx: &CataContext, args: DiagnoseArgs) -> Result<()> {
     let spec = lab.cluster(&cluster_name)?;
     let context = lab.kube_context(&cluster_name)?;
 
-    diagnose_cluster(ctx, &cluster_name, context, spec, &args).await
+    diagnose_cluster(ctx, &cluster_name, context, spec, &args)
 }
 
-async fn diagnose_all(ctx: &CataContext, args: &DiagnoseArgs) -> Result<()> {
+fn diagnose_all(ctx: &CataContext, args: &DiagnoseArgs) -> Result<()> {
     let lab_name = ctx.resolve_lab_name(None)?;
     let lab = crate::io::nix::get_lab_spec(ctx, &lab_name)?;
 
     for cluster_name in &lab.cluster_names {
         let spec = lab.cluster(cluster_name)?;
         let context = lab.kube_context(cluster_name)?;
-        diagnose_cluster(ctx, cluster_name, context, spec, args).await?;
+        diagnose_cluster(ctx, cluster_name, context, spec, args)?;
         println!();
     }
 
     Ok(())
 }
 
-async fn diagnose_cluster(
+fn diagnose_cluster(
     _ctx: &CataContext,
     cluster_name: &str,
     kube_context: &str,
@@ -423,11 +423,7 @@ fn print_warning_events(context: &str, since_minutes: u32) -> Result<()> {
         } else {
             String::new()
         };
-        let display = if key.len() > 120 {
-            format!("{}...", &key[..117])
-        } else {
-            key.to_string()
-        };
+        let display = truncate_chars(key, 117);
         println!(
             "    {} {}{}",
             style("-").yellow(),
@@ -445,4 +441,66 @@ fn print_warning_events(context: &str, since_minutes: u32) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Shorten for display, counting characters rather than bytes.
+///
+/// A Kubernetes Event message is arbitrary UTF-8 from a kubelet, an admission
+/// webhook or a container runtime, so slicing it by byte index panics as soon
+/// as the cut lands inside a codepoint.
+fn truncate_chars(s: &str, keep: usize) -> String {
+    if s.chars().count() <= keep + 3 {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(keep).collect();
+    out.push_str("...");
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_short_message_is_left_alone() {
+        assert_eq!(
+            truncate_chars("kubelet: pulled image", 117),
+            "kubelet: pulled image"
+        );
+    }
+
+    #[test]
+    fn a_long_message_is_cut_and_marked() {
+        let long = "a".repeat(200);
+        let got = truncate_chars(&long, 117);
+        assert_eq!(got.chars().count(), 120);
+        assert!(got.ends_with("..."));
+    }
+
+    #[test]
+    fn a_multibyte_character_on_the_cut_does_not_panic() {
+        for pad in 110..125 {
+            let s = format!("{}\u{2014}{}", "a".repeat(pad), "b".repeat(200));
+            let got = truncate_chars(&s, 117);
+            assert!(got.chars().count() <= 120, "pad {pad} produced {got}");
+        }
+    }
+
+    #[test]
+    fn a_message_of_only_multibyte_characters_survives() {
+        let s = "\u{1f600}".repeat(200);
+        let got = truncate_chars(&s, 117);
+        assert_eq!(got.chars().count(), 120);
+    }
+
+    #[test]
+    fn the_byte_slice_this_replaced_would_have_split_a_codepoint() {
+        let s = format!("{}\u{2014}{}", "a".repeat(115), "b".repeat(200));
+        assert!(s.len() > 120);
+        assert!(
+            !s.is_char_boundary(117),
+            "this fixture no longer reproduces the panic it guards against"
+        );
+        truncate_chars(&s, 117);
+    }
 }

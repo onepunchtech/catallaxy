@@ -54,7 +54,7 @@ let
       lib.nameValuePair "${clusterName}-${stepName}" (
         (removeAttrs step [ "scope" ])
         // {
-          origin = "clusters.${clusterName}.steps.${stepName}";
+          origin = if step.origin != null then step.origin else "clusters.${clusterName}.steps.${stepName}";
           cluster = if step.scope == "cluster" then clusterName else null;
         }
       )
@@ -73,6 +73,7 @@ let
   );
 
   planGraph = import ../../../lib/eval/plan-graph.nix { inherit lib; };
+  graphLib = import ../../../lib/eval/graph.nix { inherit lib; };
 
   stepsFor =
     direction:
@@ -115,6 +116,85 @@ let
     in
     map lowerStep sorted;
 
+  stepConflicts = lib.concatMap (direction: planGraph.conflictErrors (stepsFor direction)) [
+    "deploy"
+    "teardown"
+  ];
+
+  deploySteps' = stepsFor "deploy";
+  deployEdges = planGraph.buildEdges deploySteps';
+  deployProvidesIdx = planGraph.buildProvidesIdx deploySteps';
+
+  applyStepsFor =
+    clusterName:
+    lib.attrNames (
+      lib.filterAttrs (
+        _: s: s.kind == "deploy-manifests" && (s.params.target or null) == clusterName
+      ) deploySteps'
+    );
+
+  precedingApply =
+    clusterName:
+    let
+      applies = applyStepsFor clusterName;
+    in
+    lib.unique (
+      lib.concatMap (
+        a:
+        lib.filter (n: n != a) (
+          graphLib.closureFrom {
+            edges = deployEdges;
+            roots = [ a ];
+          }
+        )
+      ) applies
+    );
+
+  bridgeErrors = lib.concatLists (
+    lib.mapAttrsToList (
+      clusterName: clusterCfg:
+      let
+        applies = applyStepsFor clusterName;
+        before = precedingApply clusterName;
+      in
+      lib.concatMap (
+        req:
+        let
+          providers = deployProvidesIdx.${req.token} or [ ];
+          late = lib.subtractLists before providers;
+        in
+        if providers == [ ] then
+          lib.optional req.hard ''
+            clusters.${clusterName}.bundles.${req.bundle}: ${req.field} names
+            'step:${req.token}', which no step in the deploy plan publishes.
+
+            Declare a step with `provides = [ "${req.token}" ]`, or write it as
+            'optional:step:${req.token}' if it is allowed to match nothing.
+          ''
+        else if applies == [ ] then
+          [ ]
+        else
+          let
+            publishers = lib.concatStringsSep " and " (map (n: "'${n}'") late);
+            appliers = lib.concatStringsSep " or " (map (n: "'${n}'") applies);
+            verb = if lib.length late == 1 then "that step does" else "those steps do";
+          in
+          lib.optional (late != [ ]) ''
+            clusters.${clusterName}.bundles.${req.bundle}: ${req.field} names
+            'step:${req.token}', which ${publishers} publishes, and ${verb} not
+            run before ${appliers}.
+
+            This cluster's manifests are all applied by that one step, so a
+            token published after it is published after this bundle has already
+            been installed. The edge would read as ordering and do nothing.
+
+            Move the step earlier by having it publish something ${appliers}
+            waits on, or drop the requirement.
+          ''
+      ) clusterCfg.cluster.out.stepRequirements
+    ) clusters
+  );
+
 in
 {
   options.lab.steps = mkOption {
@@ -152,44 +232,49 @@ in
 
   config.lab.steps = frameworkSteps // clusterSteps;
 
-  config.lab.assertions = [
-    {
-      assertion = aliasedFoldedNames == [ ];
-      message = ''
-        Two clusters contribute steps whose folded `<cluster>-<name>` keys
-        collide: ${lib.concatStringsSep ", " aliasedFoldedNames}.
-        One of them would silently replace the other in the plan. Rename
-        the step on one of the clusters.
-      '';
-    }
-    {
-      assertion = kindlessSteps == [ ];
-      message = ''
-        Steps declare no kind:
-        ${lib.concatStringsSep "\n" kindlessSteps}
-        The kind selects the type of `params` and the executor that runs the
-        step. Valid kinds are the entries in modules/lab/planner/kinds/.
-      '';
-    }
-    {
-      assertion = wrongDirection == [ ];
-      message = ''
-        Steps declare a direction their kind cannot run in:
-        ${lib.concatStringsSep "\n" wrongDirection}
-        The executor would abort part-way through the plan, after every step
-        ahead of this one had already run. Change `direction`, or the kind.
-      '';
-    }
-    {
-      assertion = shadowedFrameworkNames == [ ];
-      message = ''
-        Cluster-declared steps shadow framework-emitted ones:
-        ${lib.concatStringsSep ", " shadowedFrameworkNames}.
-        Rename the cluster step; the framework's own emitters own those
-        keys, and the plan would run the cluster's step in its place.
-      '';
-    }
-  ];
+  config.lab.assertions =
+    (map (message: {
+      assertion = false;
+      inherit message;
+    }) (stepConflicts ++ bridgeErrors))
+    ++ [
+      {
+        assertion = aliasedFoldedNames == [ ];
+        message = ''
+          Two clusters contribute steps whose folded `<cluster>-<name>` keys
+          collide: ${lib.concatStringsSep ", " aliasedFoldedNames}.
+          One of them would silently replace the other in the plan. Rename
+          the step on one of the clusters.
+        '';
+      }
+      {
+        assertion = kindlessSteps == [ ];
+        message = ''
+          Steps declare no kind:
+          ${lib.concatStringsSep "\n" kindlessSteps}
+          The kind selects the type of `params` and the executor that runs the
+          step. Valid kinds are the entries in modules/lab/planner/kinds/.
+        '';
+      }
+      {
+        assertion = wrongDirection == [ ];
+        message = ''
+          Steps declare a direction their kind cannot run in:
+          ${lib.concatStringsSep "\n" wrongDirection}
+          The executor would abort part-way through the plan, after every step
+          ahead of this one had already run. Change `direction`, or the kind.
+        '';
+      }
+      {
+        assertion = shadowedFrameworkNames == [ ];
+        message = ''
+          Cluster-declared steps shadow framework-emitted ones:
+          ${lib.concatStringsSep ", " shadowedFrameworkNames}.
+          Rename the cluster step; the framework's own emitters own those
+          keys, and the plan would run the cluster's step in its place.
+        '';
+      }
+    ];
 
   config.lab.out = {
     deploymentPlan = computePlan "deploy";

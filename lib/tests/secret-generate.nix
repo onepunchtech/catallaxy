@@ -62,6 +62,7 @@ let
     eso
     // {
       secrets.generate.app-token.namespace = "app";
+      bundles.consumer.declaredBy = "cluster";
       bundles.consumer.resources.app = {
         apiVersion = "apps/v1";
         kind = "Deployment";

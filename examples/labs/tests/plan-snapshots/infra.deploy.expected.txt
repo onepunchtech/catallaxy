@@ -1,0 +1,6 @@
+[001] docker-network-create name=docker-network-create params.gateway=172.19.0.1 params.name=infra params.subnet=172.19.0.0/16
+[002] colima-network-route name=colima-network-route params.profile=catallaxy params.subnet=172.19.0.0/16
+[003] create-cluster name=create-cluster-app params.name=app params.provisioner=k3d
+[004] infra-plan name=infra-plan-after-clusters params.stack=after-clusters
+[005] infra-apply name=infra-apply-after-clusters params.stack=after-clusters
+[006] deploy-manifests name=deploy-manifests-app params.kubeContext=k3d-infra-app params.target=app

@@ -62,7 +62,7 @@ fn zone_is_well_formed(zone: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
 }
 
-pub async fn dns_setup(host: &str, port: u64, zone: &str) -> Result<()> {
+pub fn dns_setup(host: &str, port: u64, zone: &str) -> Result<()> {
     println!(
         "{} Setting up DNS resolution for *.{}",
         style(">>>").cyan(),
@@ -107,8 +107,8 @@ fn dns_setup_macos(host: &str, port: u64, zone: &str) -> Result<()> {
 
     if std::path::Path::new(&resolver_file).exists() {
         let content = io::fs::read_to_string(&resolver_file).unwrap_or_default();
-        if content.contains(&format!("nameserver {}", dns_host))
-            && content.contains(&format!("port {}", port))
+        if content.contains(&format!("nameserver {dns_host}"))
+            && content.contains(&format!("port {port}"))
         {
             println!(
                 "{} DNS resolver already configured at {}",
@@ -144,7 +144,7 @@ fn dns_setup_macos(host: &str, port: u64, zone: &str) -> Result<()> {
     }
 
     println!();
-    println!("Test with: dig git.{}", zone);
+    println!("Test with: dig git.{zone}");
 
     Ok(())
 }
@@ -229,12 +229,12 @@ fn dns_setup_systemd_resolved(host: &str, port: u64, zone: &str) -> Result<()> {
         println!("    Routes all of *.test, with no further sudo for any other lab.");
     }
     println!();
-    println!("Test with: dig git.{}", zone);
+    println!("Test with: dig git.{zone}");
 
     Ok(())
 }
 
-pub async fn dns_teardown(zone: &str) -> Result<()> {
+pub fn dns_teardown(zone: &str) -> Result<()> {
     println!(
         "{} Removing DNS configuration for *.{}",
         style(">>>").cyan(),
@@ -253,7 +253,7 @@ fn dns_teardown_macos(zone: &str) -> Result<()> {
         bail!("Refusing to touch DNS config: zone '{zone}' contains unexpected characters");
     }
 
-    let resolver_file = format!("/etc/resolver/{}", zone);
+    let resolver_file = format!("/etc/resolver/{zone}");
 
     if std::path::Path::new(&resolver_file).exists() {
         println!("{} Removing {}...", style(">>>").cyan(), resolver_file);

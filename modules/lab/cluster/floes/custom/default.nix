@@ -7,24 +7,21 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.custom;
 in
-(mkFloe {
-  name = "custom";
+{
+  imports = [
+    (floeOptions {
+      name = "custom";
+    })
+    ./options.nix
+  ];
 
-  imports = [ ./options.nix ];
-
-  requires = [ "gateway" ];
-  module =
-    {
-      config,
-      lib,
-      cfg,
-      ...
-    }:
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mapAttrs
@@ -113,7 +110,7 @@ in
       # images are the lab's and only the lab can say what they are. Claiming
       # completeness would be claiming to know something this floe cannot.
 
-      bundles = concatMapAttrs (
+      floes.custom.bundles = concatMapAttrs (
         name: app:
         if app.enable then
           {
@@ -147,6 +144,6 @@ in
           ) app.gateway.domain
         ) cfg.apps
       );
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

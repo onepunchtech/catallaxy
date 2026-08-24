@@ -5,6 +5,10 @@ use console::style;
 
 use crate::io::process::run_capture;
 
+/// # Errors
+///
+/// Never. A context that is not there is what the caller wanted, and kubectl's
+/// exit is discarded to say so.
 pub fn delete_kubeconfig_context(context_name: &str) -> Result<()> {
     let mut cmd = super::run::command();
     cmd.args(["config", "delete-context", context_name]);
@@ -12,6 +16,9 @@ pub fn delete_kubeconfig_context(context_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// Never; see [`delete_kubeconfig_context`].
 pub fn delete_kubeconfig_cluster(cluster_name: &str) -> Result<()> {
     let mut cmd = super::run::command();
     cmd.args(["config", "delete-cluster", cluster_name]);
@@ -19,6 +26,9 @@ pub fn delete_kubeconfig_cluster(cluster_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// # Errors
+///
+/// Never; see [`delete_kubeconfig_context`].
 pub fn delete_kubeconfig_user(user_name: &str) -> Result<()> {
     let mut cmd = super::run::command();
     cmd.args(["config", "delete-user", user_name]);
@@ -26,6 +36,13 @@ pub fn delete_kubeconfig_user(user_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Fold a lab's kubeconfig into the operator's own `~/.kube/config`.
+///
+/// # Errors
+///
+/// If `HOME` is unset, if kubectl cannot flatten the two files, or if the
+/// result cannot be written. The write is atomic, so a failure leaves the
+/// operator's existing kubeconfig as it was rather than truncated.
 pub fn merge_kubeconfig(kubeconfig_path: &Path, context_name: &str) -> Result<()> {
     println!(
         "{} Merging kubeconfig for context '{context_name}'...",
@@ -58,11 +75,15 @@ pub fn merge_kubeconfig(kubeconfig_path: &Path, context_name: &str) -> Result<()
     Ok(())
 }
 
+/// # Errors
+///
+/// If `HOME` is unset, or the cluster's own kubeconfig file exists and cannot
+/// be removed. Entries absent from the default kubeconfig are not an error.
 pub fn cleanup_kubeconfig(cluster_name: &str) -> Result<()> {
     let kubeconfig_path = dirs::home_dir()
         .context("Could not find home directory")?
         .join(".kube")
-        .join(format!("{}.kubeconfig", cluster_name));
+        .join(format!("{cluster_name}.kubeconfig"));
 
     if kubeconfig_path.exists() {
         std::fs::remove_file(&kubeconfig_path)
@@ -74,22 +95,13 @@ pub fn cleanup_kubeconfig(cluster_name: &str) -> Result<()> {
         );
     }
 
-    delete_kubeconfig_context(&format!("{}-admin@{}", cluster_name, cluster_name))?;
+    delete_kubeconfig_context(&format!("{cluster_name}-admin@{cluster_name}"))?;
     delete_kubeconfig_context(cluster_name)?;
 
     delete_kubeconfig_cluster(cluster_name)?;
-    delete_kubeconfig_user(&format!("{}-admin", cluster_name))?;
+    delete_kubeconfig_user(&format!("{cluster_name}-admin"))?;
 
     Ok(())
-}
-
-pub fn context_in_kubeconfig(context: &str) -> bool {
-    super::run::command()
-        .args(["config", "get-contexts", "-o", "name", context])
-        .output()
-        .ok()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
 }
 
 pub fn current_context_of(kubeconfig: &Path) -> Option<String> {

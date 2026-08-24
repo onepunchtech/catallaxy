@@ -3,12 +3,27 @@
 let
   inherit (lib) mkOption types;
   opsTypes = import ../ops/types.nix { inherit lib; };
+  inherit (import ../../../lib/floe/collisions.nix { inherit lib; }) contestedKeys;
+
+  enabledFloes = lib.filterAttrs (_: floe: floe.enable or false) config.floes;
+
+  contestedOps = contestedKeys {
+    floes = config.floes;
+    keysOf =
+      floe:
+      lib.concatMap (category: map (name: "${category} ${name}") (lib.attrNames floe.ops.${category})) (
+        lib.attrNames (floe.ops or { })
+      );
+  };
 in
 {
   imports = [
     ./apiserver
     ./floes
     ./bundles.nix
+    ./infra.nix
+    ./prerequisites.nix
+    ./capabilities.nix
     ./shell.nix
     ./steps.nix
     ./verify.nix
@@ -22,6 +37,7 @@ in
     ./secrets-generate.nix
     ../provisioners/docker.nix
     ../provisioners/k3d.nix
+    ../provisioners/talos.nix
   ];
 
   options.assertions = mkOption {
@@ -63,26 +79,6 @@ in
     type = types.attrsOf types.attrs;
     default = { };
     description = "Extra Kubernetes resources to render into this cluster, keyed by name. An escape hatch for something no floe covers.";
-  };
-  options.compose = mkOption {
-    type = types.attrsOf types.attrs;
-    default = { };
-    description = "Docker Compose services this cluster contributes to the host, for things that run beside the cluster rather than in it.";
-  };
-  options.databases.postgres = mkOption {
-    type = types.attrsOf types.attrs;
-    default = { };
-    description = "Postgres databases components ask for. A database floe reads these and provisions them.";
-  };
-  options.databases.redis = mkOption {
-    type = types.attrsOf types.attrs;
-    default = { };
-    description = "Redis instances components ask for, read the same way.";
-  };
-  options.storage.s3Buckets = mkOption {
-    type = types.attrsOf types.attrs;
-    default = { };
-    description = "S3 buckets components ask for, read by whichever object-store floe is enabled.";
   };
 
   options.lifecycle.preProvision = mkOption {
@@ -140,4 +136,22 @@ in
       aggregator, and the category was only a field it carried.
     '';
   };
+
+  config.ops = lib.mkMerge (lib.mapAttrsToList (_: floe: floe.ops) enabledFloes);
+
+  config.assertions = lib.mapAttrsToList (pair: claimants: {
+    assertion = false;
+    message = ''
+      ops command `${pair}` on cluster '${config.cluster.name}' is published
+      by ${lib.concatStringsSep " and " (map (n: "`floes.${n}`") claimants)}.
+
+      A category and a name together are how the generated tool addresses a
+      command, so the second publisher does not add one, it collides with
+      the first on the fields the two disagree about.
+
+      Give one of them its own category, which is what the pair is for: two
+      floes may both publish a `status`, and `<lab>-ops <category> status`
+      still says which.
+    '';
+  }) contestedOps;
 }

@@ -7,67 +7,70 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.tempo;
 in
-(mkFloe {
-  name = "tempo";
-  version = "1.10.3";
-  imports = [ ./options.nix ];
+{
+  imports = [
+    (floeOptions {
+      name = "tempo";
+      version = "1.10.3";
+    })
+    ./options.nix
+  ];
 
-  exports =
-    { lib, ... }:
-    {
-      traceIngest = lib.mkOption {
-        type = refs.mkCapability {
-          ready = refs.tokenOption ''"Tempo is accepting spans and serving queries."'';
-        };
-        default = null;
-        description = ''
-          Trace ingestion, or null when this floe is off. Consumers that
-          export spans or query traces gate on this.
-        '';
+  options.floes.tempo.exports = {
+    traceIngest = lib.mkOption {
+      type = refs.mkCapability {
+        ready = refs.tokenOption ''"Tempo is accepting spans and serving queries."'';
       };
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "tempo.tempo.svc.cluster.local";
-        description = "In-cluster Tempo service DNS name.";
-      };
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "tempo";
-        description = "Namespace Tempo runs in.";
-      };
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = 3100;
-        description = "Tempo HTTP API port.";
-      };
-      url = lib.mkOption {
-        type = lib.types.str;
-        default = "http://tempo.tempo.svc.cluster.local:3100";
-        description = "Tempo base URL (http://host:port).";
-      };
-      queryUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "http://tempo.tempo.svc.cluster.local:3100";
-        description = "Tempo query endpoint (grafana datasource URL).";
-      };
-      otlpGrpc = lib.mkOption {
-        type = lib.types.str;
-        default = "tempo.tempo.svc.cluster.local:4317";
-        description = "OTLP gRPC ingestion endpoint (host:4317).";
-      };
-      otlpHttp = lib.mkOption {
-        type = lib.types.str;
-        default = "http://tempo.tempo.svc.cluster.local:4318";
-        description = "OTLP HTTP ingestion endpoint (http://host:4318).";
-      };
+      default = null;
+      description = ''
+        Trace ingestion, or null when this floe is off. Consumers that
+        export spans or query traces gate on this.
+      '';
     };
-  module =
-    { cfg, ... }:
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "tempo.tempo.svc.cluster.local";
+      description = "In-cluster Tempo service DNS name.";
+    };
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "tempo";
+      description = "Namespace Tempo runs in.";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 3100;
+      description = "Tempo HTTP API port.";
+    };
+    url = lib.mkOption {
+      type = lib.types.str;
+      default = "http://tempo.tempo.svc.cluster.local:3100";
+      description = "Tempo base URL (http://host:port).";
+    };
+    queryUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://tempo.tempo.svc.cluster.local:3100";
+      description = "Tempo query endpoint (grafana datasource URL).";
+    };
+    otlpGrpc = lib.mkOption {
+      type = lib.types.str;
+      default = "tempo.tempo.svc.cluster.local:4317";
+      description = "OTLP gRPC ingestion endpoint (host:4317).";
+    };
+    otlpHttp = lib.mkOption {
+      type = lib.types.str;
+      default = "http://tempo.tempo.svc.cluster.local:4318";
+      description = "OTLP HTTP ingestion endpoint (http://host:4318).";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib) optionalAttrs;
 
@@ -129,7 +132,7 @@ in
 
       };
 
-      bundles.tempo = {
+      floes.tempo.bundles.tempo = {
         helmCharts.tempo = {
           chart = cfg.chart;
           releaseName = "tempo";
@@ -163,7 +166,10 @@ in
 
         createNamespaces = [ cfg.namespace ];
 
-        provides = [ "tempo/write/ready" ];
+        provides = [
+          "tempo/write/ready"
+          "traces/ingest/ready"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "statefulset/tempo";
@@ -172,6 +178,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

@@ -24,6 +24,23 @@ let
         default = "10.96.0.0/12";
       };
 
+      options.cluster.provisionerOut.publishesGatewayPorts = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+      };
+      options.cluster.ingress.httpPort = lib.mkOption {
+        type = lib.types.port;
+        default = 80;
+      };
+      options.cluster.ingress.httpsPort = lib.mkOption {
+        type = lib.types.port;
+        default = 443;
+      };
+      options.cluster.ingress.passthroughPort = lib.mkOption {
+        type = lib.types.port;
+        default = 8444;
+      };
+
     };
 
   disabledResult = evalFloe (
@@ -208,8 +225,8 @@ lib.runTests {
       let
         httpsListener = builtins.head (builtins.filter (l: l.name == "https") tlsListeners);
       in
-      httpsListener.tls.certificateRefs;
-    expected = [ { name = "gateway-tls"; } ];
+      map (ref: ref.name) httpsListener.tls.certificateRefs;
+    expected = [ "gateway-tls" ];
   };
 
   testTlsBundleCertAndRedirect = {

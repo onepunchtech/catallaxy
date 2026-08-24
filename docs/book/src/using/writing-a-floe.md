@@ -16,14 +16,23 @@ nix flake init -t github:onepunchtech/catallaxy#consumer
 
 ```nix
 # floes/hello-world/default.nix
-{ mkFloe, lib }:
+{ floeOptions, lib }:
 
-mkFloe {
-  name = "hello-world";
-  version = "1.0.0";
+{ config, ... }:
 
-  module = { cfg, ... }: {
-    bundles.hello-world = {
+let
+  cfg = config.floes.hello-world;
+in
+{
+  imports = [
+    (floeOptions {
+      name = "hello-world";
+      version = "1.0.0";
+    })
+  ];
+
+  config = lib.mkIf cfg.enable {
+    floes.hello-world.bundles.hello-world = {
       createNamespaces = [ cfg.namespace ];
       resources.hello-deployment = {
         apiVersion = "apps/v1";
@@ -36,17 +45,19 @@ mkFloe {
 }
 ```
 
-`cfg` is `config.floes.hello-world`, already resolved. `cfg.namespace`
-defaults to the floe's name.
+A floe is a NixOS module and nothing else. `floeOptions` declares the option
+set every floe has at `options.floes.hello-world`, and everything after that
+is ordinary module syntax: bind `cfg` yourself, and gate your config on
+`cfg.enable`. `cfg.namespace` defaults to the floe's name.
 
 Register it, then turn it on. There is no auto-discovery: a floe directory
 that is in neither place does nothing at all, with no error.
 
 ```nix
 # floes/default.nix
-{ mkFloe, lib }:
+{ floeOptions, lib }:
 {
-  hello-world = import ./hello-world { inherit mkFloe lib; };
+  hello-world = import ./hello-world { inherit floeOptions lib; };
 }
 ```
 
@@ -79,16 +90,15 @@ let inherit (lib) mkOption types; in
 The two-file split is not style. **`imports` sits outside the enable gate**,
 so option _declarations_ stay visible when the floe is off. That is what
 lets another module read them in its own option default, and lets the
-generated reference document a floe nobody turned on. Everything in `module`
-is gated on `enable`.
+generated reference document a floe nobody turned on. Everything under
+`config` is gated on `enable`.
 
 ## 3. Say what you need, and when you are ready
 
 ```nix
-requires = [ "gateway" ];          # floe names: fails eval, with a message
-
-bundles.hello-world = {
-  requires = [ "gateway/controller/ready" ];   # tokens: waits for READY
+floes.hello-world.bundles.hello-world = {
+  requires = [ "gateway/controller/ready" ];   # waits for READY
+  after = [ "optional:namespace:shared" ];     # waits for APPLIED
   readyProbe = {
     kind = "condition";
     resource = "deployment/hello";
@@ -100,9 +110,22 @@ bundles.hello-world = {
 };
 ```
 
-Two different `requires`, deliberately. At the top level it names floes and
-produces an eval-time error. On a bundle it names _tokens_, which are states
-another bundle publishes, and means ready rather than applied.
+A dependency is always a _name_, never the name of another floe. Names live
+in one namespace: hand-written ones are bare, by convention
+`<scope>/<subject>/<state>`, and derived ones carry a prefix (`bundle:`,
+`floe:`, `kind:`, `namespace:`). `requires` waits for the provider to be
+ready, `after` only for it to be applied, and `conflicts` refuses a second
+provider of a name only one implementation of can be right.
+
+A name nothing provides is an evaluation error naming the bundle and the
+name, so a dependency cannot be silently dropped. Prefix it `optional:` when
+matching nothing is genuinely allowed.
+
+Most of what a bundle needs is never written down at all. Emitting a
+resource of a kind Kubernetes does not ship derives
+`requires kind:<group>/<Kind>`, so a Certificate waits for cert-manager and
+an HTTPRoute waits for a programmed Gateway without either being mentioned.
+Write a name only for what the resources do not already say.
 
 Give a bundle a `readyProbe` whenever it mints state something downstream
 waits on. Leave it `null` for purely declarative bundles.
@@ -138,25 +161,30 @@ to declare is a build failure rather than a timeout on a cluster.
 
 ## 4. Publish an interface
 
+An export is an ordinary option under `exports`, declared outside the enable
+gate and filled in inside it:
+
 ```nix
-exports = { lib, ... }: {
-  url = lib.mkOption {
-    type = lib.types.str;
-    default = "http://hello-world.hello-world.svc.cluster.local";
-    description = "In-cluster URL of the Service.";
-  };
+options.floes.hello-world.exports.url = lib.mkOption {
+  type = lib.types.str;
+  default = "http://hello-world.hello-world.svc.cluster.local";
+  description = "In-cluster URL of the Service.";
 };
 
-module = { cfg, ... }: {
+config = lib.mkIf cfg.enable {
   floes.hello-world.exports.url =
     "http://hello-world.${cfg.namespace}.svc.cluster.local";
 };
 ```
 
+The split is the same one as in step 2, for the same reason: the declaration
+has to stay readable when the floe is off.
+
 Every export field needs a `default`, enforced by
-`checks.floe-exports-defaults`, because a consumer may read one while
-computing its own option default, and that evaluates whether or not your
-floe is enabled.
+`checks.every-floe-export-has-a-default`, because a consumer may read one
+while computing its own option default, and that evaluates whether or not
+your floe is enabled. Where there is no value until the floe runs, make the
+default `null` and the type `nullOr`.
 
 ## 5. Work that is not a manifest
 
@@ -165,7 +193,7 @@ against a cluster that no manifest expresses: join a mesh, drain a queue,
 deregister a peer. Declare it as a step, in the same DSL a lab uses:
 
 ```nix
-steps.mesh-join = {
+floes.hello.steps.mesh-join = {
   kind = "run-script";
   direction = "deploy";                  # or "teardown", or "both"
   description = "Join this lab's mesh";
@@ -197,16 +225,19 @@ failed cleanup should not strand the rest of the teardown.
 
 ## The rules that bite
 
-1. **Read peers only through `peers.<x>.<field>`**: their `exports`, and
-   nothing else, enforced by `checks.floe-boundary`. What a floe does not
-   export, you may not depend on; publishing is its author's call. In
-   `options.nix` there is no `peers`, so write
-   `config.floes.<x>.exports.<f>`.
-2. **Never ask a peer whether it is enabled.** Ask for the capability,
-   `peers.cert-manager.issuance != null`, which only the producer can
-   compute.
-3. **Never hardcode a peer's readiness token.** Take it from the capability:
-   `refs.needs peers.gateway.routing "publicReady"`. No capability, no edge.
+1. **Read another floe only through `config.floes.<x>.exports.<field>`**:
+   its `exports`, and nothing else, enforced by `checks.floe-boundary`. What
+   a floe does not export, you may not depend on; publishing is its author's
+   call. This reads the same in `options.nix` as in the module body, because
+   it is config rather than an argument handed to one of them.
+2. **Never ask another floe whether it is enabled.** Ask for the capability,
+   `config.floes.cert-manager.exports.issuance != null`, which only the
+   producer can compute.
+3. **Address the job, not the floe, wherever one exists.**
+   `config.cluster.capabilities.resolved.<name>` is whoever does that job on
+   this cluster, so a gateway consumer works whether traefik or cilium is
+   serving. Ordering is a name in the bundle's `requires`, never another
+   floe's.
 4. **Read `cfg.overrides.*` into every resource you emit.** The option
    exists whether you read it or not, so a body that ignores it silently
    does nothing when someone sets it.
@@ -264,7 +295,7 @@ A floe is a flake output:
 
 ```nix
 outputs = { ... }: {
-  floes.hello = import ./hello { inherit mkFloe lib; };
+  floes.hello = import ./hello { inherit floeOptions lib; };
 };
 ```
 

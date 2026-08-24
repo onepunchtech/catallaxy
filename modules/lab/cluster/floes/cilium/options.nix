@@ -32,8 +32,23 @@ in
     gatewayAPI = {
       enable = mkOption {
         type = types.bool;
-        default = true;
-        description = "Enable Kubernetes Gateway API support (replaces legacy Ingress)";
+        default = false;
+        description = ''
+          Be the cluster's Gateway API implementation.
+
+          Off by default, because enabling cilium is usually asking for a CNI
+          and this is a second, unrelated job. On it emits a GatewayClass and
+          a Gateway named exactly what the gateway floe names its own, so a
+          lab that wanted a CNI got two implementations claiming one set of
+          listeners and routes, and which one won depended on reconcile order.
+          That is now refused outright, which turned a default nobody chose
+          into an error nobody expected.
+
+          It also exports no `routing` capability, so floes that ask whether
+          their HTTPRoute will have a parent see nothing here and refuse.
+          Turning this on is worth doing when cilium is the gateway you want;
+          it is not worth doing by accident.
+        '';
       };
 
       tls = {

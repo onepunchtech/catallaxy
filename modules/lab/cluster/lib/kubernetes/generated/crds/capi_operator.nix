@@ -315,13 +315,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -330,13 +329,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -518,13 +516,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -533,13 +530,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -721,13 +717,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -736,13 +731,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -851,8 +845,8 @@ in
                                                 most preferred is the one with the greatest sum of weights, i.e.
                                                 for each node that meets all of the scheduling requirements (resource
                                                 request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                                compute a sum by iterating through the elements of this field and adding
-                                                "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                                compute a sum by iterating through the elements of this field and subtracting
+                                                "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                                 node(s) with the highest sum are the most preferred.
                                               '';
                                             };
@@ -924,13 +918,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -939,13 +932,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -1087,7 +1079,10 @@ in
                                               options = {
                                                 name = mkOption {
                                                   type = types.str;
-                                                  description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                                  description = ''
+                                                    Name of the environment variable.
+                                                    May consist of any printable ASCII characters except '='.
+                                                  '';
                                                 };
                                                 value = mkOption {
                                                   type = (types.nullOr types.str);
@@ -1121,8 +1116,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -1158,6 +1155,52 @@ in
                                                           description = ''
                                                             Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                             spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                          '';
+                                                        };
+                                                        fileKeyRef = mkOption {
+                                                          type = (
+                                                            types.nullOr (mkTypedSubmodule {
+                                                              options = {
+                                                                key = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                                  '';
+                                                                };
+                                                                optional = mkOption {
+                                                                  type = (types.nullOr types.bool);
+                                                                  default = null;
+                                                                  description = ''
+                                                                    Specify whether the file or its key must be defined. If the file or key
+                                                                    does not exist, then the env var is not published.
+                                                                    If optional is set to true and the specified key does not exist,
+                                                                    the environment variable will not be set in the Pod's containers.
+
+                                                                    If optional is set to false and the specified key does not exist,
+                                                                    an error will be returned during Pod creation.
+                                                                  '';
+                                                                };
+                                                                path = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The path within the volume from which to select the file.
+                                                                    Must be relative and may not contain the '..' path or start with '..'.
+                                                                  '';
+                                                                };
+                                                                volumeName = mkOption {
+                                                                  type = types.str;
+                                                                  description = "The name of the volume mount containing the env file.";
+                                                                };
+                                                              };
+                                                              freeformType = types.attrs;
+                                                            })
+                                                          );
+                                                          default = null;
+                                                          description = ''
+                                                            FileKeyRef selects a key of the env file.
+                                                            Requires the EnvFiles feature gate to be enabled.
                                                           '';
                                                         };
                                                         resourceFieldRef = mkOption {
@@ -1201,8 +1244,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -1258,6 +1303,15 @@ in
                                                             inside a container.
                                                           '';
                                                         };
+                                                        request = mkOption {
+                                                          type = (types.nullOr types.str);
+                                                          default = null;
+                                                          description = ''
+                                                            Request is the name chosen for a request in the referenced claim.
+                                                            If empty, everything from the claim is made available, otherwise
+                                                            only the result of this request.
+                                                          '';
+                                                        };
                                                       };
                                                       freeformType = types.attrs;
                                                     })
@@ -1268,10 +1322,8 @@ in
                                                   Claims lists the names of resources, defined in spec.resourceClaims,
                                                   that are used by this container.
 
-
-                                                  This is an alpha field and requires enabling the
+                                                  This field depends on the
                                                   DynamicResourceAllocation feature gate.
-
 
                                                   This field is immutable. It can only be set for containers.
                                                 '';
@@ -1319,8 +1371,10 @@ in
                                         default = null;
                                         description = ''
                                           Name of the referent.
+                                          This field is effectively required, but due to backwards compatibility is
+                                          allowed to be empty. Instances of this type with an empty value here are
+                                          almost certainly wrong.
                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                         '';
                                       };
                                     };
@@ -1418,13 +1472,20 @@ in
                       type = (
                         types.nullOr (mkTypedSubmodule {
                           options = {
+                            additionalArgs = mkOption {
+                              type = (types.nullOr (types.attrsOf types.str));
+                              default = null;
+                              description = ''
+                                AdditionalArgs is a map of additional options that will be passed
+                                in as container args to the provider's controller manager.
+                              '';
+                            };
                             cacheNamespace = mkOption {
                               type = (types.nullOr types.str);
                               default = null;
                               description = ''
                                 CacheNamespace if specified restricts the manager's cache to watch objects in
                                 the desired namespace Defaults to all namespaces
-
 
                                 Note: If a namespace is specified, controllers can still Watch for a
                                 cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -1450,12 +1511,10 @@ in
                                         GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                                         allowed for that controller.
 
-
                                         When a controller is registered within this manager using the builder utilities,
                                         users have to specify the type the controller reconciles in the For(...) call.
                                         If the object's kind passed matches one of the keys in this map, the concurrency
                                         for that controller is set to the number specified.
-
 
                                         The key is expected to be consistent in form with GroupKind.String(),
                                         e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -1615,6 +1674,24 @@ in
                                         BindAddress is the TCP address that the controller should bind to
                                         for serving prometheus metrics.
                                         It can be set to "0" to disable the metrics serving.
+                                        NOTE: This field is deprecated, please use DiagnosticsAddress field
+                                      '';
+                                    };
+                                    diagnosticsAddress = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = ''
+                                        DiagnosticsAddress is the TCP address that the controller should bind to
+                                        for serving prometheus metric.
+                                        It can be set to "0" to disable the metrics serving.
+                                      '';
+                                    };
+                                    insecureDiagnostics = mkOption {
+                                      type = (types.nullOr types.bool);
+                                      default = null;
+                                      description = ''
+                                        InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                                        If false, or not set, the diagnostics address will expose pprof endpoints too.
                                       '';
                                     };
                                   };
@@ -1622,7 +1699,7 @@ in
                                 })
                               );
                               default = null;
-                              description = "Metrics contains thw controller metrics configuration";
+                              description = "Metrics contains the controller metrics configuration";
                             };
                             profilerAddress = mkOption {
                               type = (types.nullOr types.str);
@@ -2061,13 +2138,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -2076,13 +2152,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -2264,13 +2339,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -2279,13 +2353,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -2467,13 +2540,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -2482,13 +2554,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -2597,8 +2668,8 @@ in
                                       most preferred is the one with the greatest sum of weights, i.e.
                                       for each node that meets all of the scheduling requirements (resource
                                       request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                      compute a sum by iterating through the elements of this field and adding
-                                      "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                      compute a sum by iterating through the elements of this field and subtracting
+                                      "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                       node(s) with the highest sum are the most preferred.
                                     '';
                                   };
@@ -2670,13 +2741,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -2685,13 +2755,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -2833,7 +2902,10 @@ in
                                     options = {
                                       name = mkOption {
                                         type = types.str;
-                                        description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                        description = ''
+                                          Name of the environment variable.
+                                          May consist of any printable ASCII characters except '='.
+                                        '';
                                       };
                                       value = mkOption {
                                         type = (types.nullOr types.str);
@@ -2867,8 +2939,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -2904,6 +2978,52 @@ in
                                                 description = ''
                                                   Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                   spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                '';
+                                              };
+                                              fileKeyRef = mkOption {
+                                                type = (
+                                                  types.nullOr (mkTypedSubmodule {
+                                                    options = {
+                                                      key = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The key within the env file. An invalid key will prevent the pod from starting.
+                                                          The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                          During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                        '';
+                                                      };
+                                                      optional = mkOption {
+                                                        type = (types.nullOr types.bool);
+                                                        default = null;
+                                                        description = ''
+                                                          Specify whether the file or its key must be defined. If the file or key
+                                                          does not exist, then the env var is not published.
+                                                          If optional is set to true and the specified key does not exist,
+                                                          the environment variable will not be set in the Pod's containers.
+
+                                                          If optional is set to false and the specified key does not exist,
+                                                          an error will be returned during Pod creation.
+                                                        '';
+                                                      };
+                                                      path = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The path within the volume from which to select the file.
+                                                          Must be relative and may not contain the '..' path or start with '..'.
+                                                        '';
+                                                      };
+                                                      volumeName = mkOption {
+                                                        type = types.str;
+                                                        description = "The name of the volume mount containing the env file.";
+                                                      };
+                                                    };
+                                                    freeformType = types.attrs;
+                                                  })
+                                                );
+                                                default = null;
+                                                description = ''
+                                                  FileKeyRef selects a key of the env file.
+                                                  Requires the EnvFiles feature gate to be enabled.
                                                 '';
                                               };
                                               resourceFieldRef = mkOption {
@@ -2947,8 +3067,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -3004,6 +3126,15 @@ in
                                                   inside a container.
                                                 '';
                                               };
+                                              request = mkOption {
+                                                type = (types.nullOr types.str);
+                                                default = null;
+                                                description = ''
+                                                  Request is the name chosen for a request in the referenced claim.
+                                                  If empty, everything from the claim is made available, otherwise
+                                                  only the result of this request.
+                                                '';
+                                              };
                                             };
                                             freeformType = types.attrs;
                                           })
@@ -3014,10 +3145,8 @@ in
                                         Claims lists the names of resources, defined in spec.resourceClaims,
                                         that are used by this container.
 
-
-                                        This is an alpha field and requires enabling the
+                                        This field depends on the
                                         DynamicResourceAllocation feature gate.
-
 
                                         This field is immutable. It can only be set for containers.
                                       '';
@@ -3065,8 +3194,10 @@ in
                               default = null;
                               description = ''
                                 Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?
                               '';
                             };
                           };
@@ -3164,6 +3295,15 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  oci = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      OCI to be used for fetching the provider’s components and metadata from an OCI artifact.
+                      You must set `providerSpec.Version` field for operator to pick up desired version of the release from GitHub.
+                      If the providerSpec.Version is missing, latest provider version from clusterctl defaults is used.
+                    '';
+                  };
                   selector = mkOption {
                     type = (
                       types.nullOr (mkTypedSubmodule {
@@ -3251,13 +3391,20 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  additionalArgs = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = ''
+                      AdditionalArgs is a map of additional options that will be passed
+                      in as container args to the provider's controller manager.
+                    '';
+                  };
                   cacheNamespace = mkOption {
                     type = (types.nullOr types.str);
                     default = null;
                     description = ''
                       CacheNamespace if specified restricts the manager's cache to watch objects in
                       the desired namespace Defaults to all namespaces
-
 
                       Note: If a namespace is specified, controllers can still Watch for a
                       cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -3283,12 +3430,10 @@ in
                               GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                               allowed for that controller.
 
-
                               When a controller is registered within this manager using the builder utilities,
                               users have to specify the type the controller reconciles in the For(...) call.
                               If the object's kind passed matches one of the keys in this map, the concurrency
                               for that controller is set to the number specified.
-
 
                               The key is expected to be consistent in form with GroupKind.String(),
                               e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -3448,6 +3593,24 @@ in
                               BindAddress is the TCP address that the controller should bind to
                               for serving prometheus metrics.
                               It can be set to "0" to disable the metrics serving.
+                              NOTE: This field is deprecated, please use DiagnosticsAddress field
+                            '';
+                          };
+                          diagnosticsAddress = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              DiagnosticsAddress is the TCP address that the controller should bind to
+                              for serving prometheus metric.
+                              It can be set to "0" to disable the metrics serving.
+                            '';
+                          };
+                          insecureDiagnostics = mkOption {
+                            type = (types.nullOr types.bool);
+                            default = null;
+                            description = ''
+                              InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                              If false, or not set, the diagnostics address will expose pprof endpoints too.
                             '';
                           };
                         };
@@ -3455,7 +3618,7 @@ in
                       })
                     );
                     default = null;
-                    description = "Metrics contains thw controller metrics configuration";
+                    description = "Metrics contains the controller metrics configuration";
                   };
                   profilerAddress = mkOption {
                     type = (types.nullOr types.str);
@@ -3538,7 +3701,74 @@ in
               provider manifests. Patches are applied in the order they are specified.
               The `kind` field must match the target object, and
               if `apiVersion` is specified it will only be applied to matching objects.
-              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396
+              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396.
+              This will be deprecated in future releases in favor of `patches`.
+            '';
+          };
+          patches = mkOption {
+            type = (
+              types.nullOr (
+                types.listOf (mkTypedSubmodule {
+                  options = {
+                    patch = mkOption {
+                      type = (types.nullOr types.str);
+                      default = null;
+                      description = "Patch is content of the patch to be applied. It should be an inline yaml blob-string.";
+                    };
+                    target = mkOption {
+                      type = (
+                        types.nullOr (mkTypedSubmodule {
+                          options = {
+                            group = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Group is the API Group of the target object.";
+                            };
+                            kind = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Kind is the kind of the target object.";
+                            };
+                            labelSelector = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = ''
+                                LabelSelector is a string that follows the label selection expression
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#api
+                              '';
+                            };
+                            name = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Name is the name of the target object.";
+                            };
+                            namespace = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Namespace is the namespace of the target object.";
+                            };
+                            version = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Version is the API version of the target object.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      );
+                      default = null;
+                      description = "Target defines the target object to which the patch should be applied.";
+                    };
+                  };
+                  freeformType = types.attrs;
+                })
+              )
+            );
+            default = null;
+            description = ''
+              Patches are applied to the rendered provider manifests to customize the
+              provider manifests. Patches support both strategic merge patch and RFC6902 JSON patches.
+              Both `patches` and `manifestPatches` cannot be set at the same time.
             '';
           };
           version = mkOption {
@@ -3862,13 +4092,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -3877,13 +4106,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -4065,13 +4293,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -4080,13 +4307,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -4268,13 +4494,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -4283,13 +4508,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -4398,8 +4622,8 @@ in
                                                 most preferred is the one with the greatest sum of weights, i.e.
                                                 for each node that meets all of the scheduling requirements (resource
                                                 request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                                compute a sum by iterating through the elements of this field and adding
-                                                "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                                compute a sum by iterating through the elements of this field and subtracting
+                                                "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                                 node(s) with the highest sum are the most preferred.
                                               '';
                                             };
@@ -4471,13 +4695,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -4486,13 +4709,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -4634,7 +4856,10 @@ in
                                               options = {
                                                 name = mkOption {
                                                   type = types.str;
-                                                  description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                                  description = ''
+                                                    Name of the environment variable.
+                                                    May consist of any printable ASCII characters except '='.
+                                                  '';
                                                 };
                                                 value = mkOption {
                                                   type = (types.nullOr types.str);
@@ -4668,8 +4893,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -4705,6 +4932,52 @@ in
                                                           description = ''
                                                             Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                             spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                          '';
+                                                        };
+                                                        fileKeyRef = mkOption {
+                                                          type = (
+                                                            types.nullOr (mkTypedSubmodule {
+                                                              options = {
+                                                                key = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                                  '';
+                                                                };
+                                                                optional = mkOption {
+                                                                  type = (types.nullOr types.bool);
+                                                                  default = null;
+                                                                  description = ''
+                                                                    Specify whether the file or its key must be defined. If the file or key
+                                                                    does not exist, then the env var is not published.
+                                                                    If optional is set to true and the specified key does not exist,
+                                                                    the environment variable will not be set in the Pod's containers.
+
+                                                                    If optional is set to false and the specified key does not exist,
+                                                                    an error will be returned during Pod creation.
+                                                                  '';
+                                                                };
+                                                                path = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The path within the volume from which to select the file.
+                                                                    Must be relative and may not contain the '..' path or start with '..'.
+                                                                  '';
+                                                                };
+                                                                volumeName = mkOption {
+                                                                  type = types.str;
+                                                                  description = "The name of the volume mount containing the env file.";
+                                                                };
+                                                              };
+                                                              freeformType = types.attrs;
+                                                            })
+                                                          );
+                                                          default = null;
+                                                          description = ''
+                                                            FileKeyRef selects a key of the env file.
+                                                            Requires the EnvFiles feature gate to be enabled.
                                                           '';
                                                         };
                                                         resourceFieldRef = mkOption {
@@ -4748,8 +5021,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -4805,6 +5080,15 @@ in
                                                             inside a container.
                                                           '';
                                                         };
+                                                        request = mkOption {
+                                                          type = (types.nullOr types.str);
+                                                          default = null;
+                                                          description = ''
+                                                            Request is the name chosen for a request in the referenced claim.
+                                                            If empty, everything from the claim is made available, otherwise
+                                                            only the result of this request.
+                                                          '';
+                                                        };
                                                       };
                                                       freeformType = types.attrs;
                                                     })
@@ -4815,10 +5099,8 @@ in
                                                   Claims lists the names of resources, defined in spec.resourceClaims,
                                                   that are used by this container.
 
-
-                                                  This is an alpha field and requires enabling the
+                                                  This field depends on the
                                                   DynamicResourceAllocation feature gate.
-
 
                                                   This field is immutable. It can only be set for containers.
                                                 '';
@@ -4866,8 +5148,10 @@ in
                                         default = null;
                                         description = ''
                                           Name of the referent.
+                                          This field is effectively required, but due to backwards compatibility is
+                                          allowed to be empty. Instances of this type with an empty value here are
+                                          almost certainly wrong.
                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                         '';
                                       };
                                     };
@@ -4965,13 +5249,20 @@ in
                       type = (
                         types.nullOr (mkTypedSubmodule {
                           options = {
+                            additionalArgs = mkOption {
+                              type = (types.nullOr (types.attrsOf types.str));
+                              default = null;
+                              description = ''
+                                AdditionalArgs is a map of additional options that will be passed
+                                in as container args to the provider's controller manager.
+                              '';
+                            };
                             cacheNamespace = mkOption {
                               type = (types.nullOr types.str);
                               default = null;
                               description = ''
                                 CacheNamespace if specified restricts the manager's cache to watch objects in
                                 the desired namespace Defaults to all namespaces
-
 
                                 Note: If a namespace is specified, controllers can still Watch for a
                                 cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -4997,12 +5288,10 @@ in
                                         GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                                         allowed for that controller.
 
-
                                         When a controller is registered within this manager using the builder utilities,
                                         users have to specify the type the controller reconciles in the For(...) call.
                                         If the object's kind passed matches one of the keys in this map, the concurrency
                                         for that controller is set to the number specified.
-
 
                                         The key is expected to be consistent in form with GroupKind.String(),
                                         e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -5162,6 +5451,24 @@ in
                                         BindAddress is the TCP address that the controller should bind to
                                         for serving prometheus metrics.
                                         It can be set to "0" to disable the metrics serving.
+                                        NOTE: This field is deprecated, please use DiagnosticsAddress field
+                                      '';
+                                    };
+                                    diagnosticsAddress = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = ''
+                                        DiagnosticsAddress is the TCP address that the controller should bind to
+                                        for serving prometheus metric.
+                                        It can be set to "0" to disable the metrics serving.
+                                      '';
+                                    };
+                                    insecureDiagnostics = mkOption {
+                                      type = (types.nullOr types.bool);
+                                      default = null;
+                                      description = ''
+                                        InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                                        If false, or not set, the diagnostics address will expose pprof endpoints too.
                                       '';
                                     };
                                   };
@@ -5169,7 +5476,7 @@ in
                                 })
                               );
                               default = null;
-                              description = "Metrics contains thw controller metrics configuration";
+                              description = "Metrics contains the controller metrics configuration";
                             };
                             profilerAddress = mkOption {
                               type = (types.nullOr types.str);
@@ -5608,13 +5915,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -5623,13 +5929,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -5811,13 +6116,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -5826,13 +6130,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -6014,13 +6317,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -6029,13 +6331,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -6144,8 +6445,8 @@ in
                                       most preferred is the one with the greatest sum of weights, i.e.
                                       for each node that meets all of the scheduling requirements (resource
                                       request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                      compute a sum by iterating through the elements of this field and adding
-                                      "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                      compute a sum by iterating through the elements of this field and subtracting
+                                      "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                       node(s) with the highest sum are the most preferred.
                                     '';
                                   };
@@ -6217,13 +6518,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -6232,13 +6532,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -6380,7 +6679,10 @@ in
                                     options = {
                                       name = mkOption {
                                         type = types.str;
-                                        description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                        description = ''
+                                          Name of the environment variable.
+                                          May consist of any printable ASCII characters except '='.
+                                        '';
                                       };
                                       value = mkOption {
                                         type = (types.nullOr types.str);
@@ -6414,8 +6716,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -6451,6 +6755,52 @@ in
                                                 description = ''
                                                   Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                   spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                '';
+                                              };
+                                              fileKeyRef = mkOption {
+                                                type = (
+                                                  types.nullOr (mkTypedSubmodule {
+                                                    options = {
+                                                      key = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The key within the env file. An invalid key will prevent the pod from starting.
+                                                          The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                          During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                        '';
+                                                      };
+                                                      optional = mkOption {
+                                                        type = (types.nullOr types.bool);
+                                                        default = null;
+                                                        description = ''
+                                                          Specify whether the file or its key must be defined. If the file or key
+                                                          does not exist, then the env var is not published.
+                                                          If optional is set to true and the specified key does not exist,
+                                                          the environment variable will not be set in the Pod's containers.
+
+                                                          If optional is set to false and the specified key does not exist,
+                                                          an error will be returned during Pod creation.
+                                                        '';
+                                                      };
+                                                      path = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The path within the volume from which to select the file.
+                                                          Must be relative and may not contain the '..' path or start with '..'.
+                                                        '';
+                                                      };
+                                                      volumeName = mkOption {
+                                                        type = types.str;
+                                                        description = "The name of the volume mount containing the env file.";
+                                                      };
+                                                    };
+                                                    freeformType = types.attrs;
+                                                  })
+                                                );
+                                                default = null;
+                                                description = ''
+                                                  FileKeyRef selects a key of the env file.
+                                                  Requires the EnvFiles feature gate to be enabled.
                                                 '';
                                               };
                                               resourceFieldRef = mkOption {
@@ -6494,8 +6844,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -6551,6 +6903,15 @@ in
                                                   inside a container.
                                                 '';
                                               };
+                                              request = mkOption {
+                                                type = (types.nullOr types.str);
+                                                default = null;
+                                                description = ''
+                                                  Request is the name chosen for a request in the referenced claim.
+                                                  If empty, everything from the claim is made available, otherwise
+                                                  only the result of this request.
+                                                '';
+                                              };
                                             };
                                             freeformType = types.attrs;
                                           })
@@ -6561,10 +6922,8 @@ in
                                         Claims lists the names of resources, defined in spec.resourceClaims,
                                         that are used by this container.
 
-
-                                        This is an alpha field and requires enabling the
+                                        This field depends on the
                                         DynamicResourceAllocation feature gate.
-
 
                                         This field is immutable. It can only be set for containers.
                                       '';
@@ -6612,8 +6971,10 @@ in
                               default = null;
                               description = ''
                                 Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?
                               '';
                             };
                           };
@@ -6711,6 +7072,15 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  oci = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      OCI to be used for fetching the provider’s components and metadata from an OCI artifact.
+                      You must set `providerSpec.Version` field for operator to pick up desired version of the release from GitHub.
+                      If the providerSpec.Version is missing, latest provider version from clusterctl defaults is used.
+                    '';
+                  };
                   selector = mkOption {
                     type = (
                       types.nullOr (mkTypedSubmodule {
@@ -6798,13 +7168,20 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  additionalArgs = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = ''
+                      AdditionalArgs is a map of additional options that will be passed
+                      in as container args to the provider's controller manager.
+                    '';
+                  };
                   cacheNamespace = mkOption {
                     type = (types.nullOr types.str);
                     default = null;
                     description = ''
                       CacheNamespace if specified restricts the manager's cache to watch objects in
                       the desired namespace Defaults to all namespaces
-
 
                       Note: If a namespace is specified, controllers can still Watch for a
                       cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -6830,12 +7207,10 @@ in
                               GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                               allowed for that controller.
 
-
                               When a controller is registered within this manager using the builder utilities,
                               users have to specify the type the controller reconciles in the For(...) call.
                               If the object's kind passed matches one of the keys in this map, the concurrency
                               for that controller is set to the number specified.
-
 
                               The key is expected to be consistent in form with GroupKind.String(),
                               e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -6995,6 +7370,24 @@ in
                               BindAddress is the TCP address that the controller should bind to
                               for serving prometheus metrics.
                               It can be set to "0" to disable the metrics serving.
+                              NOTE: This field is deprecated, please use DiagnosticsAddress field
+                            '';
+                          };
+                          diagnosticsAddress = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              DiagnosticsAddress is the TCP address that the controller should bind to
+                              for serving prometheus metric.
+                              It can be set to "0" to disable the metrics serving.
+                            '';
+                          };
+                          insecureDiagnostics = mkOption {
+                            type = (types.nullOr types.bool);
+                            default = null;
+                            description = ''
+                              InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                              If false, or not set, the diagnostics address will expose pprof endpoints too.
                             '';
                           };
                         };
@@ -7002,7 +7395,7 @@ in
                       })
                     );
                     default = null;
-                    description = "Metrics contains thw controller metrics configuration";
+                    description = "Metrics contains the controller metrics configuration";
                   };
                   profilerAddress = mkOption {
                     type = (types.nullOr types.str);
@@ -7085,7 +7478,74 @@ in
               provider manifests. Patches are applied in the order they are specified.
               The `kind` field must match the target object, and
               if `apiVersion` is specified it will only be applied to matching objects.
-              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396
+              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396.
+              This will be deprecated in future releases in favor of `patches`.
+            '';
+          };
+          patches = mkOption {
+            type = (
+              types.nullOr (
+                types.listOf (mkTypedSubmodule {
+                  options = {
+                    patch = mkOption {
+                      type = (types.nullOr types.str);
+                      default = null;
+                      description = "Patch is content of the patch to be applied. It should be an inline yaml blob-string.";
+                    };
+                    target = mkOption {
+                      type = (
+                        types.nullOr (mkTypedSubmodule {
+                          options = {
+                            group = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Group is the API Group of the target object.";
+                            };
+                            kind = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Kind is the kind of the target object.";
+                            };
+                            labelSelector = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = ''
+                                LabelSelector is a string that follows the label selection expression
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#api
+                              '';
+                            };
+                            name = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Name is the name of the target object.";
+                            };
+                            namespace = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Namespace is the namespace of the target object.";
+                            };
+                            version = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Version is the API version of the target object.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      );
+                      default = null;
+                      description = "Target defines the target object to which the patch should be applied.";
+                    };
+                  };
+                  freeformType = types.attrs;
+                })
+              )
+            );
+            default = null;
+            description = ''
+              Patches are applied to the rendered provider manifests to customize the
+              provider manifests. Patches support both strategic merge patch and RFC6902 JSON patches.
+              Both `patches` and `manifestPatches` cannot be set at the same time.
             '';
           };
           version = mkOption {
@@ -7409,13 +7869,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -7424,13 +7883,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -7612,13 +8070,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -7627,13 +8084,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -7815,13 +8271,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -7830,13 +8285,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -7945,8 +8399,8 @@ in
                                                 most preferred is the one with the greatest sum of weights, i.e.
                                                 for each node that meets all of the scheduling requirements (resource
                                                 request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                                compute a sum by iterating through the elements of this field and adding
-                                                "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                                compute a sum by iterating through the elements of this field and subtracting
+                                                "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                                 node(s) with the highest sum are the most preferred.
                                               '';
                                             };
@@ -8018,13 +8472,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -8033,13 +8486,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -8181,7 +8633,10 @@ in
                                               options = {
                                                 name = mkOption {
                                                   type = types.str;
-                                                  description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                                  description = ''
+                                                    Name of the environment variable.
+                                                    May consist of any printable ASCII characters except '='.
+                                                  '';
                                                 };
                                                 value = mkOption {
                                                   type = (types.nullOr types.str);
@@ -8215,8 +8670,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -8252,6 +8709,52 @@ in
                                                           description = ''
                                                             Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                             spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                          '';
+                                                        };
+                                                        fileKeyRef = mkOption {
+                                                          type = (
+                                                            types.nullOr (mkTypedSubmodule {
+                                                              options = {
+                                                                key = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                                  '';
+                                                                };
+                                                                optional = mkOption {
+                                                                  type = (types.nullOr types.bool);
+                                                                  default = null;
+                                                                  description = ''
+                                                                    Specify whether the file or its key must be defined. If the file or key
+                                                                    does not exist, then the env var is not published.
+                                                                    If optional is set to true and the specified key does not exist,
+                                                                    the environment variable will not be set in the Pod's containers.
+
+                                                                    If optional is set to false and the specified key does not exist,
+                                                                    an error will be returned during Pod creation.
+                                                                  '';
+                                                                };
+                                                                path = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The path within the volume from which to select the file.
+                                                                    Must be relative and may not contain the '..' path or start with '..'.
+                                                                  '';
+                                                                };
+                                                                volumeName = mkOption {
+                                                                  type = types.str;
+                                                                  description = "The name of the volume mount containing the env file.";
+                                                                };
+                                                              };
+                                                              freeformType = types.attrs;
+                                                            })
+                                                          );
+                                                          default = null;
+                                                          description = ''
+                                                            FileKeyRef selects a key of the env file.
+                                                            Requires the EnvFiles feature gate to be enabled.
                                                           '';
                                                         };
                                                         resourceFieldRef = mkOption {
@@ -8295,8 +8798,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -8352,6 +8857,15 @@ in
                                                             inside a container.
                                                           '';
                                                         };
+                                                        request = mkOption {
+                                                          type = (types.nullOr types.str);
+                                                          default = null;
+                                                          description = ''
+                                                            Request is the name chosen for a request in the referenced claim.
+                                                            If empty, everything from the claim is made available, otherwise
+                                                            only the result of this request.
+                                                          '';
+                                                        };
                                                       };
                                                       freeformType = types.attrs;
                                                     })
@@ -8362,10 +8876,8 @@ in
                                                   Claims lists the names of resources, defined in spec.resourceClaims,
                                                   that are used by this container.
 
-
-                                                  This is an alpha field and requires enabling the
+                                                  This field depends on the
                                                   DynamicResourceAllocation feature gate.
-
 
                                                   This field is immutable. It can only be set for containers.
                                                 '';
@@ -8413,8 +8925,10 @@ in
                                         default = null;
                                         description = ''
                                           Name of the referent.
+                                          This field is effectively required, but due to backwards compatibility is
+                                          allowed to be empty. Instances of this type with an empty value here are
+                                          almost certainly wrong.
                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                         '';
                                       };
                                     };
@@ -8512,13 +9026,20 @@ in
                       type = (
                         types.nullOr (mkTypedSubmodule {
                           options = {
+                            additionalArgs = mkOption {
+                              type = (types.nullOr (types.attrsOf types.str));
+                              default = null;
+                              description = ''
+                                AdditionalArgs is a map of additional options that will be passed
+                                in as container args to the provider's controller manager.
+                              '';
+                            };
                             cacheNamespace = mkOption {
                               type = (types.nullOr types.str);
                               default = null;
                               description = ''
                                 CacheNamespace if specified restricts the manager's cache to watch objects in
                                 the desired namespace Defaults to all namespaces
-
 
                                 Note: If a namespace is specified, controllers can still Watch for a
                                 cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -8544,12 +9065,10 @@ in
                                         GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                                         allowed for that controller.
 
-
                                         When a controller is registered within this manager using the builder utilities,
                                         users have to specify the type the controller reconciles in the For(...) call.
                                         If the object's kind passed matches one of the keys in this map, the concurrency
                                         for that controller is set to the number specified.
-
 
                                         The key is expected to be consistent in form with GroupKind.String(),
                                         e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -8709,6 +9228,24 @@ in
                                         BindAddress is the TCP address that the controller should bind to
                                         for serving prometheus metrics.
                                         It can be set to "0" to disable the metrics serving.
+                                        NOTE: This field is deprecated, please use DiagnosticsAddress field
+                                      '';
+                                    };
+                                    diagnosticsAddress = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = ''
+                                        DiagnosticsAddress is the TCP address that the controller should bind to
+                                        for serving prometheus metric.
+                                        It can be set to "0" to disable the metrics serving.
+                                      '';
+                                    };
+                                    insecureDiagnostics = mkOption {
+                                      type = (types.nullOr types.bool);
+                                      default = null;
+                                      description = ''
+                                        InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                                        If false, or not set, the diagnostics address will expose pprof endpoints too.
                                       '';
                                     };
                                   };
@@ -8716,7 +9253,7 @@ in
                                 })
                               );
                               default = null;
-                              description = "Metrics contains thw controller metrics configuration";
+                              description = "Metrics contains the controller metrics configuration";
                             };
                             profilerAddress = mkOption {
                               type = (types.nullOr types.str);
@@ -9155,13 +9692,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -9170,13 +9706,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -9358,13 +9893,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -9373,13 +9907,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -9561,13 +10094,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -9576,13 +10108,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -9691,8 +10222,8 @@ in
                                       most preferred is the one with the greatest sum of weights, i.e.
                                       for each node that meets all of the scheduling requirements (resource
                                       request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                      compute a sum by iterating through the elements of this field and adding
-                                      "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                      compute a sum by iterating through the elements of this field and subtracting
+                                      "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                       node(s) with the highest sum are the most preferred.
                                     '';
                                   };
@@ -9764,13 +10295,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -9779,13 +10309,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -9927,7 +10456,10 @@ in
                                     options = {
                                       name = mkOption {
                                         type = types.str;
-                                        description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                        description = ''
+                                          Name of the environment variable.
+                                          May consist of any printable ASCII characters except '='.
+                                        '';
                                       };
                                       value = mkOption {
                                         type = (types.nullOr types.str);
@@ -9961,8 +10493,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -9998,6 +10532,52 @@ in
                                                 description = ''
                                                   Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                   spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                '';
+                                              };
+                                              fileKeyRef = mkOption {
+                                                type = (
+                                                  types.nullOr (mkTypedSubmodule {
+                                                    options = {
+                                                      key = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The key within the env file. An invalid key will prevent the pod from starting.
+                                                          The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                          During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                        '';
+                                                      };
+                                                      optional = mkOption {
+                                                        type = (types.nullOr types.bool);
+                                                        default = null;
+                                                        description = ''
+                                                          Specify whether the file or its key must be defined. If the file or key
+                                                          does not exist, then the env var is not published.
+                                                          If optional is set to true and the specified key does not exist,
+                                                          the environment variable will not be set in the Pod's containers.
+
+                                                          If optional is set to false and the specified key does not exist,
+                                                          an error will be returned during Pod creation.
+                                                        '';
+                                                      };
+                                                      path = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The path within the volume from which to select the file.
+                                                          Must be relative and may not contain the '..' path or start with '..'.
+                                                        '';
+                                                      };
+                                                      volumeName = mkOption {
+                                                        type = types.str;
+                                                        description = "The name of the volume mount containing the env file.";
+                                                      };
+                                                    };
+                                                    freeformType = types.attrs;
+                                                  })
+                                                );
+                                                default = null;
+                                                description = ''
+                                                  FileKeyRef selects a key of the env file.
+                                                  Requires the EnvFiles feature gate to be enabled.
                                                 '';
                                               };
                                               resourceFieldRef = mkOption {
@@ -10041,8 +10621,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -10098,6 +10680,15 @@ in
                                                   inside a container.
                                                 '';
                                               };
+                                              request = mkOption {
+                                                type = (types.nullOr types.str);
+                                                default = null;
+                                                description = ''
+                                                  Request is the name chosen for a request in the referenced claim.
+                                                  If empty, everything from the claim is made available, otherwise
+                                                  only the result of this request.
+                                                '';
+                                              };
                                             };
                                             freeformType = types.attrs;
                                           })
@@ -10108,10 +10699,8 @@ in
                                         Claims lists the names of resources, defined in spec.resourceClaims,
                                         that are used by this container.
 
-
-                                        This is an alpha field and requires enabling the
+                                        This field depends on the
                                         DynamicResourceAllocation feature gate.
-
 
                                         This field is immutable. It can only be set for containers.
                                       '';
@@ -10159,8 +10748,10 @@ in
                               default = null;
                               description = ''
                                 Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?
                               '';
                             };
                           };
@@ -10258,6 +10849,15 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  oci = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      OCI to be used for fetching the provider’s components and metadata from an OCI artifact.
+                      You must set `providerSpec.Version` field for operator to pick up desired version of the release from GitHub.
+                      If the providerSpec.Version is missing, latest provider version from clusterctl defaults is used.
+                    '';
+                  };
                   selector = mkOption {
                     type = (
                       types.nullOr (mkTypedSubmodule {
@@ -10345,13 +10945,20 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  additionalArgs = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = ''
+                      AdditionalArgs is a map of additional options that will be passed
+                      in as container args to the provider's controller manager.
+                    '';
+                  };
                   cacheNamespace = mkOption {
                     type = (types.nullOr types.str);
                     default = null;
                     description = ''
                       CacheNamespace if specified restricts the manager's cache to watch objects in
                       the desired namespace Defaults to all namespaces
-
 
                       Note: If a namespace is specified, controllers can still Watch for a
                       cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -10377,12 +10984,10 @@ in
                               GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                               allowed for that controller.
 
-
                               When a controller is registered within this manager using the builder utilities,
                               users have to specify the type the controller reconciles in the For(...) call.
                               If the object's kind passed matches one of the keys in this map, the concurrency
                               for that controller is set to the number specified.
-
 
                               The key is expected to be consistent in form with GroupKind.String(),
                               e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -10542,6 +11147,24 @@ in
                               BindAddress is the TCP address that the controller should bind to
                               for serving prometheus metrics.
                               It can be set to "0" to disable the metrics serving.
+                              NOTE: This field is deprecated, please use DiagnosticsAddress field
+                            '';
+                          };
+                          diagnosticsAddress = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              DiagnosticsAddress is the TCP address that the controller should bind to
+                              for serving prometheus metric.
+                              It can be set to "0" to disable the metrics serving.
+                            '';
+                          };
+                          insecureDiagnostics = mkOption {
+                            type = (types.nullOr types.bool);
+                            default = null;
+                            description = ''
+                              InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                              If false, or not set, the diagnostics address will expose pprof endpoints too.
                             '';
                           };
                         };
@@ -10549,7 +11172,7 @@ in
                       })
                     );
                     default = null;
-                    description = "Metrics contains thw controller metrics configuration";
+                    description = "Metrics contains the controller metrics configuration";
                   };
                   profilerAddress = mkOption {
                     type = (types.nullOr types.str);
@@ -10632,7 +11255,74 @@ in
               provider manifests. Patches are applied in the order they are specified.
               The `kind` field must match the target object, and
               if `apiVersion` is specified it will only be applied to matching objects.
-              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396
+              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396.
+              This will be deprecated in future releases in favor of `patches`.
+            '';
+          };
+          patches = mkOption {
+            type = (
+              types.nullOr (
+                types.listOf (mkTypedSubmodule {
+                  options = {
+                    patch = mkOption {
+                      type = (types.nullOr types.str);
+                      default = null;
+                      description = "Patch is content of the patch to be applied. It should be an inline yaml blob-string.";
+                    };
+                    target = mkOption {
+                      type = (
+                        types.nullOr (mkTypedSubmodule {
+                          options = {
+                            group = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Group is the API Group of the target object.";
+                            };
+                            kind = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Kind is the kind of the target object.";
+                            };
+                            labelSelector = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = ''
+                                LabelSelector is a string that follows the label selection expression
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#api
+                              '';
+                            };
+                            name = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Name is the name of the target object.";
+                            };
+                            namespace = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Namespace is the namespace of the target object.";
+                            };
+                            version = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Version is the API version of the target object.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      );
+                      default = null;
+                      description = "Target defines the target object to which the patch should be applied.";
+                    };
+                  };
+                  freeformType = types.attrs;
+                })
+              )
+            );
+            default = null;
+            description = ''
+              Patches are applied to the rendered provider manifests to customize the
+              provider manifests. Patches support both strategic merge patch and RFC6902 JSON patches.
+              Both `patches` and `manifestPatches` cannot be set at the same time.
             '';
           };
           version = mkOption {
@@ -10956,13 +11646,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -10971,13 +11660,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -11159,13 +11847,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -11174,13 +11861,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -11362,13 +12048,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -11377,13 +12062,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -11492,8 +12176,8 @@ in
                                                 most preferred is the one with the greatest sum of weights, i.e.
                                                 for each node that meets all of the scheduling requirements (resource
                                                 request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                                compute a sum by iterating through the elements of this field and adding
-                                                "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                                compute a sum by iterating through the elements of this field and subtracting
+                                                "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                                 node(s) with the highest sum are the most preferred.
                                               '';
                                             };
@@ -11565,13 +12249,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -11580,13 +12263,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -11728,7 +12410,10 @@ in
                                               options = {
                                                 name = mkOption {
                                                   type = types.str;
-                                                  description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                                  description = ''
+                                                    Name of the environment variable.
+                                                    May consist of any printable ASCII characters except '='.
+                                                  '';
                                                 };
                                                 value = mkOption {
                                                   type = (types.nullOr types.str);
@@ -11762,8 +12447,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -11799,6 +12486,52 @@ in
                                                           description = ''
                                                             Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                             spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                          '';
+                                                        };
+                                                        fileKeyRef = mkOption {
+                                                          type = (
+                                                            types.nullOr (mkTypedSubmodule {
+                                                              options = {
+                                                                key = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                                  '';
+                                                                };
+                                                                optional = mkOption {
+                                                                  type = (types.nullOr types.bool);
+                                                                  default = null;
+                                                                  description = ''
+                                                                    Specify whether the file or its key must be defined. If the file or key
+                                                                    does not exist, then the env var is not published.
+                                                                    If optional is set to true and the specified key does not exist,
+                                                                    the environment variable will not be set in the Pod's containers.
+
+                                                                    If optional is set to false and the specified key does not exist,
+                                                                    an error will be returned during Pod creation.
+                                                                  '';
+                                                                };
+                                                                path = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The path within the volume from which to select the file.
+                                                                    Must be relative and may not contain the '..' path or start with '..'.
+                                                                  '';
+                                                                };
+                                                                volumeName = mkOption {
+                                                                  type = types.str;
+                                                                  description = "The name of the volume mount containing the env file.";
+                                                                };
+                                                              };
+                                                              freeformType = types.attrs;
+                                                            })
+                                                          );
+                                                          default = null;
+                                                          description = ''
+                                                            FileKeyRef selects a key of the env file.
+                                                            Requires the EnvFiles feature gate to be enabled.
                                                           '';
                                                         };
                                                         resourceFieldRef = mkOption {
@@ -11842,8 +12575,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -11899,6 +12634,15 @@ in
                                                             inside a container.
                                                           '';
                                                         };
+                                                        request = mkOption {
+                                                          type = (types.nullOr types.str);
+                                                          default = null;
+                                                          description = ''
+                                                            Request is the name chosen for a request in the referenced claim.
+                                                            If empty, everything from the claim is made available, otherwise
+                                                            only the result of this request.
+                                                          '';
+                                                        };
                                                       };
                                                       freeformType = types.attrs;
                                                     })
@@ -11909,10 +12653,8 @@ in
                                                   Claims lists the names of resources, defined in spec.resourceClaims,
                                                   that are used by this container.
 
-
-                                                  This is an alpha field and requires enabling the
+                                                  This field depends on the
                                                   DynamicResourceAllocation feature gate.
-
 
                                                   This field is immutable. It can only be set for containers.
                                                 '';
@@ -11960,8 +12702,10 @@ in
                                         default = null;
                                         description = ''
                                           Name of the referent.
+                                          This field is effectively required, but due to backwards compatibility is
+                                          allowed to be empty. Instances of this type with an empty value here are
+                                          almost certainly wrong.
                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                         '';
                                       };
                                     };
@@ -12059,13 +12803,20 @@ in
                       type = (
                         types.nullOr (mkTypedSubmodule {
                           options = {
+                            additionalArgs = mkOption {
+                              type = (types.nullOr (types.attrsOf types.str));
+                              default = null;
+                              description = ''
+                                AdditionalArgs is a map of additional options that will be passed
+                                in as container args to the provider's controller manager.
+                              '';
+                            };
                             cacheNamespace = mkOption {
                               type = (types.nullOr types.str);
                               default = null;
                               description = ''
                                 CacheNamespace if specified restricts the manager's cache to watch objects in
                                 the desired namespace Defaults to all namespaces
-
 
                                 Note: If a namespace is specified, controllers can still Watch for a
                                 cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -12091,12 +12842,10 @@ in
                                         GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                                         allowed for that controller.
 
-
                                         When a controller is registered within this manager using the builder utilities,
                                         users have to specify the type the controller reconciles in the For(...) call.
                                         If the object's kind passed matches one of the keys in this map, the concurrency
                                         for that controller is set to the number specified.
-
 
                                         The key is expected to be consistent in form with GroupKind.String(),
                                         e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -12256,6 +13005,24 @@ in
                                         BindAddress is the TCP address that the controller should bind to
                                         for serving prometheus metrics.
                                         It can be set to "0" to disable the metrics serving.
+                                        NOTE: This field is deprecated, please use DiagnosticsAddress field
+                                      '';
+                                    };
+                                    diagnosticsAddress = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = ''
+                                        DiagnosticsAddress is the TCP address that the controller should bind to
+                                        for serving prometheus metric.
+                                        It can be set to "0" to disable the metrics serving.
+                                      '';
+                                    };
+                                    insecureDiagnostics = mkOption {
+                                      type = (types.nullOr types.bool);
+                                      default = null;
+                                      description = ''
+                                        InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                                        If false, or not set, the diagnostics address will expose pprof endpoints too.
                                       '';
                                     };
                                   };
@@ -12263,7 +13030,7 @@ in
                                 })
                               );
                               default = null;
-                              description = "Metrics contains thw controller metrics configuration";
+                              description = "Metrics contains the controller metrics configuration";
                             };
                             profilerAddress = mkOption {
                               type = (types.nullOr types.str);
@@ -12702,13 +13469,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -12717,13 +13483,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -12905,13 +13670,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -12920,13 +13684,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -13108,13 +13871,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -13123,13 +13885,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -13238,8 +13999,8 @@ in
                                       most preferred is the one with the greatest sum of weights, i.e.
                                       for each node that meets all of the scheduling requirements (resource
                                       request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                      compute a sum by iterating through the elements of this field and adding
-                                      "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                      compute a sum by iterating through the elements of this field and subtracting
+                                      "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                       node(s) with the highest sum are the most preferred.
                                     '';
                                   };
@@ -13311,13 +14072,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -13326,13 +14086,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -13474,7 +14233,10 @@ in
                                     options = {
                                       name = mkOption {
                                         type = types.str;
-                                        description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                        description = ''
+                                          Name of the environment variable.
+                                          May consist of any printable ASCII characters except '='.
+                                        '';
                                       };
                                       value = mkOption {
                                         type = (types.nullOr types.str);
@@ -13508,8 +14270,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -13545,6 +14309,52 @@ in
                                                 description = ''
                                                   Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                   spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                '';
+                                              };
+                                              fileKeyRef = mkOption {
+                                                type = (
+                                                  types.nullOr (mkTypedSubmodule {
+                                                    options = {
+                                                      key = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The key within the env file. An invalid key will prevent the pod from starting.
+                                                          The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                          During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                        '';
+                                                      };
+                                                      optional = mkOption {
+                                                        type = (types.nullOr types.bool);
+                                                        default = null;
+                                                        description = ''
+                                                          Specify whether the file or its key must be defined. If the file or key
+                                                          does not exist, then the env var is not published.
+                                                          If optional is set to true and the specified key does not exist,
+                                                          the environment variable will not be set in the Pod's containers.
+
+                                                          If optional is set to false and the specified key does not exist,
+                                                          an error will be returned during Pod creation.
+                                                        '';
+                                                      };
+                                                      path = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The path within the volume from which to select the file.
+                                                          Must be relative and may not contain the '..' path or start with '..'.
+                                                        '';
+                                                      };
+                                                      volumeName = mkOption {
+                                                        type = types.str;
+                                                        description = "The name of the volume mount containing the env file.";
+                                                      };
+                                                    };
+                                                    freeformType = types.attrs;
+                                                  })
+                                                );
+                                                default = null;
+                                                description = ''
+                                                  FileKeyRef selects a key of the env file.
+                                                  Requires the EnvFiles feature gate to be enabled.
                                                 '';
                                               };
                                               resourceFieldRef = mkOption {
@@ -13588,8 +14398,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -13645,6 +14457,15 @@ in
                                                   inside a container.
                                                 '';
                                               };
+                                              request = mkOption {
+                                                type = (types.nullOr types.str);
+                                                default = null;
+                                                description = ''
+                                                  Request is the name chosen for a request in the referenced claim.
+                                                  If empty, everything from the claim is made available, otherwise
+                                                  only the result of this request.
+                                                '';
+                                              };
                                             };
                                             freeformType = types.attrs;
                                           })
@@ -13655,10 +14476,8 @@ in
                                         Claims lists the names of resources, defined in spec.resourceClaims,
                                         that are used by this container.
 
-
-                                        This is an alpha field and requires enabling the
+                                        This field depends on the
                                         DynamicResourceAllocation feature gate.
-
 
                                         This field is immutable. It can only be set for containers.
                                       '';
@@ -13706,8 +14525,10 @@ in
                               default = null;
                               description = ''
                                 Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?
                               '';
                             };
                           };
@@ -13805,6 +14626,15 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  oci = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      OCI to be used for fetching the provider’s components and metadata from an OCI artifact.
+                      You must set `providerSpec.Version` field for operator to pick up desired version of the release from GitHub.
+                      If the providerSpec.Version is missing, latest provider version from clusterctl defaults is used.
+                    '';
+                  };
                   selector = mkOption {
                     type = (
                       types.nullOr (mkTypedSubmodule {
@@ -13892,13 +14722,20 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  additionalArgs = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = ''
+                      AdditionalArgs is a map of additional options that will be passed
+                      in as container args to the provider's controller manager.
+                    '';
+                  };
                   cacheNamespace = mkOption {
                     type = (types.nullOr types.str);
                     default = null;
                     description = ''
                       CacheNamespace if specified restricts the manager's cache to watch objects in
                       the desired namespace Defaults to all namespaces
-
 
                       Note: If a namespace is specified, controllers can still Watch for a
                       cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -13924,12 +14761,10 @@ in
                               GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                               allowed for that controller.
 
-
                               When a controller is registered within this manager using the builder utilities,
                               users have to specify the type the controller reconciles in the For(...) call.
                               If the object's kind passed matches one of the keys in this map, the concurrency
                               for that controller is set to the number specified.
-
 
                               The key is expected to be consistent in form with GroupKind.String(),
                               e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -14089,6 +14924,24 @@ in
                               BindAddress is the TCP address that the controller should bind to
                               for serving prometheus metrics.
                               It can be set to "0" to disable the metrics serving.
+                              NOTE: This field is deprecated, please use DiagnosticsAddress field
+                            '';
+                          };
+                          diagnosticsAddress = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              DiagnosticsAddress is the TCP address that the controller should bind to
+                              for serving prometheus metric.
+                              It can be set to "0" to disable the metrics serving.
+                            '';
+                          };
+                          insecureDiagnostics = mkOption {
+                            type = (types.nullOr types.bool);
+                            default = null;
+                            description = ''
+                              InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                              If false, or not set, the diagnostics address will expose pprof endpoints too.
                             '';
                           };
                         };
@@ -14096,7 +14949,7 @@ in
                       })
                     );
                     default = null;
-                    description = "Metrics contains thw controller metrics configuration";
+                    description = "Metrics contains the controller metrics configuration";
                   };
                   profilerAddress = mkOption {
                     type = (types.nullOr types.str);
@@ -14179,7 +15032,74 @@ in
               provider manifests. Patches are applied in the order they are specified.
               The `kind` field must match the target object, and
               if `apiVersion` is specified it will only be applied to matching objects.
-              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396
+              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396.
+              This will be deprecated in future releases in favor of `patches`.
+            '';
+          };
+          patches = mkOption {
+            type = (
+              types.nullOr (
+                types.listOf (mkTypedSubmodule {
+                  options = {
+                    patch = mkOption {
+                      type = (types.nullOr types.str);
+                      default = null;
+                      description = "Patch is content of the patch to be applied. It should be an inline yaml blob-string.";
+                    };
+                    target = mkOption {
+                      type = (
+                        types.nullOr (mkTypedSubmodule {
+                          options = {
+                            group = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Group is the API Group of the target object.";
+                            };
+                            kind = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Kind is the kind of the target object.";
+                            };
+                            labelSelector = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = ''
+                                LabelSelector is a string that follows the label selection expression
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#api
+                              '';
+                            };
+                            name = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Name is the name of the target object.";
+                            };
+                            namespace = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Namespace is the namespace of the target object.";
+                            };
+                            version = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Version is the API version of the target object.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      );
+                      default = null;
+                      description = "Target defines the target object to which the patch should be applied.";
+                    };
+                  };
+                  freeformType = types.attrs;
+                })
+              )
+            );
+            default = null;
+            description = ''
+              Patches are applied to the rendered provider manifests to customize the
+              provider manifests. Patches support both strategic merge patch and RFC6902 JSON patches.
+              Both `patches` and `manifestPatches` cannot be set at the same time.
             '';
           };
           version = mkOption {
@@ -14503,13 +15423,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -14518,13 +15437,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -14706,13 +15624,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -14721,13 +15638,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -14909,13 +15825,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -14924,13 +15839,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -15039,8 +15953,8 @@ in
                                                 most preferred is the one with the greatest sum of weights, i.e.
                                                 for each node that meets all of the scheduling requirements (resource
                                                 request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                                compute a sum by iterating through the elements of this field and adding
-                                                "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                                compute a sum by iterating through the elements of this field and subtracting
+                                                "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                                 node(s) with the highest sum are the most preferred.
                                               '';
                                             };
@@ -15112,13 +16026,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -15127,13 +16040,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -15275,7 +16187,10 @@ in
                                               options = {
                                                 name = mkOption {
                                                   type = types.str;
-                                                  description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                                  description = ''
+                                                    Name of the environment variable.
+                                                    May consist of any printable ASCII characters except '='.
+                                                  '';
                                                 };
                                                 value = mkOption {
                                                   type = (types.nullOr types.str);
@@ -15309,8 +16224,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -15346,6 +16263,52 @@ in
                                                           description = ''
                                                             Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                             spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                          '';
+                                                        };
+                                                        fileKeyRef = mkOption {
+                                                          type = (
+                                                            types.nullOr (mkTypedSubmodule {
+                                                              options = {
+                                                                key = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                                  '';
+                                                                };
+                                                                optional = mkOption {
+                                                                  type = (types.nullOr types.bool);
+                                                                  default = null;
+                                                                  description = ''
+                                                                    Specify whether the file or its key must be defined. If the file or key
+                                                                    does not exist, then the env var is not published.
+                                                                    If optional is set to true and the specified key does not exist,
+                                                                    the environment variable will not be set in the Pod's containers.
+
+                                                                    If optional is set to false and the specified key does not exist,
+                                                                    an error will be returned during Pod creation.
+                                                                  '';
+                                                                };
+                                                                path = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The path within the volume from which to select the file.
+                                                                    Must be relative and may not contain the '..' path or start with '..'.
+                                                                  '';
+                                                                };
+                                                                volumeName = mkOption {
+                                                                  type = types.str;
+                                                                  description = "The name of the volume mount containing the env file.";
+                                                                };
+                                                              };
+                                                              freeformType = types.attrs;
+                                                            })
+                                                          );
+                                                          default = null;
+                                                          description = ''
+                                                            FileKeyRef selects a key of the env file.
+                                                            Requires the EnvFiles feature gate to be enabled.
                                                           '';
                                                         };
                                                         resourceFieldRef = mkOption {
@@ -15389,8 +16352,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -15446,6 +16411,15 @@ in
                                                             inside a container.
                                                           '';
                                                         };
+                                                        request = mkOption {
+                                                          type = (types.nullOr types.str);
+                                                          default = null;
+                                                          description = ''
+                                                            Request is the name chosen for a request in the referenced claim.
+                                                            If empty, everything from the claim is made available, otherwise
+                                                            only the result of this request.
+                                                          '';
+                                                        };
                                                       };
                                                       freeformType = types.attrs;
                                                     })
@@ -15456,10 +16430,8 @@ in
                                                   Claims lists the names of resources, defined in spec.resourceClaims,
                                                   that are used by this container.
 
-
-                                                  This is an alpha field and requires enabling the
+                                                  This field depends on the
                                                   DynamicResourceAllocation feature gate.
-
 
                                                   This field is immutable. It can only be set for containers.
                                                 '';
@@ -15507,8 +16479,10 @@ in
                                         default = null;
                                         description = ''
                                           Name of the referent.
+                                          This field is effectively required, but due to backwards compatibility is
+                                          allowed to be empty. Instances of this type with an empty value here are
+                                          almost certainly wrong.
                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                         '';
                                       };
                                     };
@@ -15606,13 +16580,20 @@ in
                       type = (
                         types.nullOr (mkTypedSubmodule {
                           options = {
+                            additionalArgs = mkOption {
+                              type = (types.nullOr (types.attrsOf types.str));
+                              default = null;
+                              description = ''
+                                AdditionalArgs is a map of additional options that will be passed
+                                in as container args to the provider's controller manager.
+                              '';
+                            };
                             cacheNamespace = mkOption {
                               type = (types.nullOr types.str);
                               default = null;
                               description = ''
                                 CacheNamespace if specified restricts the manager's cache to watch objects in
                                 the desired namespace Defaults to all namespaces
-
 
                                 Note: If a namespace is specified, controllers can still Watch for a
                                 cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -15638,12 +16619,10 @@ in
                                         GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                                         allowed for that controller.
 
-
                                         When a controller is registered within this manager using the builder utilities,
                                         users have to specify the type the controller reconciles in the For(...) call.
                                         If the object's kind passed matches one of the keys in this map, the concurrency
                                         for that controller is set to the number specified.
-
 
                                         The key is expected to be consistent in form with GroupKind.String(),
                                         e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -15803,6 +16782,24 @@ in
                                         BindAddress is the TCP address that the controller should bind to
                                         for serving prometheus metrics.
                                         It can be set to "0" to disable the metrics serving.
+                                        NOTE: This field is deprecated, please use DiagnosticsAddress field
+                                      '';
+                                    };
+                                    diagnosticsAddress = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = ''
+                                        DiagnosticsAddress is the TCP address that the controller should bind to
+                                        for serving prometheus metric.
+                                        It can be set to "0" to disable the metrics serving.
+                                      '';
+                                    };
+                                    insecureDiagnostics = mkOption {
+                                      type = (types.nullOr types.bool);
+                                      default = null;
+                                      description = ''
+                                        InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                                        If false, or not set, the diagnostics address will expose pprof endpoints too.
                                       '';
                                     };
                                   };
@@ -15810,7 +16807,7 @@ in
                                 })
                               );
                               default = null;
-                              description = "Metrics contains thw controller metrics configuration";
+                              description = "Metrics contains the controller metrics configuration";
                             };
                             profilerAddress = mkOption {
                               type = (types.nullOr types.str);
@@ -16249,13 +17246,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -16264,13 +17260,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -16452,13 +17447,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -16467,13 +17461,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -16655,13 +17648,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -16670,13 +17662,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -16785,8 +17776,8 @@ in
                                       most preferred is the one with the greatest sum of weights, i.e.
                                       for each node that meets all of the scheduling requirements (resource
                                       request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                      compute a sum by iterating through the elements of this field and adding
-                                      "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                      compute a sum by iterating through the elements of this field and subtracting
+                                      "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                       node(s) with the highest sum are the most preferred.
                                     '';
                                   };
@@ -16858,13 +17849,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -16873,13 +17863,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -17021,7 +18010,10 @@ in
                                     options = {
                                       name = mkOption {
                                         type = types.str;
-                                        description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                        description = ''
+                                          Name of the environment variable.
+                                          May consist of any printable ASCII characters except '='.
+                                        '';
                                       };
                                       value = mkOption {
                                         type = (types.nullOr types.str);
@@ -17055,8 +18047,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -17092,6 +18086,52 @@ in
                                                 description = ''
                                                   Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                   spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                '';
+                                              };
+                                              fileKeyRef = mkOption {
+                                                type = (
+                                                  types.nullOr (mkTypedSubmodule {
+                                                    options = {
+                                                      key = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The key within the env file. An invalid key will prevent the pod from starting.
+                                                          The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                          During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                        '';
+                                                      };
+                                                      optional = mkOption {
+                                                        type = (types.nullOr types.bool);
+                                                        default = null;
+                                                        description = ''
+                                                          Specify whether the file or its key must be defined. If the file or key
+                                                          does not exist, then the env var is not published.
+                                                          If optional is set to true and the specified key does not exist,
+                                                          the environment variable will not be set in the Pod's containers.
+
+                                                          If optional is set to false and the specified key does not exist,
+                                                          an error will be returned during Pod creation.
+                                                        '';
+                                                      };
+                                                      path = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The path within the volume from which to select the file.
+                                                          Must be relative and may not contain the '..' path or start with '..'.
+                                                        '';
+                                                      };
+                                                      volumeName = mkOption {
+                                                        type = types.str;
+                                                        description = "The name of the volume mount containing the env file.";
+                                                      };
+                                                    };
+                                                    freeformType = types.attrs;
+                                                  })
+                                                );
+                                                default = null;
+                                                description = ''
+                                                  FileKeyRef selects a key of the env file.
+                                                  Requires the EnvFiles feature gate to be enabled.
                                                 '';
                                               };
                                               resourceFieldRef = mkOption {
@@ -17135,8 +18175,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -17192,6 +18234,15 @@ in
                                                   inside a container.
                                                 '';
                                               };
+                                              request = mkOption {
+                                                type = (types.nullOr types.str);
+                                                default = null;
+                                                description = ''
+                                                  Request is the name chosen for a request in the referenced claim.
+                                                  If empty, everything from the claim is made available, otherwise
+                                                  only the result of this request.
+                                                '';
+                                              };
                                             };
                                             freeformType = types.attrs;
                                           })
@@ -17202,10 +18253,8 @@ in
                                         Claims lists the names of resources, defined in spec.resourceClaims,
                                         that are used by this container.
 
-
-                                        This is an alpha field and requires enabling the
+                                        This field depends on the
                                         DynamicResourceAllocation feature gate.
-
 
                                         This field is immutable. It can only be set for containers.
                                       '';
@@ -17253,8 +18302,10 @@ in
                               default = null;
                               description = ''
                                 Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?
                               '';
                             };
                           };
@@ -17352,6 +18403,15 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  oci = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      OCI to be used for fetching the provider’s components and metadata from an OCI artifact.
+                      You must set `providerSpec.Version` field for operator to pick up desired version of the release from GitHub.
+                      If the providerSpec.Version is missing, latest provider version from clusterctl defaults is used.
+                    '';
+                  };
                   selector = mkOption {
                     type = (
                       types.nullOr (mkTypedSubmodule {
@@ -17439,13 +18499,20 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  additionalArgs = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = ''
+                      AdditionalArgs is a map of additional options that will be passed
+                      in as container args to the provider's controller manager.
+                    '';
+                  };
                   cacheNamespace = mkOption {
                     type = (types.nullOr types.str);
                     default = null;
                     description = ''
                       CacheNamespace if specified restricts the manager's cache to watch objects in
                       the desired namespace Defaults to all namespaces
-
 
                       Note: If a namespace is specified, controllers can still Watch for a
                       cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -17471,12 +18538,10 @@ in
                               GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                               allowed for that controller.
 
-
                               When a controller is registered within this manager using the builder utilities,
                               users have to specify the type the controller reconciles in the For(...) call.
                               If the object's kind passed matches one of the keys in this map, the concurrency
                               for that controller is set to the number specified.
-
 
                               The key is expected to be consistent in form with GroupKind.String(),
                               e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -17636,6 +18701,24 @@ in
                               BindAddress is the TCP address that the controller should bind to
                               for serving prometheus metrics.
                               It can be set to "0" to disable the metrics serving.
+                              NOTE: This field is deprecated, please use DiagnosticsAddress field
+                            '';
+                          };
+                          diagnosticsAddress = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              DiagnosticsAddress is the TCP address that the controller should bind to
+                              for serving prometheus metric.
+                              It can be set to "0" to disable the metrics serving.
+                            '';
+                          };
+                          insecureDiagnostics = mkOption {
+                            type = (types.nullOr types.bool);
+                            default = null;
+                            description = ''
+                              InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                              If false, or not set, the diagnostics address will expose pprof endpoints too.
                             '';
                           };
                         };
@@ -17643,7 +18726,7 @@ in
                       })
                     );
                     default = null;
-                    description = "Metrics contains thw controller metrics configuration";
+                    description = "Metrics contains the controller metrics configuration";
                   };
                   profilerAddress = mkOption {
                     type = (types.nullOr types.str);
@@ -17726,7 +18809,74 @@ in
               provider manifests. Patches are applied in the order they are specified.
               The `kind` field must match the target object, and
               if `apiVersion` is specified it will only be applied to matching objects.
-              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396
+              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396.
+              This will be deprecated in future releases in favor of `patches`.
+            '';
+          };
+          patches = mkOption {
+            type = (
+              types.nullOr (
+                types.listOf (mkTypedSubmodule {
+                  options = {
+                    patch = mkOption {
+                      type = (types.nullOr types.str);
+                      default = null;
+                      description = "Patch is content of the patch to be applied. It should be an inline yaml blob-string.";
+                    };
+                    target = mkOption {
+                      type = (
+                        types.nullOr (mkTypedSubmodule {
+                          options = {
+                            group = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Group is the API Group of the target object.";
+                            };
+                            kind = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Kind is the kind of the target object.";
+                            };
+                            labelSelector = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = ''
+                                LabelSelector is a string that follows the label selection expression
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#api
+                              '';
+                            };
+                            name = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Name is the name of the target object.";
+                            };
+                            namespace = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Namespace is the namespace of the target object.";
+                            };
+                            version = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Version is the API version of the target object.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      );
+                      default = null;
+                      description = "Target defines the target object to which the patch should be applied.";
+                    };
+                  };
+                  freeformType = types.attrs;
+                })
+              )
+            );
+            default = null;
+            description = ''
+              Patches are applied to the rendered provider manifests to customize the
+              provider manifests. Patches support both strategic merge patch and RFC6902 JSON patches.
+              Both `patches` and `manifestPatches` cannot be set at the same time.
             '';
           };
           version = mkOption {
@@ -18050,13 +19200,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -18065,13 +19214,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -18253,13 +19401,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -18268,13 +19415,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -18456,13 +19602,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -18471,13 +19616,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -18586,8 +19730,8 @@ in
                                                 most preferred is the one with the greatest sum of weights, i.e.
                                                 for each node that meets all of the scheduling requirements (resource
                                                 request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                                compute a sum by iterating through the elements of this field and adding
-                                                "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                                compute a sum by iterating through the elements of this field and subtracting
+                                                "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                                 node(s) with the highest sum are the most preferred.
                                               '';
                                             };
@@ -18659,13 +19803,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -18674,13 +19817,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -18822,7 +19964,10 @@ in
                                               options = {
                                                 name = mkOption {
                                                   type = types.str;
-                                                  description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                                  description = ''
+                                                    Name of the environment variable.
+                                                    May consist of any printable ASCII characters except '='.
+                                                  '';
                                                 };
                                                 value = mkOption {
                                                   type = (types.nullOr types.str);
@@ -18856,8 +20001,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -18893,6 +20040,52 @@ in
                                                           description = ''
                                                             Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                             spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                          '';
+                                                        };
+                                                        fileKeyRef = mkOption {
+                                                          type = (
+                                                            types.nullOr (mkTypedSubmodule {
+                                                              options = {
+                                                                key = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                                  '';
+                                                                };
+                                                                optional = mkOption {
+                                                                  type = (types.nullOr types.bool);
+                                                                  default = null;
+                                                                  description = ''
+                                                                    Specify whether the file or its key must be defined. If the file or key
+                                                                    does not exist, then the env var is not published.
+                                                                    If optional is set to true and the specified key does not exist,
+                                                                    the environment variable will not be set in the Pod's containers.
+
+                                                                    If optional is set to false and the specified key does not exist,
+                                                                    an error will be returned during Pod creation.
+                                                                  '';
+                                                                };
+                                                                path = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The path within the volume from which to select the file.
+                                                                    Must be relative and may not contain the '..' path or start with '..'.
+                                                                  '';
+                                                                };
+                                                                volumeName = mkOption {
+                                                                  type = types.str;
+                                                                  description = "The name of the volume mount containing the env file.";
+                                                                };
+                                                              };
+                                                              freeformType = types.attrs;
+                                                            })
+                                                          );
+                                                          default = null;
+                                                          description = ''
+                                                            FileKeyRef selects a key of the env file.
+                                                            Requires the EnvFiles feature gate to be enabled.
                                                           '';
                                                         };
                                                         resourceFieldRef = mkOption {
@@ -18936,8 +20129,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -18993,6 +20188,15 @@ in
                                                             inside a container.
                                                           '';
                                                         };
+                                                        request = mkOption {
+                                                          type = (types.nullOr types.str);
+                                                          default = null;
+                                                          description = ''
+                                                            Request is the name chosen for a request in the referenced claim.
+                                                            If empty, everything from the claim is made available, otherwise
+                                                            only the result of this request.
+                                                          '';
+                                                        };
                                                       };
                                                       freeformType = types.attrs;
                                                     })
@@ -19003,10 +20207,8 @@ in
                                                   Claims lists the names of resources, defined in spec.resourceClaims,
                                                   that are used by this container.
 
-
-                                                  This is an alpha field and requires enabling the
+                                                  This field depends on the
                                                   DynamicResourceAllocation feature gate.
-
 
                                                   This field is immutable. It can only be set for containers.
                                                 '';
@@ -19054,8 +20256,10 @@ in
                                         default = null;
                                         description = ''
                                           Name of the referent.
+                                          This field is effectively required, but due to backwards compatibility is
+                                          allowed to be empty. Instances of this type with an empty value here are
+                                          almost certainly wrong.
                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                         '';
                                       };
                                     };
@@ -19153,13 +20357,20 @@ in
                       type = (
                         types.nullOr (mkTypedSubmodule {
                           options = {
+                            additionalArgs = mkOption {
+                              type = (types.nullOr (types.attrsOf types.str));
+                              default = null;
+                              description = ''
+                                AdditionalArgs is a map of additional options that will be passed
+                                in as container args to the provider's controller manager.
+                              '';
+                            };
                             cacheNamespace = mkOption {
                               type = (types.nullOr types.str);
                               default = null;
                               description = ''
                                 CacheNamespace if specified restricts the manager's cache to watch objects in
                                 the desired namespace Defaults to all namespaces
-
 
                                 Note: If a namespace is specified, controllers can still Watch for a
                                 cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -19185,12 +20396,10 @@ in
                                         GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                                         allowed for that controller.
 
-
                                         When a controller is registered within this manager using the builder utilities,
                                         users have to specify the type the controller reconciles in the For(...) call.
                                         If the object's kind passed matches one of the keys in this map, the concurrency
                                         for that controller is set to the number specified.
-
 
                                         The key is expected to be consistent in form with GroupKind.String(),
                                         e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -19350,6 +20559,24 @@ in
                                         BindAddress is the TCP address that the controller should bind to
                                         for serving prometheus metrics.
                                         It can be set to "0" to disable the metrics serving.
+                                        NOTE: This field is deprecated, please use DiagnosticsAddress field
+                                      '';
+                                    };
+                                    diagnosticsAddress = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = ''
+                                        DiagnosticsAddress is the TCP address that the controller should bind to
+                                        for serving prometheus metric.
+                                        It can be set to "0" to disable the metrics serving.
+                                      '';
+                                    };
+                                    insecureDiagnostics = mkOption {
+                                      type = (types.nullOr types.bool);
+                                      default = null;
+                                      description = ''
+                                        InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                                        If false, or not set, the diagnostics address will expose pprof endpoints too.
                                       '';
                                     };
                                   };
@@ -19357,7 +20584,7 @@ in
                                 })
                               );
                               default = null;
-                              description = "Metrics contains thw controller metrics configuration";
+                              description = "Metrics contains the controller metrics configuration";
                             };
                             profilerAddress = mkOption {
                               type = (types.nullOr types.str);
@@ -19796,13 +21023,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -19811,13 +21037,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -19999,13 +21224,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -20014,13 +21238,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -20202,13 +21425,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -20217,13 +21439,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -20332,8 +21553,8 @@ in
                                       most preferred is the one with the greatest sum of weights, i.e.
                                       for each node that meets all of the scheduling requirements (resource
                                       request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                      compute a sum by iterating through the elements of this field and adding
-                                      "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                      compute a sum by iterating through the elements of this field and subtracting
+                                      "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                       node(s) with the highest sum are the most preferred.
                                     '';
                                   };
@@ -20405,13 +21626,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -20420,13 +21640,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -20568,7 +21787,10 @@ in
                                     options = {
                                       name = mkOption {
                                         type = types.str;
-                                        description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                        description = ''
+                                          Name of the environment variable.
+                                          May consist of any printable ASCII characters except '='.
+                                        '';
                                       };
                                       value = mkOption {
                                         type = (types.nullOr types.str);
@@ -20602,8 +21824,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -20639,6 +21863,52 @@ in
                                                 description = ''
                                                   Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                   spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                '';
+                                              };
+                                              fileKeyRef = mkOption {
+                                                type = (
+                                                  types.nullOr (mkTypedSubmodule {
+                                                    options = {
+                                                      key = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The key within the env file. An invalid key will prevent the pod from starting.
+                                                          The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                          During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                        '';
+                                                      };
+                                                      optional = mkOption {
+                                                        type = (types.nullOr types.bool);
+                                                        default = null;
+                                                        description = ''
+                                                          Specify whether the file or its key must be defined. If the file or key
+                                                          does not exist, then the env var is not published.
+                                                          If optional is set to true and the specified key does not exist,
+                                                          the environment variable will not be set in the Pod's containers.
+
+                                                          If optional is set to false and the specified key does not exist,
+                                                          an error will be returned during Pod creation.
+                                                        '';
+                                                      };
+                                                      path = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The path within the volume from which to select the file.
+                                                          Must be relative and may not contain the '..' path or start with '..'.
+                                                        '';
+                                                      };
+                                                      volumeName = mkOption {
+                                                        type = types.str;
+                                                        description = "The name of the volume mount containing the env file.";
+                                                      };
+                                                    };
+                                                    freeformType = types.attrs;
+                                                  })
+                                                );
+                                                default = null;
+                                                description = ''
+                                                  FileKeyRef selects a key of the env file.
+                                                  Requires the EnvFiles feature gate to be enabled.
                                                 '';
                                               };
                                               resourceFieldRef = mkOption {
@@ -20682,8 +21952,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -20739,6 +22011,15 @@ in
                                                   inside a container.
                                                 '';
                                               };
+                                              request = mkOption {
+                                                type = (types.nullOr types.str);
+                                                default = null;
+                                                description = ''
+                                                  Request is the name chosen for a request in the referenced claim.
+                                                  If empty, everything from the claim is made available, otherwise
+                                                  only the result of this request.
+                                                '';
+                                              };
                                             };
                                             freeformType = types.attrs;
                                           })
@@ -20749,10 +22030,8 @@ in
                                         Claims lists the names of resources, defined in spec.resourceClaims,
                                         that are used by this container.
 
-
-                                        This is an alpha field and requires enabling the
+                                        This field depends on the
                                         DynamicResourceAllocation feature gate.
-
 
                                         This field is immutable. It can only be set for containers.
                                       '';
@@ -20800,8 +22079,10 @@ in
                               default = null;
                               description = ''
                                 Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?
                               '';
                             };
                           };
@@ -20899,6 +22180,15 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  oci = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      OCI to be used for fetching the provider’s components and metadata from an OCI artifact.
+                      You must set `providerSpec.Version` field for operator to pick up desired version of the release from GitHub.
+                      If the providerSpec.Version is missing, latest provider version from clusterctl defaults is used.
+                    '';
+                  };
                   selector = mkOption {
                     type = (
                       types.nullOr (mkTypedSubmodule {
@@ -20986,13 +22276,20 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  additionalArgs = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = ''
+                      AdditionalArgs is a map of additional options that will be passed
+                      in as container args to the provider's controller manager.
+                    '';
+                  };
                   cacheNamespace = mkOption {
                     type = (types.nullOr types.str);
                     default = null;
                     description = ''
                       CacheNamespace if specified restricts the manager's cache to watch objects in
                       the desired namespace Defaults to all namespaces
-
 
                       Note: If a namespace is specified, controllers can still Watch for a
                       cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -21018,12 +22315,10 @@ in
                               GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                               allowed for that controller.
 
-
                               When a controller is registered within this manager using the builder utilities,
                               users have to specify the type the controller reconciles in the For(...) call.
                               If the object's kind passed matches one of the keys in this map, the concurrency
                               for that controller is set to the number specified.
-
 
                               The key is expected to be consistent in form with GroupKind.String(),
                               e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -21183,6 +22478,24 @@ in
                               BindAddress is the TCP address that the controller should bind to
                               for serving prometheus metrics.
                               It can be set to "0" to disable the metrics serving.
+                              NOTE: This field is deprecated, please use DiagnosticsAddress field
+                            '';
+                          };
+                          diagnosticsAddress = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              DiagnosticsAddress is the TCP address that the controller should bind to
+                              for serving prometheus metric.
+                              It can be set to "0" to disable the metrics serving.
+                            '';
+                          };
+                          insecureDiagnostics = mkOption {
+                            type = (types.nullOr types.bool);
+                            default = null;
+                            description = ''
+                              InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                              If false, or not set, the diagnostics address will expose pprof endpoints too.
                             '';
                           };
                         };
@@ -21190,7 +22503,7 @@ in
                       })
                     );
                     default = null;
-                    description = "Metrics contains thw controller metrics configuration";
+                    description = "Metrics contains the controller metrics configuration";
                   };
                   profilerAddress = mkOption {
                     type = (types.nullOr types.str);
@@ -21273,7 +22586,74 @@ in
               provider manifests. Patches are applied in the order they are specified.
               The `kind` field must match the target object, and
               if `apiVersion` is specified it will only be applied to matching objects.
-              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396
+              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396.
+              This will be deprecated in future releases in favor of `patches`.
+            '';
+          };
+          patches = mkOption {
+            type = (
+              types.nullOr (
+                types.listOf (mkTypedSubmodule {
+                  options = {
+                    patch = mkOption {
+                      type = (types.nullOr types.str);
+                      default = null;
+                      description = "Patch is content of the patch to be applied. It should be an inline yaml blob-string.";
+                    };
+                    target = mkOption {
+                      type = (
+                        types.nullOr (mkTypedSubmodule {
+                          options = {
+                            group = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Group is the API Group of the target object.";
+                            };
+                            kind = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Kind is the kind of the target object.";
+                            };
+                            labelSelector = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = ''
+                                LabelSelector is a string that follows the label selection expression
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#api
+                              '';
+                            };
+                            name = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Name is the name of the target object.";
+                            };
+                            namespace = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Namespace is the namespace of the target object.";
+                            };
+                            version = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Version is the API version of the target object.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      );
+                      default = null;
+                      description = "Target defines the target object to which the patch should be applied.";
+                    };
+                  };
+                  freeformType = types.attrs;
+                })
+              )
+            );
+            default = null;
+            description = ''
+              Patches are applied to the rendered provider manifests to customize the
+              provider manifests. Patches support both strategic merge patch and RFC6902 JSON patches.
+              Both `patches` and `manifestPatches` cannot be set at the same time.
             '';
           };
           version = mkOption {
@@ -21597,13 +22977,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -21612,13 +22991,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -21800,13 +23178,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -21815,13 +23192,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -22003,13 +23379,12 @@ in
                                                                 description = ''
                                                                   MatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                                  Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                                  Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               mismatchLabelKeys = mkOption {
@@ -22018,13 +23393,12 @@ in
                                                                 description = ''
                                                                   MismatchLabelKeys is a set of pod label keys to select which pods will
                                                                   be taken into consideration. The keys are used to lookup values from the
-                                                                  incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                                  incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                                   to select the group of existing pods which pods will be taken into consideration
                                                                   for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                                   pod labels will be ignored. The default value is empty.
-                                                                  The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                                  Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                                  This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                                  The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                                  Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                                 '';
                                                               };
                                                               namespaceSelector = mkOption {
@@ -22133,8 +23507,8 @@ in
                                                 most preferred is the one with the greatest sum of weights, i.e.
                                                 for each node that meets all of the scheduling requirements (resource
                                                 request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                                compute a sum by iterating through the elements of this field and adding
-                                                "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                                compute a sum by iterating through the elements of this field and subtracting
+                                                "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                                 node(s) with the highest sum are the most preferred.
                                               '';
                                             };
@@ -22206,13 +23580,12 @@ in
                                                         description = ''
                                                           MatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                          Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                          Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       mismatchLabelKeys = mkOption {
@@ -22221,13 +23594,12 @@ in
                                                         description = ''
                                                           MismatchLabelKeys is a set of pod label keys to select which pods will
                                                           be taken into consideration. The keys are used to lookup values from the
-                                                          incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                          incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                           to select the group of existing pods which pods will be taken into consideration
                                                           for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                           pod labels will be ignored. The default value is empty.
-                                                          The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                          Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                          This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                          The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                          Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                         '';
                                                       };
                                                       namespaceSelector = mkOption {
@@ -22369,7 +23741,10 @@ in
                                               options = {
                                                 name = mkOption {
                                                   type = types.str;
-                                                  description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                                  description = ''
+                                                    Name of the environment variable.
+                                                    May consist of any printable ASCII characters except '='.
+                                                  '';
                                                 };
                                                 value = mkOption {
                                                   type = (types.nullOr types.str);
@@ -22403,8 +23778,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -22440,6 +23817,52 @@ in
                                                           description = ''
                                                             Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                             spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                          '';
+                                                        };
+                                                        fileKeyRef = mkOption {
+                                                          type = (
+                                                            types.nullOr (mkTypedSubmodule {
+                                                              options = {
+                                                                key = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The key within the env file. An invalid key will prevent the pod from starting.
+                                                                    The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                                    During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                                  '';
+                                                                };
+                                                                optional = mkOption {
+                                                                  type = (types.nullOr types.bool);
+                                                                  default = null;
+                                                                  description = ''
+                                                                    Specify whether the file or its key must be defined. If the file or key
+                                                                    does not exist, then the env var is not published.
+                                                                    If optional is set to true and the specified key does not exist,
+                                                                    the environment variable will not be set in the Pod's containers.
+
+                                                                    If optional is set to false and the specified key does not exist,
+                                                                    an error will be returned during Pod creation.
+                                                                  '';
+                                                                };
+                                                                path = mkOption {
+                                                                  type = types.str;
+                                                                  description = ''
+                                                                    The path within the volume from which to select the file.
+                                                                    Must be relative and may not contain the '..' path or start with '..'.
+                                                                  '';
+                                                                };
+                                                                volumeName = mkOption {
+                                                                  type = types.str;
+                                                                  description = "The name of the volume mount containing the env file.";
+                                                                };
+                                                              };
+                                                              freeformType = types.attrs;
+                                                            })
+                                                          );
+                                                          default = null;
+                                                          description = ''
+                                                            FileKeyRef selects a key of the env file.
+                                                            Requires the EnvFiles feature gate to be enabled.
                                                           '';
                                                         };
                                                         resourceFieldRef = mkOption {
@@ -22483,8 +23906,10 @@ in
                                                                   default = null;
                                                                   description = ''
                                                                     Name of the referent.
+                                                                    This field is effectively required, but due to backwards compatibility is
+                                                                    allowed to be empty. Instances of this type with an empty value here are
+                                                                    almost certainly wrong.
                                                                     More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                                    TODO: Add other useful fields. apiVersion, kind, uid?
                                                                   '';
                                                                 };
                                                                 optional = mkOption {
@@ -22540,6 +23965,15 @@ in
                                                             inside a container.
                                                           '';
                                                         };
+                                                        request = mkOption {
+                                                          type = (types.nullOr types.str);
+                                                          default = null;
+                                                          description = ''
+                                                            Request is the name chosen for a request in the referenced claim.
+                                                            If empty, everything from the claim is made available, otherwise
+                                                            only the result of this request.
+                                                          '';
+                                                        };
                                                       };
                                                       freeformType = types.attrs;
                                                     })
@@ -22550,10 +23984,8 @@ in
                                                   Claims lists the names of resources, defined in spec.resourceClaims,
                                                   that are used by this container.
 
-
-                                                  This is an alpha field and requires enabling the
+                                                  This field depends on the
                                                   DynamicResourceAllocation feature gate.
-
 
                                                   This field is immutable. It can only be set for containers.
                                                 '';
@@ -22601,8 +24033,10 @@ in
                                         default = null;
                                         description = ''
                                           Name of the referent.
+                                          This field is effectively required, but due to backwards compatibility is
+                                          allowed to be empty. Instances of this type with an empty value here are
+                                          almost certainly wrong.
                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                         '';
                                       };
                                     };
@@ -22700,13 +24134,20 @@ in
                       type = (
                         types.nullOr (mkTypedSubmodule {
                           options = {
+                            additionalArgs = mkOption {
+                              type = (types.nullOr (types.attrsOf types.str));
+                              default = null;
+                              description = ''
+                                AdditionalArgs is a map of additional options that will be passed
+                                in as container args to the provider's controller manager.
+                              '';
+                            };
                             cacheNamespace = mkOption {
                               type = (types.nullOr types.str);
                               default = null;
                               description = ''
                                 CacheNamespace if specified restricts the manager's cache to watch objects in
                                 the desired namespace Defaults to all namespaces
-
 
                                 Note: If a namespace is specified, controllers can still Watch for a
                                 cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -22732,12 +24173,10 @@ in
                                         GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                                         allowed for that controller.
 
-
                                         When a controller is registered within this manager using the builder utilities,
                                         users have to specify the type the controller reconciles in the For(...) call.
                                         If the object's kind passed matches one of the keys in this map, the concurrency
                                         for that controller is set to the number specified.
-
 
                                         The key is expected to be consistent in form with GroupKind.String(),
                                         e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -22897,6 +24336,24 @@ in
                                         BindAddress is the TCP address that the controller should bind to
                                         for serving prometheus metrics.
                                         It can be set to "0" to disable the metrics serving.
+                                        NOTE: This field is deprecated, please use DiagnosticsAddress field
+                                      '';
+                                    };
+                                    diagnosticsAddress = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = ''
+                                        DiagnosticsAddress is the TCP address that the controller should bind to
+                                        for serving prometheus metric.
+                                        It can be set to "0" to disable the metrics serving.
+                                      '';
+                                    };
+                                    insecureDiagnostics = mkOption {
+                                      type = (types.nullOr types.bool);
+                                      default = null;
+                                      description = ''
+                                        InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                                        If false, or not set, the diagnostics address will expose pprof endpoints too.
                                       '';
                                     };
                                   };
@@ -22904,7 +24361,7 @@ in
                                 })
                               );
                               default = null;
-                              description = "Metrics contains thw controller metrics configuration";
+                              description = "Metrics contains the controller metrics configuration";
                             };
                             profilerAddress = mkOption {
                               type = (types.nullOr types.str);
@@ -23343,13 +24800,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -23358,13 +24814,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -23546,13 +25001,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -23561,13 +25015,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -23749,13 +25202,12 @@ in
                                                       description = ''
                                                         MatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                        Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                        Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     mismatchLabelKeys = mkOption {
@@ -23764,13 +25216,12 @@ in
                                                       description = ''
                                                         MismatchLabelKeys is a set of pod label keys to select which pods will
                                                         be taken into consideration. The keys are used to lookup values from the
-                                                        incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                        incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                         to select the group of existing pods which pods will be taken into consideration
                                                         for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                         pod labels will be ignored. The default value is empty.
-                                                        The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                        Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                        This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                        The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                        Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                                       '';
                                                     };
                                                     namespaceSelector = mkOption {
@@ -23879,8 +25330,8 @@ in
                                       most preferred is the one with the greatest sum of weights, i.e.
                                       for each node that meets all of the scheduling requirements (resource
                                       request, requiredDuringScheduling anti-affinity expressions, etc.),
-                                      compute a sum by iterating through the elements of this field and adding
-                                      "weight" to the sum if the node has pods which matches the corresponding podAffinityTerm; the
+                                      compute a sum by iterating through the elements of this field and subtracting
+                                      "weight" from the sum if the node has pods which matches the corresponding podAffinityTerm; the
                                       node(s) with the highest sum are the most preferred.
                                     '';
                                   };
@@ -23952,13 +25403,12 @@ in
                                               description = ''
                                                 MatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key in (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MatchLabelKeys and LabelSelector.
-                                                Also, MatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both matchLabelKeys and labelSelector.
+                                                Also, matchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             mismatchLabelKeys = mkOption {
@@ -23967,13 +25417,12 @@ in
                                               description = ''
                                                 MismatchLabelKeys is a set of pod label keys to select which pods will
                                                 be taken into consideration. The keys are used to lookup values from the
-                                                incoming pod labels, those key-value labels are merged with `LabelSelector` as `key notin (value)`
+                                                incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)`
                                                 to select the group of existing pods which pods will be taken into consideration
                                                 for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming
                                                 pod labels will be ignored. The default value is empty.
-                                                The same key is forbidden to exist in both MismatchLabelKeys and LabelSelector.
-                                                Also, MismatchLabelKeys cannot be set when LabelSelector isn't set.
-                                                This is an alpha field and requires enabling MatchLabelKeysInPodAffinity feature gate.
+                                                The same key is forbidden to exist in both mismatchLabelKeys and labelSelector.
+                                                Also, mismatchLabelKeys cannot be set when labelSelector isn't set.
                                               '';
                                             };
                                             namespaceSelector = mkOption {
@@ -24115,7 +25564,10 @@ in
                                     options = {
                                       name = mkOption {
                                         type = types.str;
-                                        description = "Name of the environment variable. Must be a C_IDENTIFIER.";
+                                        description = ''
+                                          Name of the environment variable.
+                                          May consist of any printable ASCII characters except '='.
+                                        '';
                                       };
                                       value = mkOption {
                                         type = (types.nullOr types.str);
@@ -24149,8 +25601,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -24186,6 +25640,52 @@ in
                                                 description = ''
                                                   Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
                                                   spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                                '';
+                                              };
+                                              fileKeyRef = mkOption {
+                                                type = (
+                                                  types.nullOr (mkTypedSubmodule {
+                                                    options = {
+                                                      key = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The key within the env file. An invalid key will prevent the pod from starting.
+                                                          The keys defined within a source may consist of any printable ASCII characters except '='.
+                                                          During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                                                        '';
+                                                      };
+                                                      optional = mkOption {
+                                                        type = (types.nullOr types.bool);
+                                                        default = null;
+                                                        description = ''
+                                                          Specify whether the file or its key must be defined. If the file or key
+                                                          does not exist, then the env var is not published.
+                                                          If optional is set to true and the specified key does not exist,
+                                                          the environment variable will not be set in the Pod's containers.
+
+                                                          If optional is set to false and the specified key does not exist,
+                                                          an error will be returned during Pod creation.
+                                                        '';
+                                                      };
+                                                      path = mkOption {
+                                                        type = types.str;
+                                                        description = ''
+                                                          The path within the volume from which to select the file.
+                                                          Must be relative and may not contain the '..' path or start with '..'.
+                                                        '';
+                                                      };
+                                                      volumeName = mkOption {
+                                                        type = types.str;
+                                                        description = "The name of the volume mount containing the env file.";
+                                                      };
+                                                    };
+                                                    freeformType = types.attrs;
+                                                  })
+                                                );
+                                                default = null;
+                                                description = ''
+                                                  FileKeyRef selects a key of the env file.
+                                                  Requires the EnvFiles feature gate to be enabled.
                                                 '';
                                               };
                                               resourceFieldRef = mkOption {
@@ -24229,8 +25729,10 @@ in
                                                         default = null;
                                                         description = ''
                                                           Name of the referent.
+                                                          This field is effectively required, but due to backwards compatibility is
+                                                          allowed to be empty. Instances of this type with an empty value here are
+                                                          almost certainly wrong.
                                                           More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                                          TODO: Add other useful fields. apiVersion, kind, uid?
                                                         '';
                                                       };
                                                       optional = mkOption {
@@ -24286,6 +25788,15 @@ in
                                                   inside a container.
                                                 '';
                                               };
+                                              request = mkOption {
+                                                type = (types.nullOr types.str);
+                                                default = null;
+                                                description = ''
+                                                  Request is the name chosen for a request in the referenced claim.
+                                                  If empty, everything from the claim is made available, otherwise
+                                                  only the result of this request.
+                                                '';
+                                              };
                                             };
                                             freeformType = types.attrs;
                                           })
@@ -24296,10 +25807,8 @@ in
                                         Claims lists the names of resources, defined in spec.resourceClaims,
                                         that are used by this container.
 
-
-                                        This is an alpha field and requires enabling the
+                                        This field depends on the
                                         DynamicResourceAllocation feature gate.
-
 
                                         This field is immutable. It can only be set for containers.
                                       '';
@@ -24347,8 +25856,10 @@ in
                               default = null;
                               description = ''
                                 Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
                                 More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?
                               '';
                             };
                           };
@@ -24446,6 +25957,15 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  oci = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      OCI to be used for fetching the provider’s components and metadata from an OCI artifact.
+                      You must set `providerSpec.Version` field for operator to pick up desired version of the release from GitHub.
+                      If the providerSpec.Version is missing, latest provider version from clusterctl defaults is used.
+                    '';
+                  };
                   selector = mkOption {
                     type = (
                       types.nullOr (mkTypedSubmodule {
@@ -24533,13 +26053,20 @@ in
             type = (
               types.nullOr (mkTypedSubmodule {
                 options = {
+                  additionalArgs = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = ''
+                      AdditionalArgs is a map of additional options that will be passed
+                      in as container args to the provider's controller manager.
+                    '';
+                  };
                   cacheNamespace = mkOption {
                     type = (types.nullOr types.str);
                     default = null;
                     description = ''
                       CacheNamespace if specified restricts the manager's cache to watch objects in
                       the desired namespace Defaults to all namespaces
-
 
                       Note: If a namespace is specified, controllers can still Watch for a
                       cluster-scoped resource (e.g Node).  For namespaced resources the cache
@@ -24565,12 +26092,10 @@ in
                               GroupKindConcurrency is a map from a Kind to the number of concurrent reconciliation
                               allowed for that controller.
 
-
                               When a controller is registered within this manager using the builder utilities,
                               users have to specify the type the controller reconciles in the For(...) call.
                               If the object's kind passed matches one of the keys in this map, the concurrency
                               for that controller is set to the number specified.
-
 
                               The key is expected to be consistent in form with GroupKind.String(),
                               e.g. ReplicaSet in apps group (regardless of version) would be `ReplicaSet.apps`.
@@ -24730,6 +26255,24 @@ in
                               BindAddress is the TCP address that the controller should bind to
                               for serving prometheus metrics.
                               It can be set to "0" to disable the metrics serving.
+                              NOTE: This field is deprecated, please use DiagnosticsAddress field
+                            '';
+                          };
+                          diagnosticsAddress = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              DiagnosticsAddress is the TCP address that the controller should bind to
+                              for serving prometheus metric.
+                              It can be set to "0" to disable the metrics serving.
+                            '';
+                          };
+                          insecureDiagnostics = mkOption {
+                            type = (types.nullOr types.bool);
+                            default = null;
+                            description = ''
+                              InsecureDiagnostics indicates if insecure metrics serving should be enabled.
+                              If false, or not set, the diagnostics address will expose pprof endpoints too.
                             '';
                           };
                         };
@@ -24737,7 +26280,7 @@ in
                       })
                     );
                     default = null;
-                    description = "Metrics contains thw controller metrics configuration";
+                    description = "Metrics contains the controller metrics configuration";
                   };
                   profilerAddress = mkOption {
                     type = (types.nullOr types.str);
@@ -24820,7 +26363,74 @@ in
               provider manifests. Patches are applied in the order they are specified.
               The `kind` field must match the target object, and
               if `apiVersion` is specified it will only be applied to matching objects.
-              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396
+              This should be an inline yaml blob-string https://datatracker.ietf.org/doc/html/rfc7396.
+              This will be deprecated in future releases in favor of `patches`.
+            '';
+          };
+          patches = mkOption {
+            type = (
+              types.nullOr (
+                types.listOf (mkTypedSubmodule {
+                  options = {
+                    patch = mkOption {
+                      type = (types.nullOr types.str);
+                      default = null;
+                      description = "Patch is content of the patch to be applied. It should be an inline yaml blob-string.";
+                    };
+                    target = mkOption {
+                      type = (
+                        types.nullOr (mkTypedSubmodule {
+                          options = {
+                            group = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Group is the API Group of the target object.";
+                            };
+                            kind = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Kind is the kind of the target object.";
+                            };
+                            labelSelector = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = ''
+                                LabelSelector is a string that follows the label selection expression
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#api
+                              '';
+                            };
+                            name = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Name is the name of the target object.";
+                            };
+                            namespace = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Namespace is the namespace of the target object.";
+                            };
+                            version = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Version is the API version of the target object.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      );
+                      default = null;
+                      description = "Target defines the target object to which the patch should be applied.";
+                    };
+                  };
+                  freeformType = types.attrs;
+                })
+              )
+            );
+            default = null;
+            description = ''
+              Patches are applied to the rendered provider manifests to customize the
+              provider manifests. Patches support both strategic merge patch and RFC6902 JSON patches.
+              Both `patches` and `manifestPatches` cannot be set at the same time.
             '';
           };
           version = mkOption {

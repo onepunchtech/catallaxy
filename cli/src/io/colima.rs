@@ -14,6 +14,11 @@ pub fn docker_socket(profile: &str) -> String {
     format!("unix://{home}/.colima/{profile}/docker.sock")
 }
 
+/// # Errors
+///
+/// Only if `colima` cannot be spawned. A VM that is not running, or a command
+/// that fails inside it, is a non-zero `ExitStatus`; both of colima's streams
+/// are discarded.
 pub fn ssh_exec(profile: &str, args: &[&str]) -> Result<std::process::ExitStatus> {
     let mut cmd_args = vec!["ssh", "--profile", profile, "--"];
     cmd_args.extend_from_slice(args);
@@ -41,6 +46,13 @@ pub fn profile_running(profile: &str) -> bool {
     std::path::Path::new(&sock).exists()
 }
 
+/// Bring up the profile's VM, or confirm it is already up.
+///
+/// # Errors
+///
+/// If `colima` cannot be spawned, or `colima start` exits non-zero. Raising
+/// the inotify limits and installing amd64 binfmt afterwards are best effort,
+/// so success does not promise either.
 pub fn start(profile: &str, cpu: u64, memory: u64, disk: u64) -> Result<()> {
     if profile_running(profile) {
         println!(
@@ -93,19 +105,17 @@ pub fn start(profile: &str, cpu: u64, memory: u64, disk: u64) -> Result<()> {
 
 fn ensure_binfmt_amd64(profile: &str) {
     if cfg!(target_arch = "aarch64") {
-        let _ = Command::new("docker")
-            .args([
-                "run",
-                "--privileged",
-                "--rm",
-                "tonistiigi/binfmt",
-                "--install",
-                "amd64",
-            ])
-            .env("DOCKER_HOST", docker_socket(profile))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let mut cmd = crate::io::docker::command();
+        cmd.args([
+            "run",
+            "--privileged",
+            "--rm",
+            "tonistiigi/binfmt",
+            "--install",
+            "amd64",
+        ]);
+        crate::io::docker::apply_host(&mut cmd, Some(&docker_socket(profile)));
+        let _ = cmd.stdout(Stdio::null()).stderr(Stdio::null()).status();
     }
 }
 

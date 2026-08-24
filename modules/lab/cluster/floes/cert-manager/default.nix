@@ -7,126 +7,124 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
   verifyTypes = import ../../../verify-types.nix { inherit lib; };
+  cfg = config.floes.cert-manager;
 in
-(mkFloe {
-  name = "cert-manager";
-  version = "v1.16.1";
-  imports = [ ./options.nix ];
-  exports =
-    { lib, ... }:
-    {
+{
+  imports = [
+    (floeOptions {
+      name = "cert-manager";
+      version = "v1.16.1";
+    })
+    ./options.nix
+  ];
 
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "cert-manager";
-        description = "Namespace cert-manager runs in.";
-      };
-      defaultIssuerRef = lib.mkOption {
-        type = lib.types.attrs;
-        default = { };
-        description = ''
-          Issuer reference for `Certificate.spec.issuerRef`. Precedence:
-          intermediate > ACME > self-signed root. Empty attrset when
-          no issuer is configured.
-        '';
-      };
-      internalIssuerRef = lib.mkOption {
-        type = lib.types.attrs;
-        default = { };
-        description = ''
-          Issuer reference for certs signing INTERNAL DNS names
-          (`*.svc`, `*.svc.cluster.local`): admission-webhook TLS,
-          in-cluster mTLS, etc. Precedence: intermediate > self-signed
-          root. NEVER ACME (public CAs reject non-public SANs; that
-          failure mode is silent-until-deploy). Empty attrset when the
-          lab has no self-signed CA; consumers must assert on that.
-        '';
-      };
-      caBundle = lib.mkOption {
-        type = refs.nullableMountableRef;
-        default = null;
-        description = ''
-          The lab CA bundle, as a ConfigMap consumers can mount.
+  options.floes.cert-manager.exports = {
 
-          **Null means nothing will ever create it**; no self-signed
-          CA, or no trust-manager to reconcile the Bundle CR into a
-          ConfigMap. Mount it only when non-null; a volume naming a
-          ConfigMap that does not exist keeps the pod out of `Running`
-          for good, and the kubelet never gives up.
-
-          Existence and ordering arrive together on purpose. Consumers
-          used to answer "does this exist" themselves, by ANDing
-          `floes.trust-manager.enable` with
-          `floes.cert-manager.selfSignedCA.enable`: a predicate only
-          this floe can compute, reconstructed in two others and wrong
-          in both (2026-07-30).
-        '';
-      };
-      caBundleSecret = lib.mkOption {
-        type = refs.nullableMountableRef;
-        default = null;
-        description = ''
-          Same bundle, same gating, as a Secret. For runtimes that read
-          CAs only from Secret volumes (harbor's `caBundleSecret`, many
-          Go apps) and cannot ingest a ConfigMap.
-        '';
-      };
-      caBundleNamespaceLabel = lib.mkOption {
-        type = lib.types.attrsOf lib.types.str;
-        default = {
-          "catallaxy.io/trust-bundle" = "true";
-        };
-        description = ''
-          Namespace label that gates trust-bundle distribution.
-          Apply on any namespace that needs the lab CA mounted.
-        '';
-      };
-      issuance = lib.mkOption {
-        type = refs.mkCapability {
-          webhookReady = refs.tokenOption ''
-            "The admission webhook will admit a Certificate." Anything
-            emitting a Certificate CR puts this in its `requires`.
-
-            Exported rather than left for consumers to spell out, so
-            this floe can rename its own bundle tokens without silently
-            breaking the thirteen bundles gating on this one.
-          '';
-          defaultIssuerReady = refs.tokenOption ''
-            "`defaultIssuerRef` resolves to a ClusterIssuer that is
-            Ready." Stronger than `webhookReady`: this one waits for an
-            issuer that can actually sign.
-          '';
-          publicIssuer = lib.mkOption {
-            type = lib.types.bool;
-            description = ''
-              Whether the default issuer is a public CA (ACME). Consumers
-              use this to decide what they may put in a certificate:
-              ACME rejects `*.svc.cluster.local` and other non-public
-              suffixes, so a floe that wants an internal SAN must know.
-            '';
-          };
-        };
-        default = null;
-        description = ''
-          X.509 issuance, or null when this floe is off. Consumers assert
-          on this rather than on `floes.cert-manager.enable`: the
-          question is "can I get a certificate", which is ours to answer.
-        '';
-      };
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "cert-manager";
+      description = "Namespace cert-manager runs in.";
     };
-  module =
-    {
-      lib,
-      cfg,
-      peers,
-      cataCharts,
-      ...
-    }:
+    defaultIssuerRef = lib.mkOption {
+      type = lib.types.attrs;
+      default = { };
+      description = ''
+        Issuer reference for `Certificate.spec.issuerRef`. Precedence:
+        intermediate > ACME > self-signed root. Empty attrset when
+        no issuer is configured.
+      '';
+    };
+    internalIssuerRef = lib.mkOption {
+      type = lib.types.attrs;
+      default = { };
+      description = ''
+        Issuer reference for certs signing INTERNAL DNS names
+        (`*.svc`, `*.svc.cluster.local`): admission-webhook TLS,
+        in-cluster mTLS, etc. Precedence: intermediate > self-signed
+        root. NEVER ACME (public CAs reject non-public SANs; that
+        failure mode is silent-until-deploy). Empty attrset when the
+        lab has no self-signed CA; consumers must assert on that.
+      '';
+    };
+    caBundle = lib.mkOption {
+      type = refs.nullableMountableRef;
+      default = null;
+      description = ''
+        The lab CA bundle, as a ConfigMap consumers can mount.
+
+        **Null means nothing will ever create it**; no self-signed
+        CA, or no trust-manager to reconcile the Bundle CR into a
+        ConfigMap. Mount it only when non-null; a volume naming a
+        ConfigMap that does not exist keeps the pod out of `Running`
+        for good, and the kubelet never gives up.
+
+        Existence and ordering arrive together on purpose. Consumers
+        used to answer "does this exist" themselves, by ANDing
+        `floes.trust-manager.enable` with
+        `floes.cert-manager.selfSignedCA.enable`: a predicate only
+        this floe can compute, reconstructed in two others and wrong
+        in both (2026-07-30).
+      '';
+    };
+    caBundleSecret = lib.mkOption {
+      type = refs.nullableMountableRef;
+      default = null;
+      description = ''
+        Same bundle, same gating, as a Secret. For runtimes that read
+        CAs only from Secret volumes (harbor's `caBundleSecret`, many
+        Go apps) and cannot ingest a ConfigMap.
+      '';
+    };
+    caBundleNamespaceLabel = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = {
+        "catallaxy.io/trust-bundle" = "true";
+      };
+      description = ''
+        Namespace label that gates trust-bundle distribution.
+        Apply on any namespace that needs the lab CA mounted.
+      '';
+    };
+    issuance = lib.mkOption {
+      type = refs.mkCapability {
+        webhookReady = refs.tokenOption ''
+          "The admission webhook will admit a Certificate." Anything
+          emitting a Certificate CR puts this in its `requires`.
+
+          Exported rather than left for consumers to spell out, so
+          this floe can rename its own bundle tokens without silently
+          breaking the thirteen bundles gating on this one.
+        '';
+        defaultIssuerReady = refs.tokenOption ''
+          "`defaultIssuerRef` resolves to a ClusterIssuer that is
+          Ready." Stronger than `webhookReady`: this one waits for an
+          issuer that can actually sign.
+        '';
+        publicIssuer = lib.mkOption {
+          type = lib.types.bool;
+          description = ''
+            Whether the default issuer is a public CA (ACME). Consumers
+            use this to decide what they may put in a certificate:
+            ACME rejects `*.svc.cluster.local` and other non-public
+            suffixes, so a floe that wants an internal SAN must know.
+          '';
+        };
+      };
+      default = null;
+      description = ''
+        X.509 issuance, or null when this floe is off. Consumers assert
+        on this rather than on `floes.cert-manager.enable`: the
+        question is "can I get a certificate", which is ours to answer.
+      '';
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
 
       defaultIssuerRef =
@@ -165,7 +163,7 @@ in
       webhookReadyToken = "cert-manager/webhook/ready";
       defaultIssuerReadyToken = "cert-manager/default-issuer/ready";
 
-      bundleDistribution = peers.trust-manager.bundleDistribution;
+      bundleDistribution = config.floes.trust-manager.exports.bundleDistribution;
       distributesCaBundle = cfg.selfSignedCA.enable && bundleDistribution != null;
     in
     {
@@ -287,7 +285,7 @@ in
 
       };
 
-      bundles.cert-manager-crds = {
+      floes.cert-manager.bundles.cert-manager-crds = {
         owner = {
           bootstrap = "install-target";
           steady = "argocd";
@@ -297,7 +295,7 @@ in
         provides = [ "cert-manager/crds/established" ];
       };
 
-      bundles.cert-manager = {
+      floes.cert-manager.bundles.cert-manager = {
 
         owner = {
           bootstrap = "install-target";
@@ -315,7 +313,16 @@ in
         createNamespaces = [ cfg.namespace ];
 
         requires = [ "cert-manager/crds/established" ];
-        provides = [ webhookReadyToken ];
+        provides = [
+          webhookReadyToken
+          "certificate-issuance/webhook/ready"
+          "kind:cert-manager.io/Certificate"
+          "kind:cert-manager.io/CertificateRequest"
+          "kind:cert-manager.io/Issuer"
+          "kind:cert-manager.io/ClusterIssuer"
+          "kind:acme.cert-manager.io/Challenge"
+          "kind:acme.cert-manager.io/Order"
+        ];
 
         readyProbe = {
           kind = "condition";
@@ -326,27 +333,28 @@ in
         };
       };
 
-      bundles.cert-manager-issuers.owner = {
+      floes.cert-manager.bundles.cert-manager-issuers.owner = {
         bootstrap = "install-target";
         steady = "argocd";
       };
 
-      bundles.cert-manager-issuers.requires = [
+      floes.cert-manager.bundles.cert-manager-issuers.requires = [
         webhookReadyToken
       ]
 
       ++ lib.optional distributesCaBundle bundleDistribution.readyToken;
-      bundles.cert-manager-issuers.provides = [
+      floes.cert-manager.bundles.cert-manager-issuers.provides = [
         defaultIssuerReadyToken
+        "certificate-issuance/issuer/ready"
       ];
-      bundles.cert-manager-issuers.readyProbe = {
+      floes.cert-manager.bundles.cert-manager-issuers.readyProbe = {
         kind = "condition";
         resource = "clusterissuer/${defaultIssuerRef.name}";
         namespace = cfg.namespace;
         condition = "Ready";
         timeout = "3m";
       };
-      bundles.cert-manager-issuers.resources =
+      floes.cert-manager.bundles.cert-manager-issuers.resources =
         let
 
           rootIssuer = lib.optionalAttrs (cfg.selfSignedCA.enable && !cfg.selfSignedCA.intermediate.enable) {
@@ -503,6 +511,6 @@ in
             );
         in
         rootIssuer // intermediateIssuer // trustBundle // acmeResources;
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

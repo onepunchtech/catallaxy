@@ -108,9 +108,112 @@ let
       keep = b: view.packages ? ${b.name} || lib.hasPrefix "projection/" b.name;
     in
     lib.filter (w: w != [ ]) (map (w: lib.filter keep w) waves);
+
+  # Every bundle key that reaches a resource as its `catallaxy.io/bundle`
+  # label, which is what `lab up` compares against when deciding what the
+  # declaration no longer names.
+  #
+  # `bundleView.packages` rather than `bundleView.bundles`: the namespaces a
+  # cluster creates are rendered as a synthetic `namespaces` bundle that is not
+  # a bundle anyone declared. Listing only declared bundles left it unaccounted
+  # for, so every run read the lab's own namespaces as undeclared and deleted
+  # them, taking everything inside with them.
+  declaredBundlesOf =
+    clusterCfg:
+    let
+      strategy = config.lab.cd.strategy;
+    in
+    lib.attrNames clusterCfg.cluster.out.bundleView.packages
+    ++ lib.optional (renderers.deliveryBundle ? ${strategy}) renderers.deliveryBundle.${strategy};
+
+  strayClusterPaths = lib.filter (n: !(config.lab.clusters ? ${n})) (
+    lib.attrNames config.lab.cd.clusterPaths
+  );
+
+  # Under a gitops strategy, `lab up` applies only the install-target set and
+  # the CD floe reconciles the rest, so a cluster without that floe is created
+  # and then never receives anything. Nothing failed: no step names it, so the
+  # deploy succeeds and the lab is simply missing a cluster's worth of
+  # workloads until something asks the cluster a question.
+  #
+  # Only where the reconciler is a floe this repo defines: a strategy whose
+  # reconciler is installed some other way is not something this can check,
+  # and demanding a floe that does not exist would refuse every lab using it.
+  undeliveredClusters =
+    let
+      strategy = config.lab.cd.strategy;
+      reconcilerMissing = floes: (floes ? ${strategy}) && !(floes.${strategy}.enable or false);
+    in
+    lib.optionals (strategy != "kapp") (
+      lib.attrNames (
+        lib.filterAttrs (_: c: reconcilerMissing (c.floes or { })) config.lab.out.allClusters
+      )
+    );
 in
 {
+  config.lab.assertions =
+    lib.optional (undeliveredClusters != [ ]) {
+      assertion = false;
+      message = ''
+        `lab.cd.strategy` is "${config.lab.cd.strategy}", and ${lib.concatStringsSep ", " undeliveredClusters} ${
+          if builtins.length undeliveredClusters == 1 then "does" else "do"
+        } not enable `floes.${config.lab.cd.strategy}`.
+
+        That floe is what gives a cluster its root Application and the bootstrap
+        step that installs the reconciler, so a cluster without it is created and
+        then left empty. No step names it, so `lab up` reports success.
+
+        Either enable `floes.${config.lab.cd.strategy}` on ${lib.concatStringsSep ", " undeliveredClusters}, or leave ${
+          if builtins.length undeliveredClusters == 1 then "it" else "them"
+        } out of this lab.
+
+        `lab.cd.strategy = "kapp"` is the other answer: it applies every cluster
+        from here and needs no reconciler in any of them.
+      '';
+    }
+    ++ lib.optional (strayClusterPaths != [ ]) {
+      assertion = false;
+      message = ''
+        `lab.cd.clusterPaths` names ${lib.concatStringsSep ", " strayClusterPaths}, which ${
+          if builtins.length strayClusterPaths == 1 then "is not a cluster" else "are not clusters"
+        } in this lab. It has: ${lib.concatStringsSep ", " (lib.attrNames config.lab.clusters)}.
+
+        Each key redirects where one cluster's manifests are written. A key
+        that matches no cluster redirects nothing, and the cluster it was meant
+        for keeps rendering to `manifests/<cluster>`, so the change reads as
+        applied while the files go somewhere else.
+      '';
+    };
+
   options.lab.out = {
+    infraTool = mkOption {
+      type = types.nullOr types.package;
+      readOnly = true;
+      internal = true;
+      description = ''
+        An OpenTofu carrying exactly the providers this lab's stacks pin, or
+        null when it declares no stacks.
+
+        The lab carries its own tool so the CLI never reasons about providers:
+        it runs this and gets the same binaries the lab was built against. The
+        wrapper writes a filesystem-mirror configuration, so `init` resolves
+        offline and cannot silently fetch a different version.
+      '';
+    };
+
+    infra = mkOption {
+      type = types.attrsOf types.package;
+      readOnly = true;
+      internal = true;
+      description = ''
+        One rendered file per stack, in terraform's JSON syntax.
+
+        Rendered into the lab package beside `manifests/`, so what would be
+        provisioned is reviewable in the same place as what would be
+        applied, and a change to it moves the lab's digest.
+      '';
+    };
+
     manifests = mkOption {
       type = types.attrsOf types.package;
       readOnly = true;
@@ -180,6 +283,50 @@ in
           clusterCfg.cluster.out.argocdBundleView
       ) config.lab.out.allClusters;
 
+    infraTool =
+      let
+        stacks = config.lab.infra.out.stacks;
+
+        # Every provider any stack pins, already resolved to a package by
+        # `lib/infra/providers.nix`. An unpackaged or ambiguous one was
+        # refused there, so there is nothing left to check here.
+        attrs = lib.unique (
+          lib.concatMap (stack: lib.mapAttrsToList (_: p: p.attr) stack.requiredProviders) (
+            lib.attrValues stacks
+          )
+        );
+      in
+      if stacks == { } then
+        null
+      else
+        pkgs.opentofu.withPlugins (available: map (attr: available.${attr}) attrs);
+
+    infra =
+      let
+        render = import ../../../lib/render/infra-terraform.nix { inherit lib; };
+        stacks = config.lab.infra.out.stacks;
+
+        publishedIn =
+          stackName:
+          lib.concatLists (
+            lib.mapAttrsToList (
+              resourceName: r: map (output: render.outputName resourceName output) (lib.attrNames r.publish)
+            ) stacks.${stackName}.resources
+          );
+      in
+      lib.mapAttrs (
+        stackName: _:
+        pkgs.writeTextDir "infra/${stackName}/main.tf.json" (
+          builtins.toJSON (
+            render.stack {
+              name = stackName;
+              inherit stacks;
+              publishedOutputs = publishedIn stackName;
+            }
+          )
+        )
+      ) stacks;
+
     manifests =
       let
         strategy = config.lab.cd.strategy;
@@ -196,14 +343,21 @@ in
         renderer (
           {
             clusterName = name;
+            labName = config.lab.name;
+            declaredBundles = declaredBundlesOf clusterCfg;
             inherit prefix imageLock imageRegistry;
             imageExempt = imageExemptFor clusterCfg;
             imageOverrides = imageOverridesFor clusterCfg;
             inherit (view) packages;
             labNamespaces = config.lab.out.labNamespaces.${name};
-            deployConfig = cdConfig // {
-              targetPath = config.lab.cd.clusterPaths.${name} or "manifests/${name}";
-            };
+            deployConfig =
+              cdConfig
+              // {
+                targetPath = config.lab.cd.clusterPaths.${name} or "manifests/${name}";
+              }
+              // lib.optionalAttrs (clusterCfg.cluster.cd.repoUrl != null) {
+                repoUrl = clusterCfg.cluster.cd.repoUrl;
+              };
           }
 
           // lib.optionalAttrs (strategy == "kapp" || strategy == "argocd" || strategy == "fleet") {
@@ -239,6 +393,8 @@ in
           in
           renderers.kapp {
             clusterName = name;
+            labName = config.lab.name;
+            declaredBundles = declaredBundlesOf clusterCfg;
             inherit prefix imageLock imageRegistry;
             imageExempt = imageExemptFor clusterCfg;
             imageOverrides = imageOverridesFor clusterCfg;
@@ -276,6 +432,8 @@ in
           else
             renderers.kapp {
               clusterName = name;
+              labName = config.lab.name;
+              declaredBundles = declaredBundlesOf clusterCfg;
               inherit prefix imageLock imageRegistry;
               imageExempt = imageExemptFor clusterCfg;
               imageOverrides = imageOverridesFor clusterCfg;

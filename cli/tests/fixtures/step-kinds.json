@@ -322,6 +322,57 @@
     "idempotency": "idempotent",
     "params": {}
   },
+  "infra-apply": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "idempotent",
+    "params": {
+      "stack": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "workingDir": {
+        "required": false,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "infra-destroy": {
+    "directions": [
+      "teardown"
+    ],
+    "dryRunSafe": false,
+    "idempotency": "destructive",
+    "params": {
+      "stack": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "workingDir": {
+        "required": false,
+        "sample": "conformance-sample"
+      }
+    }
+  },
+  "infra-plan": {
+    "directions": [
+      "deploy"
+    ],
+    "dryRunSafe": true,
+    "idempotency": "idempotent",
+    "params": {
+      "stack": {
+        "required": true,
+        "sample": "conformance-sample"
+      },
+      "workingDir": {
+        "required": false,
+        "sample": "conformance-sample"
+      }
+    }
+  },
   "pivot": {
     "directions": [
       "deploy"

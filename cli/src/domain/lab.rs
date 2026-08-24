@@ -9,6 +9,16 @@ use super::secrets::SecretsSpec;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InfraPublication {
+    pub stack: String,
+    /// Name of the output in the rendered stack, `<resource>_<output>`.
+    pub output_name: String,
+    pub store: String,
+    pub key: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LabSpec {
     pub lab_name: String,
 
@@ -19,6 +29,13 @@ pub struct LabSpec {
     pub clusters: BTreeMap<String, ClusterSpec>,
 
     pub lab_namespaces: BTreeMap<String, Vec<String>>,
+
+    /// What each stack puts into a store once it has applied.
+    ///
+    /// Flattened on the Nix side, because the executor wants "for this stack,
+    /// these outputs go to these places" and not a walk over resources.
+    #[serde(default)]
+    pub infra_publications: Vec<InfraPublication>,
 
     pub network: NetworkInfo,
 
@@ -107,20 +124,6 @@ fn resolve_context<'a>(
             known.join(", ")
         ),
     }
-}
-
-pub fn kube_context_in<'a>(lab: &'a Value, cluster: &str) -> anyhow::Result<&'a str> {
-    let contexts = lab.get("runtimeContexts").and_then(Value::as_object);
-    let known: Vec<&str> = contexts
-        .map(|c| c.keys().map(String::as_str).collect())
-        .unwrap_or_default();
-    resolve_context(
-        contexts
-            .and_then(|c| c.get(cluster))
-            .and_then(Value::as_str),
-        cluster,
-        &known,
-    )
 }
 
 impl LabSpec {

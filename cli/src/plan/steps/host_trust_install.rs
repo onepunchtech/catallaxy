@@ -5,7 +5,7 @@ use crate::host::pki;
 use crate::host::state;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>) -> Result<()> {
     if sctx.dry_run {
         println!(
             "{} [dry-run] would install lab CA into host trust for '{}'",
@@ -14,7 +14,7 @@ pub async fn run(sctx: &StepContext<'_>) -> Result<()> {
         );
         return Ok(());
     }
-    let ca_path = state::service_state_dir(sctx.lab_name, "proxy").join("ca.crt");
+    let ca_path = state::lab_ca_path(sctx.lab_name);
     if !ca_path.exists() {
         bail!(
             "No lab CA at {}.\n    \

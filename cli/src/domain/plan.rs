@@ -196,6 +196,9 @@ pub enum StepParams {
     BootstrapArgocdHelm(BootstrapArgocdHelmParams),
     VerifyArgocdReachable(VerifyArgocdReachableParams),
     RunScript(RunScriptParams),
+    InfraPlan(InfraParams),
+    InfraApply(InfraParams),
+    InfraDestroy(InfraParams),
     DestroyCluster(DestroyClusterParams),
     ReconcileManagedResource(ReconcileManagedResourceParams),
     DeleteManagedResource(DeleteManagedResourceParams),
@@ -438,6 +441,19 @@ pub struct DeleteManagedResourceParams {
     pub external_name_discovery_bin: Option<String>,
 }
 
+/// One stack, for every verb that acts on one.
+///
+/// The three infra kinds differ in what they run and in whether they mutate,
+/// not in what they are given, so they share a params type rather than three
+/// identical ones that could drift apart.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfraParams {
+    pub stack: String,
+    #[serde(default)]
+    pub working_dir: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WaitForClusterGoneParams {
@@ -489,6 +505,9 @@ impl StepParams {
                 .map(|t| vec![("target", t)])
                 .unwrap_or_default(),
             StepParams::ReleaseClusterCloudResources(p) => vec![("target", &p.target)],
+            StepParams::InfraPlan(p) | StepParams::InfraApply(p) | StepParams::InfraDestroy(p) => {
+                vec![("stack", &p.stack)]
+            }
             StepParams::BootstrapArgocdKubectlSsa(p) => vec![("target", &p.target)],
             StepParams::BootstrapArgocdHelm(p) => vec![("target", &p.target)],
             StepParams::VerifyArgocdReachable(p) => vec![("target", &p.target)],
@@ -537,6 +556,9 @@ impl StepParams {
             StepParams::BootstrapArgocdHelm(_) => StepKind::BootstrapArgocdHelm,
             StepParams::VerifyArgocdReachable(_) => StepKind::VerifyArgocdReachable,
             StepParams::RunScript(_) => StepKind::RunScript,
+            StepParams::InfraPlan(_) => StepKind::InfraPlan,
+            StepParams::InfraApply(_) => StepKind::InfraApply,
+            StepParams::InfraDestroy(_) => StepKind::InfraDestroy,
             StepParams::DestroyCluster(_) => StepKind::DestroyCluster,
             StepParams::ReconcileManagedResource(_) => StepKind::ReconcileManagedResource,
             StepParams::DeleteManagedResource(_) => StepKind::DeleteManagedResource,

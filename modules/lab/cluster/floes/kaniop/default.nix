@@ -7,82 +7,80 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.kaniop;
 in
-(mkFloe {
-  name = "kaniop";
-  version = "0.11.1";
-  imports = [ ./options.nix ];
-
-  drift = [
-    {
-      group = "kaniop.rs";
-      kinds = [ "Kanidm" ];
-      managedBy = [ "unknown" ];
-      reason = "kaniop reconciles the Kanidm CR but registers as `unknown` rather than a real manager name.";
-    }
-    {
-      group = "kaniop.rs";
-      kinds = [ "KanidmOAuth2Client" ];
-      managedBy = [ "kanidmoauth2clients.kaniop.rs" ];
-      reason = "kaniop writes reconciled client state back onto the CR.";
-    }
-    {
-      group = "kaniop.rs";
-      kinds = [ "KanidmGroup" ];
-      managedBy = [ "kanidmgroups.kaniop.rs" ];
-      reason = "kaniop writes reconciled group state back onto the CR.";
-    }
-    {
-      group = "kaniop.rs";
-      kinds = [ "KanidmPersonAccount" ];
-      managedBy = [ "kanidmpersonsaccounts.kaniop.rs" ];
-      reason = "kaniop writes reconciled account state back onto the CR (note the extra `s` in the manager name).";
-    }
-    {
-      group = "kaniop.rs";
-      kinds = [ "KanidmServiceAccount" ];
-      managedBy = [ "kanidmservicesaccounts.kaniop.rs" ];
-      reason = "kaniop writes reconciled account state back onto the CR (note the extra `s` in the manager name).";
-    }
+{
+  imports = [
+    (floeOptions {
+      name = "kaniop";
+      version = "0.11.1";
+      drift = [
+        {
+          group = "kaniop.rs";
+          kinds = [ "Kanidm" ];
+          managedBy = [ "unknown" ];
+          reason = "kaniop reconciles the Kanidm CR but registers as `unknown` rather than a real manager name.";
+        }
+        {
+          group = "kaniop.rs";
+          kinds = [ "KanidmOAuth2Client" ];
+          managedBy = [ "kanidmoauth2clients.kaniop.rs" ];
+          reason = "kaniop writes reconciled client state back onto the CR.";
+        }
+        {
+          group = "kaniop.rs";
+          kinds = [ "KanidmGroup" ];
+          managedBy = [ "kanidmgroups.kaniop.rs" ];
+          reason = "kaniop writes reconciled group state back onto the CR.";
+        }
+        {
+          group = "kaniop.rs";
+          kinds = [ "KanidmPersonAccount" ];
+          managedBy = [ "kanidmpersonsaccounts.kaniop.rs" ];
+          reason = "kaniop writes reconciled account state back onto the CR (note the extra `s` in the manager name).";
+        }
+        {
+          group = "kaniop.rs";
+          kinds = [ "KanidmServiceAccount" ];
+          managedBy = [ "kanidmservicesaccounts.kaniop.rs" ];
+          reason = "kaniop writes reconciled account state back onto the CR (note the extra `s` in the manager name).";
+        }
+      ];
+    })
+    ./options.nix
   ];
 
-  exports =
-    { lib, ... }:
-    {
-      operator = lib.mkOption {
-        type = refs.mkCapability {
-          ready = refs.tokenOption ''"The kaniop controller is running and will reconcile Kanidm CRs."'';
-          crdsEstablished = refs.tokenOption ''"The Kanidm CRDs are established": apply a CR before this and the API server rejects the kind.'';
-        };
-        default = null;
-        description = ''
-          Kanidm CR reconciliation, or null when this floe is off.
-          Consumers assert on this rather than on `floes.kaniop.enable`.
-        '';
+  options.floes.kaniop.exports = {
+    operator = lib.mkOption {
+      type = refs.mkCapability {
+        ready = refs.tokenOption ''"The kaniop controller is running and will reconcile Kanidm CRs."'';
+        crdsEstablished = refs.tokenOption ''"The Kanidm CRDs are established": apply a CR before this and the API server rejects the kind.'';
       };
-
-      operatorReadyProbe = lib.mkOption {
-        type = lib.types.attrs;
-        default = {
-          kind = "condition";
-          resource = "deployment/kaniop";
-          namespace = "kaniop";
-          condition = "Available";
-          timeout = "5m";
-        };
-        description = "Probe a consumer can reuse to wait for the operator, rather than restating the deployment name and namespace.";
-      };
+      default = null;
+      description = ''
+        Kanidm CR reconciliation, or null when this floe is off.
+        Consumers assert on this rather than on `floes.kaniop.enable`.
+      '';
     };
-  module =
-    {
-      pkgs,
-      cfg,
-      ...
-    }:
+
+    operatorReadyProbe = lib.mkOption {
+      type = lib.types.attrs;
+      default = {
+        kind = "condition";
+        resource = "deployment/kaniop";
+        namespace = "kaniop";
+        condition = "Available";
+        timeout = "5m";
+      };
+      description = "Probe a consumer can reuse to wait for the operator, rather than restating the deployment name and namespace.";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
 
       kaniopCrds = pkgs.runCommand "kaniop-crds" { } ''
@@ -120,7 +118,7 @@ in
 
       };
 
-      bundles.kaniop-crds = {
+      floes.kaniop.bundles.kaniop-crds = {
         owner = {
           bootstrap = "install-target";
           steady = "argocd";
@@ -129,7 +127,7 @@ in
         provides = [ "kaniop/crds/established" ];
       };
 
-      bundles.kaniop = {
+      floes.kaniop.bundles.kaniop = {
         includeInBootstrap = false;
         owner = {
           bootstrap = "install-target";
@@ -147,7 +145,15 @@ in
         createNamespaces = [ cfg.namespace ];
 
         requires = [ "kaniop/crds/established" ];
-        provides = [ "kaniop/operator/ready" ];
+        provides = [
+          "kaniop/operator/ready"
+          "identity-operator/ready"
+          "kind:kaniop.rs/Kanidm"
+          "kind:kaniop.rs/KanidmGroup"
+          "kind:kaniop.rs/KanidmOAuth2Client"
+          "kind:kaniop.rs/KanidmPersonAccount"
+          "kind:kaniop.rs/KanidmServiceAccount"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "deployment/kaniop";
@@ -156,6 +162,6 @@ in
           timeout = "5m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

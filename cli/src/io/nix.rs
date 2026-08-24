@@ -120,6 +120,11 @@ fn run_nix_with_stderr(args: &[&str], stderr: fn() -> Stdio) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// # Errors
+///
+/// If `nix eval` cannot be spawned, exits non-zero because the attribute is
+/// missing or the flake does not evaluate, or produces JSON that is not a `T`.
+/// Nix's own stderr is inherited, so evaluation errors are already on screen.
 pub fn eval_flake<T: DeserializeOwned>(ctx: &CataContext, attr: &str) -> Result<T> {
     let uri = ctx.flake_uri();
     let installable = format!("{uri}#{attr}");
@@ -136,6 +141,12 @@ fn eval_flake_quiet<T: DeserializeOwned>(ctx: &CataContext, attr: &str) -> Resul
     serde_json::from_str(&stdout).context("Failed to parse nix eval output")
 }
 
+/// Realise a flake attribute and return its store path.
+///
+/// # Errors
+///
+/// If `nix build` cannot be spawned, or exits non-zero because the attribute
+/// is missing or the derivation fails.
 pub fn build(ctx: &CataContext, attr: &str) -> Result<String> {
     let uri = ctx.flake_uri();
     let installable = format!("{uri}#{attr}");
@@ -144,6 +155,10 @@ pub fn build(ctx: &CataContext, attr: &str) -> Result<String> {
     Ok(stdout.trim().to_string())
 }
 
+/// # Errors
+///
+/// If the lab has no cluster by that name. The message lists the ones it does
+/// have.
 pub fn get_cluster_config_from_lab(
     lab: &serde_json::Value,
     cluster_name: &str,
@@ -164,6 +179,10 @@ pub fn get_cluster_config_from_lab(
         })
 }
 
+/// # Errors
+///
+/// If the lab has no cluster by that name, or its evaluated config does not
+/// parse as a [`ClusterSpec`].
 pub fn get_cluster_spec_from_lab(
     lab: &serde_json::Value,
     cluster_name: &str,
@@ -173,23 +192,21 @@ pub fn get_cluster_spec_from_lab(
         .with_context(|| format!("parsing the evaluated config for cluster '{cluster_name}'"))
 }
 
-pub fn get_cluster_config_with_secrets(
-    lab: &serde_json::Value,
-    cluster_name: &str,
-) -> Result<serde_json::Value> {
-    let mut cluster_config = get_cluster_config_from_lab(lab, cluster_name)?;
-    if let Some(secrets) = lab.get("secrets") {
-        cluster_config["secrets"] = secrets.clone();
-    }
-    Ok(cluster_config)
-}
-
+/// # Errors
+///
+/// If no lab is active and none can be resolved, if that lab does not
+/// evaluate, or if it has no cluster by that name.
 pub fn get_cluster_config(ctx: &CataContext, cluster_name: &str) -> Result<serde_json::Value> {
     let lab_name = ctx.resolve_lab_name(None)?;
     let lab = get_lab_config(ctx, &lab_name)?;
     get_cluster_config_from_lab(&lab, cluster_name)
 }
 
+/// # Errors
+///
+/// If no lab is active and none can be resolved, or that lab does not
+/// evaluate. A lab that evaluates but declares no `clusterNames` is an empty
+/// list, not an error.
 pub fn list_clusters(ctx: &CataContext) -> Result<Vec<String>> {
     let lab_name = ctx.resolve_lab_name(None)?;
     let lab = get_lab_config(ctx, &lab_name)?;
@@ -219,6 +236,17 @@ pub fn current_system() -> String {
     format!("{nix_arch}-{nix_os}")
 }
 
+/// Evaluate a lab, memoised per flake URI and lab name for this process.
+///
+/// # Errors
+///
+/// If the lab is not in the flake, in which case the message lists the labs
+/// that are and suggests the nearest name, or if it is but does not evaluate,
+/// in which case nix's captured stderr is the message.
+///
+/// # Panics
+///
+/// If the memo table's lock is poisoned.
 pub fn get_lab_config(ctx: &CataContext, lab_name: &str) -> Result<serde_json::Value> {
     let cache_key = format!("{}#{}", ctx.flake_uri(), lab_name);
     if let Some(cached) = lab_config_cache()
@@ -290,23 +318,24 @@ fn edit_distance(a: &str, b: &str) -> usize {
     previous[b_chars.len()]
 }
 
+/// Evaluate a lab and parse it, activating its egress settings as a side
+/// effect so later network calls inherit them.
+///
+/// # Errors
+///
+/// If the lab does not evaluate, or its config does not parse as a
+/// [`LabSpec`].
 pub fn get_lab_spec(ctx: &CataContext, lab_name: &str) -> Result<LabSpec> {
     let value = get_lab_config(ctx, lab_name)?;
-    LabSpec::from_value(value)
-        .with_context(|| format!("parsing the evaluated config for lab '{lab_name}'"))
+    let spec = LabSpec::from_value(value)
+        .with_context(|| format!("parsing the evaluated config for lab '{lab_name}'"))?;
+    crate::io::egress::activate_from(&spec);
+    Ok(spec)
 }
 
-pub fn eval_cluster_from_lab(lab: &LabSpec, cluster_name: &str) -> Result<ClusterSpec> {
-    lab.clusters.get(cluster_name).cloned().ok_or_else(|| {
-        let available: Vec<&str> = lab.clusters.keys().map(String::as_str).collect();
-        anyhow::anyhow!(
-            "cluster '{}' not found in lab (available: {})",
-            cluster_name,
-            available.join(", ")
-        )
-    })
-}
-
+/// # Errors
+///
+/// If the flake has no `labs` attribute for this system, or does not evaluate.
 pub fn list_labs(ctx: &CataContext) -> Result<Vec<String>> {
     let uri = ctx.flake_uri();
     let system = current_system();
@@ -332,6 +361,13 @@ pub struct LabSummary {
     pub reasons: Vec<String>,
 }
 
+/// Every lab with its cluster count and unattended eligibility, in name order.
+///
+/// # Errors
+///
+/// If the flake has no `labs` attribute for this system, or any lab in it
+/// fails to evaluate. This evaluates all of them, so one broken lab hides the
+/// rest.
 pub fn list_labs_with_cluster_counts(ctx: &CataContext) -> Result<Vec<(String, LabSummary)>> {
     let uri = ctx.flake_uri();
     let system = current_system();
@@ -353,6 +389,9 @@ pub fn list_labs_with_cluster_counts(ctx: &CataContext) -> Result<Vec<(String, L
     Ok(map.into_iter().collect())
 }
 
+/// # Errors
+///
+/// If the lab is not in the flake, or its package does not build.
 pub fn build_lab_package(ctx: &CataContext, lab_name: &str) -> Result<String> {
     let system = current_system();
     build(
@@ -361,6 +400,12 @@ pub fn build_lab_package(ctx: &CataContext, lab_name: &str) -> Result<String> {
     )
 }
 
+/// Realise an installable given in full, for the attributes that are not
+/// relative to a lab's flake.
+///
+/// # Errors
+///
+/// If `nix build` cannot be spawned, or exits non-zero.
 pub fn build_out_path(attr: &str) -> anyhow::Result<String> {
     let mut cmd = std::process::Command::new("nix");
     cmd.args(["build", "--no-link", "--print-out-paths", attr]);

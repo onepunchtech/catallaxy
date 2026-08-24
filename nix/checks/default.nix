@@ -8,16 +8,17 @@
   packages,
   treefmtEval,
   mkLab,
+  labRefusal,
+  labForce,
   mkLabChecks,
   exampleLabDefs,
+  fixtureLabs,
   e2eLabs,
+  k8sTypegenConfig,
 }:
 
 let
-  fixtureLabs = {
-    cloud-teardown = mkLab { modules = [ ../../examples/labs/tests/cloud-teardown.nix ]; };
-    every-floe = mkLab { modules = [ ../../examples/labs/tests/every-floe.nix ]; };
-  };
+  schemas = import ../schemas { inherit lib pkgs k8sTypegenConfig; };
 in
 {
   cli = packages.cataWrapped;
@@ -25,8 +26,44 @@ in
   docs = packages.docs;
   formatting = treefmtEval.config.build.check self;
 }
-// import ./assertions.nix { inherit lib pkgs mkLab; }
-// import ./resource-types.nix { inherit lib pkgs mkLab; }
+// import ./assertions.nix {
+  inherit
+    lib
+    pkgs
+    mkLab
+    labRefusal
+    ;
+}
+// import ./typo-assertions.nix { inherit lib pkgs labRefusal; }
+// import ./capability-conflicts.nix { inherit lib pkgs labRefusal; }
+// import ./floe-collisions.nix { inherit lib pkgs labRefusal; }
+// import ./floe-exports.nix { inherit lib pkgs mkLab; }
+// import ./infra-terraform.nix {
+  inherit
+    lib
+    pkgs
+    fixtureLabs
+    exampleLabDefs
+    ;
+}
+// import ./infra-refusals.nix { inherit lib pkgs labRefusal; }
+// import ./resource-types.nix {
+  inherit
+    lib
+    pkgs
+    labForce
+    labRefusal
+    ;
+}
+// import ./generated-schemas.nix { inherit lib pkgs k8sTypegenConfig; }
+// import ./kubeconform.nix {
+  inherit lib pkgs schemas;
+  labs = exampleLabDefs // fixtureLabs;
+}
+// import ./ownership.nix {
+  inherit lib pkgs;
+  labs = exampleLabDefs // fixtureLabs;
+}
 // import ./cli-lints.nix { inherit pkgs self; }
 // import ./lib-tests.nix { inherit lib pkgs e2eLabs; }
 // import ./step-kinds.nix { inherit lib pkgs system; }

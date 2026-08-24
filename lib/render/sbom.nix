@@ -26,7 +26,7 @@ let
       key: _:
       lib.nameValuePair (sanitize key) (
         let
-          floeName = cluster.view.bundles.${key}.floe or null;
+          floeName = cluster.view.bundles.${key}.declaredBy or null;
         in
         if floeName == null then null else refOfFloe cluster floeName
       )
@@ -41,7 +41,7 @@ let
           key = chartKey;
           floeRef =
             let
-              floeName = bundle.floe or null;
+              floeName = bundle.declaredBy or null;
             in
             if floeName == null then null else refOfFloe cluster floeName;
           path = toString spec.chart;

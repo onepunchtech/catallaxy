@@ -1,36 +1,37 @@
 {
   lib,
   pkgs,
-  mkLab,
+  labForce,
+  labRefusal,
 }:
 
 let
-  labWith =
-    resource:
-    builtins.tryEval (
-      let
-        result = mkLab {
-          modules = [
-            {
-              lab.name = "typed-fixture";
-              lab.environment = "development";
-              lab.dns.enable = false;
-              lab.registry.enable = false;
-              lab.proxy.enable = false;
-              lab.clusters.app =
-                { lab, ... }:
-                {
-                  cluster.name = "app";
-                  cluster.provisioner = "k3d";
-                  provisioner.k3d.network = lab.name;
-                  bundles.t.resources.r = resource;
-                };
-            }
-          ];
-        };
-      in
-      builtins.deepSeq result.config.lab.clusters.app.bundles.t.resources.r.spec "evaluated"
-    );
+  labFixture = unchecked: resource: {
+    lab.name = "typed-fixture";
+    lab.environment = "development";
+    lab.dns.enable = false;
+    lab.registry.enable = false;
+    lab.proxy.enable = false;
+    lab.clusters.app =
+      { lab, ... }:
+      {
+        cluster.name = "app";
+        cluster.provisioner = "k3d";
+        provisioner.k3d.network = lab.name;
+        cluster.kubernetes.uncheckedResources = unchecked;
+        bundles.t.declaredBy = "cluster";
+        bundles.t.resources.r = resource;
+      };
+  };
+
+  labAllowing =
+    unchecked: resource:
+    labForce {
+      force = config: config.lab.clusters.app.bundles.t.resources.r.spec;
+      modules = [ (labFixture unchecked resource) ];
+    };
+
+  labWith = labAllowing [ ];
 
   deployment = spec: {
     apiVersion = "apps/v1";
@@ -118,6 +119,106 @@ let
     };
   };
 
+  # Gateway API ships as raw CRD YAML rather than through a chart, so it loads
+  # by a third route again. Its kinds evaluated untyped until the generator was
+  # run over the standalone bundle.
+  httpRoute = rules: {
+    apiVersion = "gateway.networking.k8s.io/v1";
+    kind = "HTTPRoute";
+    metadata.name = "x";
+    spec = {
+      parentRefs = [ { name = "public"; } ];
+      hostnames = [ "x.local" ];
+      inherit rules;
+    };
+  };
+
+  backend = [
+    {
+      backendRefs = [
+        {
+          name = "svc";
+          port = 8080;
+        }
+      ];
+    }
+  ];
+
+  validGatewayCrd = labWith (httpRoute backend);
+
+  wrongTypeInGatewayCrd = labWith (httpRoute [
+    {
+      backendRefs = [
+        {
+          name = "svc";
+          port = "8080";
+        }
+      ];
+    }
+  ]);
+
+  # A kind alone does not pick a schema. Sixteen kinds in this tree are
+  # declared under more than one apiVersion: `HorizontalPodAutoscaler` in
+  # autoscaling/v1 and v2, `Backup` in velero's group and CloudNativePG's,
+  # `Cluster` in CloudNativePG's, Cluster API's and Crossplane's. Resolving on
+  # kind alone silently picked whichever the fold happened to visit last.
+  hpa = apiVersion: spec: {
+    inherit apiVersion;
+    kind = "HorizontalPodAutoscaler";
+    metadata.name = "x";
+    scaleTargetRef = {
+      kind = "Deployment";
+      name = "x";
+    };
+    inherit spec;
+  };
+
+  hpaV1Only = labWith (
+    hpa "autoscaling/v1" {
+      scaleTargetRef = {
+        kind = "Deployment";
+        name = "x";
+      };
+      maxReplicas = 3;
+      targetCPUUtilizationPercentage = 50;
+    }
+  );
+
+  hpaV2RejectsAV1Shape = labWith (
+    hpa "autoscaling/v2" {
+      scaleTargetRef = {
+        kind = "Deployment";
+        name = "x";
+      };
+      maxReplicas = 3;
+      metrics = "cpu";
+    }
+  );
+
+  cnpgCluster = labWith {
+    apiVersion = "postgresql.cnpg.io/v1";
+    kind = "Cluster";
+    metadata.name = "x";
+    spec.instances = "three";
+  };
+
+  # A kind the tree has schemas for, under an apiVersion it does not. That is
+  # a resource which reads as validated and is not, so it is refused unless
+  # the pair is named. Crossplane's Cluster is the real instance: its CRDs
+  # arrive at runtime through the provider, so the schema is never in tree.
+  crossplaneClusterPair = "kubernetes.digitalocean.crossplane.io/v1alpha1/Cluster";
+
+  crossplaneCluster = {
+    apiVersion = "kubernetes.digitalocean.crossplane.io/v1alpha1";
+    kind = "Cluster";
+    metadata.name = "x";
+    spec.instances = "three";
+  };
+
+  uncheckedPairRefusals = labRefusal { modules = [ (labFixture [ ] crossplaneCluster) ]; };
+
+  uncheckedPairIsAllowedWhenNamed = labAllowing [ crossplaneClusterPair ] crossplaneCluster;
+
   unknownKind = labWith {
     apiVersion = "example.com/v1";
     kind = "SomethingNoSchemaKnows";
@@ -136,7 +237,26 @@ let
     ++ lib.optional (!validCrd.success) "a well-formed ExternalSecret should evaluate, but it threw"
     ++ lib.optional wrongTypeInCrd.success "spec.target.immutable = \"yes\" should fail evaluation, but the ExternalSecret evaluated"
     ++ lib.optional (!otherCrd.success) "a well-formed Certificate should evaluate, but it threw"
-    ++ lib.optional wrongTypeInOtherCrd.success "spec.dnsNames as a bare string should fail evaluation, but the Certificate evaluated";
+    ++ lib.optional wrongTypeInOtherCrd.success "spec.dnsNames as a bare string should fail evaluation, but the Certificate evaluated"
+    ++ lib.optional (!validGatewayCrd.success) "a well-formed HTTPRoute should evaluate, but it threw"
+    ++ lib.optional wrongTypeInGatewayCrd.success "a backendRef port of \"8080\" should fail evaluation, but the HTTPRoute evaluated"
+    ++ lib.optional (
+      !hpaV1Only.success
+    ) "an autoscaling/v1 HorizontalPodAutoscaler should evaluate against the v1 schema, but it threw"
+    ++ lib.optional hpaV2RejectsAV1Shape.success "spec.metrics = \"cpu\" should fail evaluation, but the autoscaling/v2 HorizontalPodAutoscaler evaluated"
+    ++ lib.optional cnpgCluster.success "spec.instances = \"three\" should fail evaluation, but the CloudNativePG Cluster evaluated"
+    ++
+      lib.optional
+        (
+          uncheckedPairRefusals == null
+          || !(lib.any (
+            m: lib.hasInfix "The schemas in this tree know that kind only as" m
+          ) uncheckedPairRefusals)
+        )
+        "a kind with schemas but not for its apiVersion should be refused by an assertion saying so, but it was not"
+    ++
+      lib.optional (!uncheckedPairIsAllowedWhenNamed.success)
+        "naming the pair in `cluster.kubernetes.uncheckedResources` should let it through, but it still threw";
 in
 {
   resource-types-are-applied = pkgs.runCommand "resource-types-are-applied" { } (

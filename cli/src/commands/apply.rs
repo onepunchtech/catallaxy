@@ -22,7 +22,7 @@ pub struct ApplyArgs {
     pub force: bool,
 }
 
-pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
+pub fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
     crate::apply::apply(
         ctx,
         ApplyRequest {
@@ -36,5 +36,4 @@ pub async fn run(ctx: &CataContext, args: ApplyArgs) -> Result<()> {
             kube_context_override: None,
         },
     )
-    .await
 }

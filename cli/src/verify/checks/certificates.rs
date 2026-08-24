@@ -10,10 +10,17 @@ pub fn run(ctx: &VerifyContext<'_>) -> Vec<Diagnostic> {
     let state = crate::host::state::lab_state_dir(ctx.lab_name);
 
     let candidates = [
-        ("lab CA", state.join("proxy").join("ca.crt")),
+        (
+            "lab CA",
+            state
+                .join(crate::host::state::PROXY_SERVICE)
+                .join(crate::host::state::CA_CERT),
+        ),
         (
             "lab ingress certificate",
-            state.join("proxy").join("lab.pem"),
+            state
+                .join(crate::host::state::PROXY_SERVICE)
+                .join("lab.pem"),
         ),
     ];
 

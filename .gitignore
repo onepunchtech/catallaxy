@@ -10,3 +10,4 @@ docs/book/src/reference/options/
 .claude/
 .sops.yaml
 secrets/
+__pycache__/

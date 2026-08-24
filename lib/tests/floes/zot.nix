@@ -25,8 +25,25 @@ let
         type = lib.types.listOf lib.types.str;
         default = [ ];
       };
+      options.floes.gateway.enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+      };
+      options.floes.gateway.capabilities = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+      };
       config.floes.gateway.exports.routing = {
         publicReady = "gateway/public/ready";
+      };
+
+      # The payload is what a consumer reads, not the stub's exports. Leaving
+      # it empty is a gateway that claims the job and offers nothing for it,
+      # which is the case this whole contract exists to stop passing.
+      config.floes.gateway.capabilities.provides.api-gateway = {
+        routing = {
+          publicReady = "gateway/public/ready";
+        };
       };
     };
 

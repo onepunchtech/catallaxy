@@ -26,6 +26,9 @@ pub enum StepKind {
     BootstrapArgocdHelm,
     VerifyArgocdReachable,
     RunScript,
+    InfraPlan,
+    InfraApply,
+    InfraDestroy,
     DestroyCluster,
     ReconcileManagedResource,
     DeleteManagedResource,
@@ -36,7 +39,7 @@ pub enum StepKind {
 }
 
 impl StepKind {
-    pub const ALL: [StepKind; 31] = [
+    pub const ALL: [StepKind; 34] = [
         StepKind::SetupServices,
         StepKind::DockerNetworkCreate,
         StepKind::CertGenerate,
@@ -61,6 +64,9 @@ impl StepKind {
         StepKind::BootstrapArgocdHelm,
         StepKind::VerifyArgocdReachable,
         StepKind::RunScript,
+        StepKind::InfraPlan,
+        StepKind::InfraApply,
+        StepKind::InfraDestroy,
         StepKind::DestroyCluster,
         StepKind::ReconcileManagedResource,
         StepKind::DeleteManagedResource,
@@ -100,6 +106,9 @@ impl StepKind {
             StepKind::BootstrapArgocdHelm => "bootstrap-argocd-helm",
             StepKind::VerifyArgocdReachable => "verify-argocd-reachable",
             StepKind::RunScript => "run-script",
+            StepKind::InfraPlan => "infra-plan",
+            StepKind::InfraApply => "infra-apply",
+            StepKind::InfraDestroy => "infra-destroy",
             StepKind::DestroyCluster => "destroy-cluster",
             StepKind::ReconcileManagedResource => "reconcile-managed-resource",
             StepKind::DeleteManagedResource => "delete-managed-resource",
@@ -115,6 +124,7 @@ impl StepKind {
             StepKind::CreateCluster | StepKind::Pivot => Idempotency::OneShot,
             StepKind::DestroyCluster
             | StepKind::DeleteManagedResource
+            | StepKind::InfraDestroy
             | StepKind::RemoveNetwork
             | StepKind::RemoveServices => Idempotency::Destructive,
             StepKind::SetupServices
@@ -141,6 +151,8 @@ impl StepKind {
             | StepKind::RunScript
             | StepKind::WaitForClusterGone
             | StepKind::ReconcileManagedResource
+            | StepKind::InfraPlan
+            | StepKind::InfraApply
             | StepKind::ReleaseClusterCloudResources => Idempotency::Idempotent,
         }
     }
@@ -148,7 +160,8 @@ impl StepKind {
     pub fn runs_in(self, direction: Direction) -> bool {
         let (deploy, teardown) = match self {
             StepKind::RunScript | StepKind::DestroyCluster => (true, true),
-            StepKind::ReconcileManagedResource
+            StepKind::InfraDestroy
+            | StepKind::ReconcileManagedResource
             | StepKind::DeleteManagedResource
             | StepKind::WaitForClusterGone
             | StepKind::ReleaseClusterCloudResources
@@ -176,6 +189,8 @@ impl StepKind {
             | StepKind::BootstrapForgejoRepos
             | StepKind::BootstrapArgocdKubectlSsa
             | StepKind::BootstrapArgocdHelm
+            | StepKind::InfraPlan
+            | StepKind::InfraApply
             | StepKind::VerifyArgocdReachable => (true, false),
         };
         match direction {
@@ -188,6 +203,7 @@ impl StepKind {
         match self {
             StepKind::WaitForResources
             | StepKind::VerifyArgocdReachable
+            | StepKind::InfraPlan
             | StepKind::WaitForClusterGone => true,
             StepKind::SetupServices
             | StepKind::DockerNetworkCreate
@@ -211,6 +227,8 @@ impl StepKind {
             | StepKind::BootstrapArgocdKubectlSsa
             | StepKind::BootstrapArgocdHelm
             | StepKind::RunScript
+            | StepKind::InfraApply
+            | StepKind::InfraDestroy
             | StepKind::DestroyCluster
             | StepKind::ReconcileManagedResource
             | StepKind::DeleteManagedResource
@@ -228,7 +246,7 @@ mod tests {
     #[test]
     fn every_kind_round_trips_through_its_tag() {
         for kind in StepKind::ALL {
-            assert_eq!(StepKind::from_tag(kind.tag()), Some(kind), "{:?}", kind);
+            assert_eq!(StepKind::from_tag(kind.tag()), Some(kind), "{kind:?}");
         }
     }
 

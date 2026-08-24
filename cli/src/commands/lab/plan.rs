@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::config::Context as CataContext;
 use crate::domain::{Direction, PlannedStep, StepParams};
 
-pub async fn run(
+pub fn run(
     ctx: &CataContext,
     name: Option<&str>,
     direction: Direction,
@@ -28,7 +28,7 @@ pub async fn run(
         let text = format_stable(&steps);
         if let Some(baseline) = diff {
             if !run_diff(&text, &baseline)? {
-                std::process::exit(1);
+                return Err(crate::domain::ExitWith(1).into());
             }
             return Ok(());
         }
@@ -268,7 +268,8 @@ fn run_diff(actual: &str, baseline_path: &Path) -> Result<bool> {
     let mut tmp = tempfile::NamedTempFile::new().context("creating temp file for diff")?;
     tmp.write_all(actual.as_bytes())
         .context("writing actual plan to temp file")?;
-    tmp.flush().ok();
+    tmp.flush()
+        .context("flushing the temp file the diff is read from")?;
 
     let status = crate::io::diff::unified(baseline_path, tmp.path());
     match status {

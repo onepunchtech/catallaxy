@@ -1684,6 +1684,95 @@ in
                       More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations
                     '';
                   };
+                  backendTlsPolicy = mkOption {
+                    type = (
+                      types.nullOr (mkTypedSubmodule {
+                        options = {
+                          annotations = mkOption {
+                            type = (types.nullOr (types.attrsOf types.str));
+                            default = null;
+                            description = ''
+                              Annotations is an unstructured key value map stored with a resource that may be set by
+                              external tools to store and retrieve arbitrary metadata.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations
+                            '';
+                          };
+                          validation = mkOption {
+                            type = (
+                              mkTypedSubmodule {
+                                options = {
+                                  caCertificateRefs = mkOption {
+                                    type = (
+                                      types.nullOr (
+                                        types.listOf (mkTypedSubmodule {
+                                          options = {
+                                            group = mkOption {
+                                              type = (types.nullOr types.str);
+                                              default = null;
+                                              description = ''
+                                                Group is the group of the referent.
+                                                When unspecified, defaults to "" (core API group).
+                                              '';
+                                            };
+                                            kind = mkOption {
+                                              type = (types.nullOr types.str);
+                                              default = null;
+                                              description = ''
+                                                Kind is the kind of the referent.
+                                                When unspecified, defaults to "Secret".
+                                              '';
+                                            };
+                                            name = mkOption {
+                                              type = types.str;
+                                              description = "Name of the referent (the Secret containing the CA certificate).";
+                                            };
+                                          };
+                                          freeformType = types.attrs;
+                                        })
+                                      )
+                                    );
+                                    default = null;
+                                    description = ''
+                                      CACertificateRefs references CA certificates for validation.
+                                      When specified, these certificates are used to validate the backend TLS connection.
+                                      Useful for private/internal certificates not in the system trust store.
+                                    '';
+                                  };
+                                  hostname = mkOption {
+                                    type = (types.nullOr types.str);
+                                    default = null;
+                                    description = ''
+                                      Hostname is the hostname used for TLS validation.
+                                      When unspecified, defaults to the Kanidm domain (spec.domain).
+                                    '';
+                                  };
+                                  wellKnownCaCertificates = mkOption {
+                                    type = (types.nullOr types.str);
+                                    default = null;
+                                    description = ''
+                                      WellKnownCACertificates specifies the type of CA certificates to use for validation.
+                                      When specified as "System", uses the system's trusted CA certificates.
+                                      This is the most common option for public certificates (e.g., Let's Encrypt).
+                                    '';
+                                  };
+                                };
+                                freeformType = types.attrs;
+                              }
+                            );
+                            description = "Validation contains backend TLS validation configuration.";
+                          };
+                        };
+                        freeformType = types.attrs;
+                      })
+                    );
+                    default = null;
+                    description = ''
+                      BackendTLSPolicy configuration for TLS validation between the Gateway and Kanidm backend service.
+                      When specified, creates a BackendTLSPolicy resource to validate TLS connections from the Gateway
+                      to the Kanidm service (port 8443). This is required when using TLS between Gateway and backend.
+                      When unspecified, no BackendTLSPolicy is created.
+                    '';
+                  };
                   hostnames = mkOption {
                     type = (types.nullOr (types.listOf types.str));
                     default = null;
@@ -1697,6 +1786,22 @@ in
                     type = (
                       types.listOf (mkTypedSubmodule {
                         options = {
+                          group = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              Group is the group of the referent.
+                              When unspecified, defaults to "gateway.networking.k8s.io".
+                            '';
+                          };
+                          kind = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              Kind is the kind of the referent.
+                              When unspecified, defaults to "Gateway".
+                            '';
+                          };
                           name = mkOption {
                             type = types.str;
                             description = "Name of the referent.";
@@ -5842,6 +5947,883 @@ in
             );
             default = null;
             description = "Log level for Kanidm.";
+          };
+          mailSender = mkOption {
+            type = (
+              types.nullOr (mkTypedSubmodule {
+                options = {
+                  affinity = mkOption {
+                    type = (
+                      types.nullOr (mkTypedSubmodule {
+                        options = {
+                          nodeAffinity = mkOption {
+                            type = (
+                              types.nullOr (mkTypedSubmodule {
+                                options = {
+                                  preferredDuringSchedulingIgnoredDuringExecution = mkOption {
+                                    type = (
+                                      types.nullOr (
+                                        types.listOf (mkTypedSubmodule {
+                                          options = {
+                                            preference = mkOption {
+                                              type = (
+                                                mkTypedSubmodule {
+                                                  options = {
+                                                    matchExpressions = mkOption {
+                                                      type = (
+                                                        types.nullOr (
+                                                          types.listOf (mkTypedSubmodule {
+                                                            options = {
+                                                              key = mkOption {
+                                                                type = types.str;
+                                                                description = "The label key that the selector applies to.";
+                                                              };
+                                                              operator = mkOption {
+                                                                type = types.str;
+                                                                description = "Represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.";
+                                                              };
+                                                              values = mkOption {
+                                                                type = (types.nullOr (types.listOf types.str));
+                                                                default = null;
+                                                                description = "An array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. If the operator is Gt or Lt, the values array must have a single element, which will be interpreted as an integer. This array is replaced during a strategic merge patch.";
+                                                              };
+                                                            };
+                                                            freeformType = types.attrs;
+                                                          })
+                                                        )
+                                                      );
+                                                      default = null;
+                                                      description = "A list of node selector requirements by node's labels.";
+                                                    };
+                                                    matchFields = mkOption {
+                                                      type = (
+                                                        types.nullOr (
+                                                          types.listOf (mkTypedSubmodule {
+                                                            options = {
+                                                              key = mkOption {
+                                                                type = types.str;
+                                                                description = "The label key that the selector applies to.";
+                                                              };
+                                                              operator = mkOption {
+                                                                type = types.str;
+                                                                description = "Represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.";
+                                                              };
+                                                              values = mkOption {
+                                                                type = (types.nullOr (types.listOf types.str));
+                                                                default = null;
+                                                                description = "An array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. If the operator is Gt or Lt, the values array must have a single element, which will be interpreted as an integer. This array is replaced during a strategic merge patch.";
+                                                              };
+                                                            };
+                                                            freeformType = types.attrs;
+                                                          })
+                                                        )
+                                                      );
+                                                      default = null;
+                                                      description = "A list of node selector requirements by node's fields.";
+                                                    };
+                                                  };
+                                                  freeformType = types.attrs;
+                                                }
+                                              );
+                                              description = "A node selector term, associated with the corresponding weight.";
+                                            };
+                                            weight = mkOption {
+                                              type = types.int;
+                                              description = "Weight associated with matching the corresponding nodeSelectorTerm, in the range 1-100.";
+                                            };
+                                          };
+                                          freeformType = types.attrs;
+                                        })
+                                      )
+                                    );
+                                    default = null;
+                                    description = "The scheduler will prefer to schedule pods to nodes that satisfy the affinity expressions specified by this field, but it may choose a node that violates one or more of the expressions. The node that is most preferred is the one with the greatest sum of weights, i.e. for each node that meets all of the scheduling requirements (resource request, requiredDuringScheduling affinity expressions, etc.), compute a sum by iterating through the elements of this field and adding \"weight\" to the sum if the node matches the corresponding matchExpressions; the node(s) with the highest sum are the most preferred.";
+                                  };
+                                  requiredDuringSchedulingIgnoredDuringExecution = mkOption {
+                                    type = (
+                                      types.nullOr (mkTypedSubmodule {
+                                        options = {
+                                          nodeSelectorTerms = mkOption {
+                                            type = (
+                                              types.listOf (mkTypedSubmodule {
+                                                options = {
+                                                  matchExpressions = mkOption {
+                                                    type = (
+                                                      types.nullOr (
+                                                        types.listOf (mkTypedSubmodule {
+                                                          options = {
+                                                            key = mkOption {
+                                                              type = types.str;
+                                                              description = "The label key that the selector applies to.";
+                                                            };
+                                                            operator = mkOption {
+                                                              type = types.str;
+                                                              description = "Represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.";
+                                                            };
+                                                            values = mkOption {
+                                                              type = (types.nullOr (types.listOf types.str));
+                                                              default = null;
+                                                              description = "An array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. If the operator is Gt or Lt, the values array must have a single element, which will be interpreted as an integer. This array is replaced during a strategic merge patch.";
+                                                            };
+                                                          };
+                                                          freeformType = types.attrs;
+                                                        })
+                                                      )
+                                                    );
+                                                    default = null;
+                                                    description = "A list of node selector requirements by node's labels.";
+                                                  };
+                                                  matchFields = mkOption {
+                                                    type = (
+                                                      types.nullOr (
+                                                        types.listOf (mkTypedSubmodule {
+                                                          options = {
+                                                            key = mkOption {
+                                                              type = types.str;
+                                                              description = "The label key that the selector applies to.";
+                                                            };
+                                                            operator = mkOption {
+                                                              type = types.str;
+                                                              description = "Represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.";
+                                                            };
+                                                            values = mkOption {
+                                                              type = (types.nullOr (types.listOf types.str));
+                                                              default = null;
+                                                              description = "An array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. If the operator is Gt or Lt, the values array must have a single element, which will be interpreted as an integer. This array is replaced during a strategic merge patch.";
+                                                            };
+                                                          };
+                                                          freeformType = types.attrs;
+                                                        })
+                                                      )
+                                                    );
+                                                    default = null;
+                                                    description = "A list of node selector requirements by node's fields.";
+                                                  };
+                                                };
+                                                freeformType = types.attrs;
+                                              })
+                                            );
+                                            description = "Required. A list of node selector terms. The terms are ORed.";
+                                          };
+                                        };
+                                        freeformType = types.attrs;
+                                      })
+                                    );
+                                    default = null;
+                                    description = "If the affinity requirements specified by this field are not met at scheduling time, the pod will not be scheduled onto the node. If the affinity requirements specified by this field cease to be met at some point during pod execution (e.g. due to an update), the system may or may not try to eventually evict the pod from its node.";
+                                  };
+                                };
+                                freeformType = types.attrs;
+                              })
+                            );
+                            default = null;
+                            description = "Describes node affinity scheduling rules for the pod.";
+                          };
+                          podAffinity = mkOption {
+                            type = (
+                              types.nullOr (mkTypedSubmodule {
+                                options = {
+                                  preferredDuringSchedulingIgnoredDuringExecution = mkOption {
+                                    type = (
+                                      types.nullOr (
+                                        types.listOf (mkTypedSubmodule {
+                                          options = {
+                                            podAffinityTerm = mkOption {
+                                              type = (
+                                                mkTypedSubmodule {
+                                                  options = {
+                                                    labelSelector = mkOption {
+                                                      type = (
+                                                        types.nullOr (mkTypedSubmodule {
+                                                          options = {
+                                                            matchExpressions = mkOption {
+                                                              type = (
+                                                                types.nullOr (
+                                                                  types.listOf (mkTypedSubmodule {
+                                                                    options = {
+                                                                      key = mkOption {
+                                                                        type = types.str;
+                                                                        description = "key is the label key that the selector applies to.";
+                                                                      };
+                                                                      operator = mkOption {
+                                                                        type = types.str;
+                                                                        description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                                      };
+                                                                      values = mkOption {
+                                                                        type = (types.nullOr (types.listOf types.str));
+                                                                        default = null;
+                                                                        description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                                      };
+                                                                    };
+                                                                    freeformType = types.attrs;
+                                                                  })
+                                                                )
+                                                              );
+                                                              default = null;
+                                                              description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                            };
+                                                            matchLabels = mkOption {
+                                                              type = (types.nullOr (types.attrsOf types.str));
+                                                              default = null;
+                                                              description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                            };
+                                                          };
+                                                          freeformType = types.attrs;
+                                                        })
+                                                      );
+                                                      default = null;
+                                                      description = "A label query over a set of resources, in this case pods. If it's null, this PodAffinityTerm matches with no Pods.";
+                                                    };
+                                                    matchLabelKeys = mkOption {
+                                                      type = (types.nullOr (types.listOf types.str));
+                                                      default = null;
+                                                      description = "MatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both matchLabelKeys and labelSelector. Also, matchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                                    };
+                                                    mismatchLabelKeys = mkOption {
+                                                      type = (types.nullOr (types.listOf types.str));
+                                                      default = null;
+                                                      description = "MismatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both mismatchLabelKeys and labelSelector. Also, mismatchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                                    };
+                                                    namespaceSelector = mkOption {
+                                                      type = (
+                                                        types.nullOr (mkTypedSubmodule {
+                                                          options = {
+                                                            matchExpressions = mkOption {
+                                                              type = (
+                                                                types.nullOr (
+                                                                  types.listOf (mkTypedSubmodule {
+                                                                    options = {
+                                                                      key = mkOption {
+                                                                        type = types.str;
+                                                                        description = "key is the label key that the selector applies to.";
+                                                                      };
+                                                                      operator = mkOption {
+                                                                        type = types.str;
+                                                                        description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                                      };
+                                                                      values = mkOption {
+                                                                        type = (types.nullOr (types.listOf types.str));
+                                                                        default = null;
+                                                                        description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                                      };
+                                                                    };
+                                                                    freeformType = types.attrs;
+                                                                  })
+                                                                )
+                                                              );
+                                                              default = null;
+                                                              description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                            };
+                                                            matchLabels = mkOption {
+                                                              type = (types.nullOr (types.attrsOf types.str));
+                                                              default = null;
+                                                              description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                            };
+                                                          };
+                                                          freeformType = types.attrs;
+                                                        })
+                                                      );
+                                                      default = null;
+                                                      description = "A label query over the set of namespaces that the term applies to. The term is applied to the union of the namespaces selected by this field and the ones listed in the namespaces field. null selector and null or empty namespaces list means \"this pod's namespace\". An empty selector ({}) matches all namespaces.";
+                                                    };
+                                                    namespaces = mkOption {
+                                                      type = (types.nullOr (types.listOf types.str));
+                                                      default = null;
+                                                      description = "namespaces specifies a static list of namespace names that the term applies to. The term is applied to the union of the namespaces listed in this field and the ones selected by namespaceSelector. null or empty namespaces list and null namespaceSelector means \"this pod's namespace\".";
+                                                    };
+                                                    topologyKey = mkOption {
+                                                      type = types.str;
+                                                      description = "This pod should be co-located (affinity) or not co-located (anti-affinity) with the pods matching the labelSelector in the specified namespaces, where co-located is defined as running on a node whose value of the label with key topologyKey matches that of any node on which any of the selected pods is running. Empty topologyKey is not allowed.";
+                                                    };
+                                                  };
+                                                  freeformType = types.attrs;
+                                                }
+                                              );
+                                              description = "Required. A pod affinity term, associated with the corresponding weight.";
+                                            };
+                                            weight = mkOption {
+                                              type = types.int;
+                                              description = "weight associated with matching the corresponding podAffinityTerm, in the range 1-100.";
+                                            };
+                                          };
+                                          freeformType = types.attrs;
+                                        })
+                                      )
+                                    );
+                                    default = null;
+                                    description = "The scheduler will prefer to schedule pods to nodes that satisfy the affinity expressions specified by this field, but it may choose a node that violates one or more of the expressions. The node that is most preferred is the one with the greatest sum of weights, i.e. for each node that meets all of the scheduling requirements (resource request, requiredDuringScheduling affinity expressions, etc.), compute a sum by iterating through the elements of this field and adding \"weight\" to the sum if the node has pods which matches the corresponding podAffinityTerm; the node(s) with the highest sum are the most preferred.";
+                                  };
+                                  requiredDuringSchedulingIgnoredDuringExecution = mkOption {
+                                    type = (
+                                      types.nullOr (
+                                        types.listOf (mkTypedSubmodule {
+                                          options = {
+                                            labelSelector = mkOption {
+                                              type = (
+                                                types.nullOr (mkTypedSubmodule {
+                                                  options = {
+                                                    matchExpressions = mkOption {
+                                                      type = (
+                                                        types.nullOr (
+                                                          types.listOf (mkTypedSubmodule {
+                                                            options = {
+                                                              key = mkOption {
+                                                                type = types.str;
+                                                                description = "key is the label key that the selector applies to.";
+                                                              };
+                                                              operator = mkOption {
+                                                                type = types.str;
+                                                                description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                              };
+                                                              values = mkOption {
+                                                                type = (types.nullOr (types.listOf types.str));
+                                                                default = null;
+                                                                description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                              };
+                                                            };
+                                                            freeformType = types.attrs;
+                                                          })
+                                                        )
+                                                      );
+                                                      default = null;
+                                                      description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                    };
+                                                    matchLabels = mkOption {
+                                                      type = (types.nullOr (types.attrsOf types.str));
+                                                      default = null;
+                                                      description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                    };
+                                                  };
+                                                  freeformType = types.attrs;
+                                                })
+                                              );
+                                              default = null;
+                                              description = "A label query over a set of resources, in this case pods. If it's null, this PodAffinityTerm matches with no Pods.";
+                                            };
+                                            matchLabelKeys = mkOption {
+                                              type = (types.nullOr (types.listOf types.str));
+                                              default = null;
+                                              description = "MatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both matchLabelKeys and labelSelector. Also, matchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                            };
+                                            mismatchLabelKeys = mkOption {
+                                              type = (types.nullOr (types.listOf types.str));
+                                              default = null;
+                                              description = "MismatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both mismatchLabelKeys and labelSelector. Also, mismatchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                            };
+                                            namespaceSelector = mkOption {
+                                              type = (
+                                                types.nullOr (mkTypedSubmodule {
+                                                  options = {
+                                                    matchExpressions = mkOption {
+                                                      type = (
+                                                        types.nullOr (
+                                                          types.listOf (mkTypedSubmodule {
+                                                            options = {
+                                                              key = mkOption {
+                                                                type = types.str;
+                                                                description = "key is the label key that the selector applies to.";
+                                                              };
+                                                              operator = mkOption {
+                                                                type = types.str;
+                                                                description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                              };
+                                                              values = mkOption {
+                                                                type = (types.nullOr (types.listOf types.str));
+                                                                default = null;
+                                                                description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                              };
+                                                            };
+                                                            freeformType = types.attrs;
+                                                          })
+                                                        )
+                                                      );
+                                                      default = null;
+                                                      description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                    };
+                                                    matchLabels = mkOption {
+                                                      type = (types.nullOr (types.attrsOf types.str));
+                                                      default = null;
+                                                      description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                    };
+                                                  };
+                                                  freeformType = types.attrs;
+                                                })
+                                              );
+                                              default = null;
+                                              description = "A label query over the set of namespaces that the term applies to. The term is applied to the union of the namespaces selected by this field and the ones listed in the namespaces field. null selector and null or empty namespaces list means \"this pod's namespace\". An empty selector ({}) matches all namespaces.";
+                                            };
+                                            namespaces = mkOption {
+                                              type = (types.nullOr (types.listOf types.str));
+                                              default = null;
+                                              description = "namespaces specifies a static list of namespace names that the term applies to. The term is applied to the union of the namespaces listed in this field and the ones selected by namespaceSelector. null or empty namespaces list and null namespaceSelector means \"this pod's namespace\".";
+                                            };
+                                            topologyKey = mkOption {
+                                              type = types.str;
+                                              description = "This pod should be co-located (affinity) or not co-located (anti-affinity) with the pods matching the labelSelector in the specified namespaces, where co-located is defined as running on a node whose value of the label with key topologyKey matches that of any node on which any of the selected pods is running. Empty topologyKey is not allowed.";
+                                            };
+                                          };
+                                          freeformType = types.attrs;
+                                        })
+                                      )
+                                    );
+                                    default = null;
+                                    description = "If the affinity requirements specified by this field are not met at scheduling time, the pod will not be scheduled onto the node. If the affinity requirements specified by this field cease to be met at some point during pod execution (e.g. due to a pod label update), the system may or may not try to eventually evict the pod from its node. When there are multiple elements, the lists of nodes corresponding to each podAffinityTerm are intersected, i.e. all terms must be satisfied.";
+                                  };
+                                };
+                                freeformType = types.attrs;
+                              })
+                            );
+                            default = null;
+                            description = "Describes pod affinity scheduling rules (e.g. co-locate this pod in the same node, zone, etc. as some other pod(s)).";
+                          };
+                          podAntiAffinity = mkOption {
+                            type = (
+                              types.nullOr (mkTypedSubmodule {
+                                options = {
+                                  preferredDuringSchedulingIgnoredDuringExecution = mkOption {
+                                    type = (
+                                      types.nullOr (
+                                        types.listOf (mkTypedSubmodule {
+                                          options = {
+                                            podAffinityTerm = mkOption {
+                                              type = (
+                                                mkTypedSubmodule {
+                                                  options = {
+                                                    labelSelector = mkOption {
+                                                      type = (
+                                                        types.nullOr (mkTypedSubmodule {
+                                                          options = {
+                                                            matchExpressions = mkOption {
+                                                              type = (
+                                                                types.nullOr (
+                                                                  types.listOf (mkTypedSubmodule {
+                                                                    options = {
+                                                                      key = mkOption {
+                                                                        type = types.str;
+                                                                        description = "key is the label key that the selector applies to.";
+                                                                      };
+                                                                      operator = mkOption {
+                                                                        type = types.str;
+                                                                        description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                                      };
+                                                                      values = mkOption {
+                                                                        type = (types.nullOr (types.listOf types.str));
+                                                                        default = null;
+                                                                        description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                                      };
+                                                                    };
+                                                                    freeformType = types.attrs;
+                                                                  })
+                                                                )
+                                                              );
+                                                              default = null;
+                                                              description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                            };
+                                                            matchLabels = mkOption {
+                                                              type = (types.nullOr (types.attrsOf types.str));
+                                                              default = null;
+                                                              description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                            };
+                                                          };
+                                                          freeformType = types.attrs;
+                                                        })
+                                                      );
+                                                      default = null;
+                                                      description = "A label query over a set of resources, in this case pods. If it's null, this PodAffinityTerm matches with no Pods.";
+                                                    };
+                                                    matchLabelKeys = mkOption {
+                                                      type = (types.nullOr (types.listOf types.str));
+                                                      default = null;
+                                                      description = "MatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both matchLabelKeys and labelSelector. Also, matchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                                    };
+                                                    mismatchLabelKeys = mkOption {
+                                                      type = (types.nullOr (types.listOf types.str));
+                                                      default = null;
+                                                      description = "MismatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both mismatchLabelKeys and labelSelector. Also, mismatchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                                    };
+                                                    namespaceSelector = mkOption {
+                                                      type = (
+                                                        types.nullOr (mkTypedSubmodule {
+                                                          options = {
+                                                            matchExpressions = mkOption {
+                                                              type = (
+                                                                types.nullOr (
+                                                                  types.listOf (mkTypedSubmodule {
+                                                                    options = {
+                                                                      key = mkOption {
+                                                                        type = types.str;
+                                                                        description = "key is the label key that the selector applies to.";
+                                                                      };
+                                                                      operator = mkOption {
+                                                                        type = types.str;
+                                                                        description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                                      };
+                                                                      values = mkOption {
+                                                                        type = (types.nullOr (types.listOf types.str));
+                                                                        default = null;
+                                                                        description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                                      };
+                                                                    };
+                                                                    freeformType = types.attrs;
+                                                                  })
+                                                                )
+                                                              );
+                                                              default = null;
+                                                              description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                            };
+                                                            matchLabels = mkOption {
+                                                              type = (types.nullOr (types.attrsOf types.str));
+                                                              default = null;
+                                                              description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                            };
+                                                          };
+                                                          freeformType = types.attrs;
+                                                        })
+                                                      );
+                                                      default = null;
+                                                      description = "A label query over the set of namespaces that the term applies to. The term is applied to the union of the namespaces selected by this field and the ones listed in the namespaces field. null selector and null or empty namespaces list means \"this pod's namespace\". An empty selector ({}) matches all namespaces.";
+                                                    };
+                                                    namespaces = mkOption {
+                                                      type = (types.nullOr (types.listOf types.str));
+                                                      default = null;
+                                                      description = "namespaces specifies a static list of namespace names that the term applies to. The term is applied to the union of the namespaces listed in this field and the ones selected by namespaceSelector. null or empty namespaces list and null namespaceSelector means \"this pod's namespace\".";
+                                                    };
+                                                    topologyKey = mkOption {
+                                                      type = types.str;
+                                                      description = "This pod should be co-located (affinity) or not co-located (anti-affinity) with the pods matching the labelSelector in the specified namespaces, where co-located is defined as running on a node whose value of the label with key topologyKey matches that of any node on which any of the selected pods is running. Empty topologyKey is not allowed.";
+                                                    };
+                                                  };
+                                                  freeformType = types.attrs;
+                                                }
+                                              );
+                                              description = "Required. A pod affinity term, associated with the corresponding weight.";
+                                            };
+                                            weight = mkOption {
+                                              type = types.int;
+                                              description = "weight associated with matching the corresponding podAffinityTerm, in the range 1-100.";
+                                            };
+                                          };
+                                          freeformType = types.attrs;
+                                        })
+                                      )
+                                    );
+                                    default = null;
+                                    description = "The scheduler will prefer to schedule pods to nodes that satisfy the anti-affinity expressions specified by this field, but it may choose a node that violates one or more of the expressions. The node that is most preferred is the one with the greatest sum of weights, i.e. for each node that meets all of the scheduling requirements (resource request, requiredDuringScheduling anti-affinity expressions, etc.), compute a sum by iterating through the elements of this field and adding \"weight\" to the sum if the node has pods which matches the corresponding podAffinityTerm; the node(s) with the highest sum are the most preferred.";
+                                  };
+                                  requiredDuringSchedulingIgnoredDuringExecution = mkOption {
+                                    type = (
+                                      types.nullOr (
+                                        types.listOf (mkTypedSubmodule {
+                                          options = {
+                                            labelSelector = mkOption {
+                                              type = (
+                                                types.nullOr (mkTypedSubmodule {
+                                                  options = {
+                                                    matchExpressions = mkOption {
+                                                      type = (
+                                                        types.nullOr (
+                                                          types.listOf (mkTypedSubmodule {
+                                                            options = {
+                                                              key = mkOption {
+                                                                type = types.str;
+                                                                description = "key is the label key that the selector applies to.";
+                                                              };
+                                                              operator = mkOption {
+                                                                type = types.str;
+                                                                description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                              };
+                                                              values = mkOption {
+                                                                type = (types.nullOr (types.listOf types.str));
+                                                                default = null;
+                                                                description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                              };
+                                                            };
+                                                            freeformType = types.attrs;
+                                                          })
+                                                        )
+                                                      );
+                                                      default = null;
+                                                      description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                    };
+                                                    matchLabels = mkOption {
+                                                      type = (types.nullOr (types.attrsOf types.str));
+                                                      default = null;
+                                                      description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                    };
+                                                  };
+                                                  freeformType = types.attrs;
+                                                })
+                                              );
+                                              default = null;
+                                              description = "A label query over a set of resources, in this case pods. If it's null, this PodAffinityTerm matches with no Pods.";
+                                            };
+                                            matchLabelKeys = mkOption {
+                                              type = (types.nullOr (types.listOf types.str));
+                                              default = null;
+                                              description = "MatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key in (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both matchLabelKeys and labelSelector. Also, matchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                            };
+                                            mismatchLabelKeys = mkOption {
+                                              type = (types.nullOr (types.listOf types.str));
+                                              default = null;
+                                              description = "MismatchLabelKeys is a set of pod label keys to select which pods will be taken into consideration. The keys are used to lookup values from the incoming pod labels, those key-value labels are merged with `labelSelector` as `key notin (value)` to select the group of existing pods which pods will be taken into consideration for the incoming pod's pod (anti) affinity. Keys that don't exist in the incoming pod labels will be ignored. The default value is empty. The same key is forbidden to exist in both mismatchLabelKeys and labelSelector. Also, mismatchLabelKeys cannot be set when labelSelector isn't set. This is a beta field and requires enabling MatchLabelKeysInPodAffinity feature gate (enabled by default).";
+                                            };
+                                            namespaceSelector = mkOption {
+                                              type = (
+                                                types.nullOr (mkTypedSubmodule {
+                                                  options = {
+                                                    matchExpressions = mkOption {
+                                                      type = (
+                                                        types.nullOr (
+                                                          types.listOf (mkTypedSubmodule {
+                                                            options = {
+                                                              key = mkOption {
+                                                                type = types.str;
+                                                                description = "key is the label key that the selector applies to.";
+                                                              };
+                                                              operator = mkOption {
+                                                                type = types.str;
+                                                                description = "operator represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists and DoesNotExist.";
+                                                              };
+                                                              values = mkOption {
+                                                                type = (types.nullOr (types.listOf types.str));
+                                                                default = null;
+                                                                description = "values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. This array is replaced during a strategic merge patch.";
+                                                              };
+                                                            };
+                                                            freeformType = types.attrs;
+                                                          })
+                                                        )
+                                                      );
+                                                      default = null;
+                                                      description = "matchExpressions is a list of label selector requirements. The requirements are ANDed.";
+                                                    };
+                                                    matchLabels = mkOption {
+                                                      type = (types.nullOr (types.attrsOf types.str));
+                                                      default = null;
+                                                      description = "matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels map is equivalent to an element of matchExpressions, whose key field is \"key\", the operator is \"In\", and the values array contains only \"value\". The requirements are ANDed.";
+                                                    };
+                                                  };
+                                                  freeformType = types.attrs;
+                                                })
+                                              );
+                                              default = null;
+                                              description = "A label query over the set of namespaces that the term applies to. The term is applied to the union of the namespaces selected by this field and the ones listed in the namespaces field. null selector and null or empty namespaces list means \"this pod's namespace\". An empty selector ({}) matches all namespaces.";
+                                            };
+                                            namespaces = mkOption {
+                                              type = (types.nullOr (types.listOf types.str));
+                                              default = null;
+                                              description = "namespaces specifies a static list of namespace names that the term applies to. The term is applied to the union of the namespaces listed in this field and the ones selected by namespaceSelector. null or empty namespaces list and null namespaceSelector means \"this pod's namespace\".";
+                                            };
+                                            topologyKey = mkOption {
+                                              type = types.str;
+                                              description = "This pod should be co-located (affinity) or not co-located (anti-affinity) with the pods matching the labelSelector in the specified namespaces, where co-located is defined as running on a node whose value of the label with key topologyKey matches that of any node on which any of the selected pods is running. Empty topologyKey is not allowed.";
+                                            };
+                                          };
+                                          freeformType = types.attrs;
+                                        })
+                                      )
+                                    );
+                                    default = null;
+                                    description = "If the anti-affinity requirements specified by this field are not met at scheduling time, the pod will not be scheduled onto the node. If the anti-affinity requirements specified by this field cease to be met at some point during pod execution (e.g. due to a pod label update), the system may or may not try to eventually evict the pod from its node. When there are multiple elements, the lists of nodes corresponding to each podAffinityTerm are intersected, i.e. all terms must be satisfied.";
+                                  };
+                                };
+                                freeformType = types.attrs;
+                              })
+                            );
+                            default = null;
+                            description = "Describes pod anti-affinity scheduling rules (e.g. avoid putting this pod in the same node, zone, etc. as some other pod(s)).";
+                          };
+                        };
+                        freeformType = types.attrs;
+                      })
+                    );
+                    default = null;
+                    description = "Optional affinity rules for the mail sender deployment.";
+                  };
+                  connectTimeoutSeconds = mkOption {
+                    type = (types.nullOr types.int);
+                    default = null;
+                    description = ''
+                      Optional SMTP connection timeout in seconds.
+                      Defaults to 15 seconds.
+                    '';
+                  };
+                  credentialsSecret = mkOption {
+                    type = (
+                      mkTypedSubmodule {
+                        options = {
+                          name = mkOption {
+                            type = types.str;
+                            description = "Name of the Kubernetes secret containing SMTP credentials.";
+                          };
+                          passwordKey = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              Key in the secret containing the SMTP password.
+                              Defaults to "password".
+                            '';
+                          };
+                          usernameKey = mkOption {
+                            type = (types.nullOr types.str);
+                            default = null;
+                            description = ''
+                              Key in the secret containing the SMTP username.
+                              Defaults to "username".
+                            '';
+                          };
+                        };
+                        freeformType = types.attrs;
+                      }
+                    );
+                    description = ''
+                      Kubernetes secret containing SMTP credentials (username and password).
+                      The secret must have keys for username and password (defaults to "username" and "password").
+                    '';
+                  };
+                  fromAddress = mkOption {
+                    type = types.str;
+                    description = ''
+                      Email address used as the "From" address in sent emails.
+                      Example: `kanidm@example.com`
+                    '';
+                  };
+                  image = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      Optional custom image for the mail sender deployment.
+                      Defaults to `kanidm/tools:<version>` matching the Kanidm server image version.
+                    '';
+                  };
+                  nodeSelector = mkOption {
+                    type = (types.nullOr (types.attrsOf types.str));
+                    default = null;
+                    description = "Optional node selector for the mail sender deployment.";
+                  };
+                  queuePollIntervalSeconds = mkOption {
+                    type = (types.nullOr types.int);
+                    default = null;
+                    description = ''
+                      Optional queue polling interval in seconds.
+                      How often the mail sender checks Kanidm's message queue.
+                      Defaults to 5 seconds.
+                    '';
+                  };
+                  relay = mkOption {
+                    type = types.str;
+                    description = ''
+                      SMTP relay URL for sending emails.
+                      Must be a valid SMTP URL: `smtp://hostname:port` or `smtps://hostname` (default port 465).
+                      Example: `smtps://smtp.example.com` or `smtp://smtp.example.com:587`
+                    '';
+                  };
+                  replyToAddress = mkOption {
+                    type = (types.nullOr types.str);
+                    default = null;
+                    description = ''
+                      Optional email address for the "Reply-To" header.
+                      Example: `admin@example.com`
+                    '';
+                  };
+                  resources = mkOption {
+                    type = (
+                      types.nullOr (mkTypedSubmodule {
+                        options = {
+                          claims = mkOption {
+                            type = (
+                              types.nullOr (
+                                types.listOf (mkTypedSubmodule {
+                                  options = {
+                                    name = mkOption {
+                                      type = types.str;
+                                      description = "Name must match the name of one entry in pod.spec.resourceClaims of the Pod where this field is used. It makes that resource available inside a container.";
+                                    };
+                                    request = mkOption {
+                                      type = (types.nullOr types.str);
+                                      default = null;
+                                      description = "Request is the name chosen for a request in the referenced claim. If empty, everything from the claim is made available, otherwise only the result of this request.";
+                                    };
+                                  };
+                                  freeformType = types.attrs;
+                                })
+                              )
+                            );
+                            default = null;
+                            description = ''
+                              Claims lists the names of resources, defined in spec.resourceClaims, that are used by this container.
+
+                              This is an alpha field and requires enabling the DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            '';
+                          };
+                          limits = mkOption {
+                            type = (types.nullOr (types.attrsOf types.anything));
+                            default = null;
+                            description = "Limits describes the maximum amount of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/";
+                          };
+                          requests = mkOption {
+                            type = (types.nullOr (types.attrsOf types.anything));
+                            default = null;
+                            description = "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. Requests cannot exceed Limits. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/";
+                          };
+                        };
+                        freeformType = types.attrs;
+                      })
+                    );
+                    default = null;
+                    description = "Optional resource requirements for the mail sender deployment.";
+                  };
+                  tolerations = mkOption {
+                    type = (
+                      types.nullOr (
+                        types.listOf (mkTypedSubmodule {
+                          options = {
+                            effect = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Effect indicates the taint effect to match. Empty means match all taint effects. When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.";
+                            };
+                            key = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Key is the taint key that the toleration applies to. Empty means match all taint keys. If the key is empty, operator must be Exists; this combination means to match all values and all keys.";
+                            };
+                            operator = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Operator represents a key's relationship to the value. Valid operators are Exists and Equal. Defaults to Equal. Exists is equivalent to wildcard for value, so that a pod can tolerate all taints of a particular category.";
+                            };
+                            tolerationSeconds = mkOption {
+                              type = (types.nullOr types.int);
+                              default = null;
+                              description = "TolerationSeconds represents the period of time the toleration (which must be of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default, it is not set, which means tolerate the taint forever (do not evict). Zero and negative values will be treated as 0 (evict immediately) by the system.";
+                            };
+                            value = mkOption {
+                              type = (types.nullOr types.str);
+                              default = null;
+                              description = "Value is the taint value the toleration matches to. If the operator is Exists, the value should be empty, otherwise just a regular string.";
+                            };
+                          };
+                          freeformType = types.attrs;
+                        })
+                      )
+                    );
+                    default = null;
+                    description = "Optional tolerations for the mail sender deployment.";
+                  };
+                };
+                freeformType = types.attrs;
+              })
+            );
+            default = null;
+            description = ''
+              Mail sender configuration for sending emails (password reset links, notifications).
+              When enabled, the operator automatically creates a service account in Kanidm's
+              `idm_message_senders` group, generates an API token, and deploys the `kanidm-mail-sender`
+              component.
+            '';
           };
           minReadySeconds = mkOption {
             type = (types.nullOr types.int);
@@ -10470,6 +11452,38 @@ in
             description = ''
               Main scope map for the OAuth2 client. For an authorization to proceed, all scopes requested
               by the client must be available in the final scope set that is granted to the account.
+            '';
+          };
+          secretKeyAliases = mkOption {
+            type = (
+              types.nullOr (mkTypedSubmodule {
+                options = {
+                  clientId = mkOption {
+                    type = (types.nullOr (types.listOf types.str));
+                    default = null;
+                    description = ''
+                      Aliases for the CLIENT_ID key.
+                      Each alias will be added as an additional key containing the same client ID value.
+                    '';
+                  };
+                  clientSecret = mkOption {
+                    type = (types.nullOr (types.listOf types.str));
+                    default = null;
+                    description = ''
+                      Aliases for the CLIENT_SECRET key.
+                      Each alias will be added as an additional key containing the same client secret value.
+                    '';
+                  };
+                };
+                freeformType = types.attrs;
+              })
+            );
+            default = null;
+            description = ''
+              Aliases for the canonical secret keys (CLIENT_ID and CLIENT_SECRET).
+              Allows consumers that require different fixed key names to access the same credentials.
+              The canonical keys CLIENT_ID and CLIENT_SECRET are always present.
+              Only applies to confidential clients (public: false).
             '';
           };
           secretRotation = mkOption {

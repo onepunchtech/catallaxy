@@ -1,4 +1,4 @@
-{ mkFloe, lib }:
+{ floeOptions, lib }:
 {
-  hello-world = import ./hello-world { inherit mkFloe lib; };
+  hello-world = import ./hello-world { inherit floeOptions lib; };
 }

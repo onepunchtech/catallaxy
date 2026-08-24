@@ -9,6 +9,9 @@
 let
   inherit (lib) mkOption types;
   render = import ../../../lib/render/manifest.nix { inherit lib pkgs; };
+  k8sFields = import ../../../lib/util/k8s-fields.nix { inherit lib; };
+  waitUtil = import ../../../lib/util/wait.nix { inherit lib; };
+  k8sLib = import ./lib/kubernetes/types.nix { inherit lib; };
 
   routeKinds = [
     "HTTPRoute"
@@ -23,9 +26,9 @@ let
       lib.concatMap (
         rule:
         lib.concatMap (match: lib.optional ((match.path.value or "") != "") match.path.value) (
-          rule.matches or [ ]
+          k8sFields.listOrEmpty [ "matches" ] rule
         )
-      ) (resource.spec.rules or [ ])
+      ) (k8sFields.listOrEmpty [ "spec" "rules" ] resource)
     );
 
   routeEntries = lib.concatLists (
@@ -41,7 +44,7 @@ let
               namespace = resource.metadata.namespace or "default";
               bundle = bundleName;
               paths = routePaths resource;
-            }) (lib.filter (h: !(lib.hasInfix "*" h)) (resource.spec.hostnames or [ ]))
+            }) (lib.filter (h: !(lib.hasInfix "*" h)) (k8sFields.listOrEmpty [ "spec" "hostnames" ] resource))
           )
         ) (bundle.resources or { })
       )
@@ -105,6 +108,11 @@ let
 
       isArgocdOwnedBundle = b: (resolveBundleOwner b).steady == "argocd";
 
+      ownedBy = bundle: {
+        lab = lab.name;
+        inherit bundle;
+      };
+
       renderOne =
         name: b:
         if b.helmCharts != { } || b.resources != { } || b.yamls != [ ] then
@@ -115,6 +123,7 @@ let
               yamls
               awaitRollout
               ;
+            ownership = ownedBy name;
           }
         else
           null;
@@ -124,6 +133,7 @@ let
           helmCharts = { };
           resources = { };
           yamls = namespaceYamls;
+          ownership = ownedBy "namespaces";
         };
       };
 
@@ -223,6 +233,21 @@ in
       '';
     };
 
+    stepRequirements = mkOption {
+      type = types.listOf types.attrs;
+      default = [ ];
+      internal = true;
+      description = ''
+        Every `step:<token>` a bundle on this cluster names, with the
+        bundle and verb that named it.
+
+        Recorded rather than resolved: the token belongs to the lab's plan,
+        and this cluster's manifests are applied by one step inside it. The
+        lab checks that whatever publishes the token runs before that step,
+        which is the one direction the containment allows.
+      '';
+    };
+
     exposedHosts = mkOption {
       type = types.listOf (
         types.submodule {
@@ -285,6 +310,15 @@ in
 
   config.assertions =
     let
+      # The graph refuses a conflict too, but only once waves are computed.
+      # A lab that is wrong is wrong whether or not anyone asked for its
+      # ordering, so it is an assertion as well: that is the layer
+      # `evalClusterConfig` checks, and the one a lab author sees first.
+      conflicts = map (message: {
+        assertion = false;
+        inherit message;
+      }) ((import ../../../lib/eval/manifest-graph.nix { inherit lib; }).conflictErrors config.bundles);
+
       defaultOwner = lab.cd.defaultOwner;
       resolve = b: {
         bootstrap = if b.owner.bootstrap != null then b.owner.bootstrap else defaultOwner.bootstrap;
@@ -323,7 +357,8 @@ in
         ) (e.bundle.requires or [ ])
       ) installTargets;
     in
-    map (e: {
+    conflicts
+    ++ map (e: {
       assertion = false;
       message = ''
         Bundle ${e.name} has
@@ -360,14 +395,14 @@ in
   config.cluster.out = {
     # For each floe that claims its image set is complete: what it declared,
     # and the rendered bundles to check that claim against. The bundles are
-    # found by the provenance mkFloe stamps on them.
+    # found by the floe each bundle is declared under.
     imageCompleteness =
       let
         view = config.cluster.out.bundleView;
         bundlesOf =
           floeName:
           lib.attrValues (
-            lib.filterAttrs (k: _: (config.bundles.${k}.floe or null) == floeName) view.packages
+            lib.filterAttrs (k: _: (config.bundles.${k}.declaredBy or null) == floeName) view.packages
           );
 
         # A probe container the renderer adds to a floe's bundle runs an image
@@ -397,23 +432,28 @@ in
 
     exposedHosts = routeHosts;
 
+    stepRequirements =
+      (import ../../../lib/eval/manifest-graph.nix { inherit lib; }).stepAnchors
+        config.bundles;
+
     manifestWaves =
       let
         manifestGraph = import ../../../lib/eval/manifest-graph.nix { inherit lib; };
         autoedges = import ../../../lib/eval/manifest-autoedges.nix { inherit lib; };
         projections = import ../../../lib/eval/manifest-projections.nix { inherit lib; };
 
-        rawBundles = lib.mapAttrs (_: bundle: {
+        rawBundles = lib.mapAttrs (bundleName: bundle: {
           after = bundle.after or [ ];
           requires = bundle.requires or [ ];
           provides = bundle.provides or [ ];
+          conflicts = bundle.conflicts or [ ];
 
           # Only what `resources` declares. A kind inside a helm chart or a raw
           # yaml is a rendered artefact, not something eval can see, so a
           # chart-only bundle answers no `kind:` anchor and is reached by
           # `provides:` or `bundle:` instead.
           kinds = lib.unique (lib.mapAttrsToList (_: r: r.kind) (bundle.resources or { }));
-          floe = bundle.floe or null;
+          declaredBy = bundle.declaredBy;
 
           resources = bundle.resources or { };
           helmCharts = lib.mapAttrs (_: h: { inherit (h) namespace; }) (bundle.helmCharts or { });
@@ -422,7 +462,23 @@ in
           resourceCount = builtins.length (lib.attrNames (bundle.resources or { }));
           hasReadyProbe = (bundle.readyProbe or null) != null;
 
-          readyProbe = bundle.readyProbe or null;
+          readyProbe =
+            if (bundle.readyProbe or null) == null then
+              null
+            else
+              let
+                missing = waitUtil.missingFields bundle.readyProbe;
+              in
+              if missing != [ ] then
+                throw ''
+                  bundles.${bundleName}.readyProbe is `kind = "${bundle.readyProbe.kind}"` and has no ${lib.concatStringsSep " or " missing}.
+
+                  The wait renders with an empty argument, which does not fail:
+                  it waits on a resource whose name is the empty string until
+                  the timeout, and reports the bundle as never becoming ready.
+                ''
+              else
+                bundle.readyProbe;
         }) config.bundles;
 
         hasNamespaceContent = lib.any (b: (b.createNamespaces or [ ]) != [ ]) (
@@ -435,8 +491,9 @@ in
             after = [ ];
             requires = [ ];
             provides = [ ];
+            conflicts = [ ];
             kinds = [ ];
-            floe = null;
+            declaredBy = "cluster";
             resources = { };
             helmCharts = { };
             createNamespaces = [ ];
@@ -454,8 +511,9 @@ in
             after = lib.optional hasNamespaceContent "bundle:namespaces";
             requires = [ ];
             provides = [ "secret:${proj.namespace}/${projName}" ];
+            conflicts = [ ];
             kinds = [ ];
-            floe = null;
+            declaredBy = "cluster";
             resources = { };
             helmCharts = { };
             createNamespaces = [ ];
@@ -486,6 +544,8 @@ in
           bundles = allBundles;
 
           namespaceAggregate = if hasNamespaceContent then "namespaces" else null;
+
+          inherit (k8sLib) coreKinds;
         };
 
         stage1Roots = lib.unique (config.cluster.provisioning.rootBundles or [ ]);

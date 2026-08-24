@@ -13,6 +13,7 @@ pub mod dns_teardown;
 pub mod docker_network_create;
 pub mod ensure_secrets;
 pub mod host_trust_install;
+pub mod infra;
 pub mod pivot;
 pub mod publish_images;
 pub mod publish_manifests;
@@ -29,3 +30,14 @@ pub mod verify_argocd_reachable;
 pub mod wait_for_cluster_gone;
 pub mod wait_for_resources;
 pub mod warm_cache;
+
+/// The lab's plan carries no kube context for a cluster a step must address.
+pub fn missing_kube_context(step: &str, target: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{step}: the lab's plan resolves no kube context for cluster '{target}', \
+         so there is nothing to address it by.\n\
+         Run `cata lab plan` to see what the plan resolved, and check that \
+         '{target}' is named in `lab.clusters` and that its provisioner \
+         publishes a context."
+    )
+}

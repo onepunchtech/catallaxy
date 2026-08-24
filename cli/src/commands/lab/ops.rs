@@ -3,7 +3,7 @@ use console::style;
 
 use crate::config::Context as CataContext;
 
-pub async fn ops(ctx: &CataContext, name: &str, args: &[String]) -> Result<()> {
+pub fn ops(ctx: &CataContext, name: &str, args: &[String]) -> Result<()> {
     let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
     let Some(ops_tool_path) = lab.ops_tool_path.as_deref() else {
@@ -21,7 +21,8 @@ pub async fn ops(ctx: &CataContext, name: &str, args: &[String]) -> Result<()> {
         .with_context(|| format!("Failed to run ops tool: {ops_tool_path}"))?;
 
     if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
+        let code = u8::try_from(status.code().unwrap_or(1)).unwrap_or(1);
+        return Err(crate::domain::ExitWith(code).into());
     }
     Ok(())
 }

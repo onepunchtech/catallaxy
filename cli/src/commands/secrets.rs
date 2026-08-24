@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashMap};
-use std::io::Write;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
@@ -137,26 +136,26 @@ struct LabSecrets {
     projections: Vec<(String, String, Projection)>,
 }
 
-pub async fn run(ctx: &CataContext, command: SecretsCommands) -> Result<()> {
+pub fn run(ctx: &CataContext, command: SecretsCommands) -> Result<()> {
     match command {
         SecretsCommands::Edit { store } => {
             let path = resolve_store_or_path(ctx, &store)?;
             crate::io::process::check_tool("sops")?;
-            edit(ctx, &path).await
+            edit(ctx, &path)
         }
         SecretsCommands::Encrypt { file, output } => {
             crate::io::process::check_tool("sops")?;
-            encrypt(ctx, &file, output.as_deref()).await
+            encrypt(ctx, &file, output.as_deref())
         }
         SecretsCommands::Decrypt { store } => {
             let path = resolve_store_or_path(ctx, &store)?;
             crate::io::process::check_tool("sops")?;
-            decrypt(ctx, &path).await
+            decrypt(ctx, &path)
         }
         SecretsCommands::Rotate { store } => {
             let path = resolve_store_or_path(ctx, &store)?;
             crate::io::process::check_tool("sops")?;
-            rotate(ctx, &path).await
+            rotate(ctx, &path)
         }
         SecretsCommands::Generate {
             cluster,
@@ -164,28 +163,25 @@ pub async fn run(ctx: &CataContext, command: SecretsCommands) -> Result<()> {
             force,
             example,
             format,
-        } => {
-            generate(
-                ctx,
-                cluster.as_deref(),
-                secret.as_deref(),
-                force,
-                Minting::of_example_flag(example),
-                format,
-            )
-            .await
-        }
+        } => generate(
+            ctx,
+            cluster.as_deref(),
+            secret.as_deref(),
+            force,
+            Minting::of_example_flag(example),
+            format,
+        ),
         SecretsCommands::InitIntermediate {
             name,
             root,
             days,
             force,
-        } => init_intermediate(ctx, &name, root.as_deref(), days, force).await,
-        SecretsCommands::List { cluster } => list(ctx, cluster.as_deref()).await,
+        } => init_intermediate(ctx, &name, root.as_deref(), days, force),
+        SecretsCommands::List { cluster } => list(ctx, cluster.as_deref()),
     }
 }
 
-async fn edit(_ctx: &CataContext, file: &str) -> Result<()> {
+fn edit(_ctx: &CataContext, file: &str) -> Result<()> {
     println!(
         "{} Editing secrets file: {file}",
         style("catallaxy").cyan().bold()
@@ -201,7 +197,7 @@ async fn edit(_ctx: &CataContext, file: &str) -> Result<()> {
     Ok(())
 }
 
-async fn encrypt(_ctx: &CataContext, file: &str, output: Option<&str>) -> Result<()> {
+fn encrypt(_ctx: &CataContext, file: &str, output: Option<&str>) -> Result<()> {
     let output_path = output
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("{file}.enc.yaml"));
@@ -221,7 +217,7 @@ async fn encrypt(_ctx: &CataContext, file: &str, output: Option<&str>) -> Result
     Ok(())
 }
 
-async fn decrypt(_ctx: &CataContext, file: &str) -> Result<()> {
+fn decrypt(_ctx: &CataContext, file: &str) -> Result<()> {
     let output = crate::io::sops::decrypt_to_stdout(file)?;
 
     if !output.status.success() {
@@ -233,7 +229,7 @@ async fn decrypt(_ctx: &CataContext, file: &str) -> Result<()> {
     Ok(())
 }
 
-async fn rotate(_ctx: &CataContext, file: &str) -> Result<()> {
+fn rotate(_ctx: &CataContext, file: &str) -> Result<()> {
     println!(
         "{} Rotating keys for: {file}",
         style("catallaxy").cyan().bold()
@@ -323,7 +319,7 @@ fn env_store_hint(spec: &SecretsSpec, store: &str) -> String {
     hint
 }
 
-async fn generate(
+fn generate(
     ctx: &CataContext,
     _cluster: Option<&str>,
     only_secret: Option<&str>,
@@ -574,12 +570,13 @@ fn write_sops_store(
         crate::io::fs::create_dir_all(parent).context("Failed to create secrets directory")?;
     }
 
-    let mut plaintext = tempfile::NamedTempFile::new()?;
-    plaintext.write_all(serde_yaml::to_string(data)?.as_bytes())?;
-    plaintext.flush()?;
+    let plaintext_dir = crate::io::fs::secure_tempdir()?;
+    let plaintext_path = plaintext_dir.path().join("store.yaml");
+    crate::io::fs::write(&plaintext_path, serde_yaml::to_string(data)?.as_bytes())?;
+    crate::io::fs::set_mode(&plaintext_path, 0o600)?;
 
     crate::io::sops::encrypt_store(
-        plaintext.path(),
+        &plaintext_path,
         &format!("secrets/{lab_name}/{store_name}.enc.yaml"),
         &path,
         &PathBuf::from(ctx.flake_uri()),
@@ -587,7 +584,7 @@ fn write_sops_store(
     .with_context(|| format!("encrypting store '{store_name}'"))
 }
 
-async fn init_intermediate(
+fn init_intermediate(
     ctx: &CataContext,
     name: &str,
     root: Option<&str>,
@@ -741,7 +738,7 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
-async fn list(ctx: &CataContext, cluster: Option<&str>) -> Result<()> {
+fn list(ctx: &CataContext, cluster: Option<&str>) -> Result<()> {
     let lab = get_lab_secrets(ctx, cluster)?;
 
     println!(

@@ -98,7 +98,7 @@ in
 
   # A floe that says its image set is complete has to mean it. This renders
   # what the floe actually produced - the bundles are found by the provenance
-  # mkFloe stamps on them - and fails naming anything the floe did not
+  # the floe they are declared under - and fails naming anything the floe did not
   # declare, which is what turns declaring ~170 images from archaeology into
   # "run it, add what it names".
   #

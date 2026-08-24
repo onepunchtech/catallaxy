@@ -7,36 +7,36 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.cnpg;
 in
-(mkFloe {
-  name = "cnpg";
-  exports =
-    { lib, ... }:
-    {
-      operator = lib.mkOption {
-        type = refs.mkCapability {
-          ready = refs.tokenOption ''"The CloudNativePG operator is running and will reconcile Cluster CRs."'';
-        };
-        default = null;
-        description = ''
-          Postgres cluster reconciliation, or null when this floe is
-          off. Consumers whose database is a cnpg `Cluster` gate on
-          this rather than naming `cnpg/operator/ready`.
-        '';
+{
+  imports = [
+    (floeOptions {
+      name = "cnpg";
+      version = "0.22.0";
+    })
+    ./options.nix
+  ];
+
+  options.floes.cnpg.exports = {
+    operator = lib.mkOption {
+      type = refs.mkCapability {
+        ready = refs.tokenOption ''"The CloudNativePG operator is running and will reconcile Cluster CRs."'';
       };
+      default = null;
+      description = ''
+        Postgres cluster reconciliation, or null when this floe is
+        off. Consumers whose database is a cnpg `Cluster` gate on
+        this rather than naming `cnpg/operator/ready`.
+      '';
     };
-  version = "0.22.0";
-  imports = [ ./options.nix ];
-  module =
-    {
-      lib,
-      cfg,
-      ...
-    }:
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mapAttrs
@@ -289,7 +289,7 @@ in
 
       };
 
-      bundles.cnpg = {
+      floes.cnpg.bundles.cnpg = {
 
         owner = {
           bootstrap = "install-target";
@@ -305,7 +305,19 @@ in
         };
         createNamespaces = [ cfg.namespace ];
 
-        provides = [ "cnpg/operator/ready" ];
+        provides = [
+          "cnpg/operator/ready"
+          "postgres-operator/ready"
+          "kind:postgresql.cnpg.io/Cluster"
+          "kind:postgresql.cnpg.io/Pooler"
+          "kind:postgresql.cnpg.io/ScheduledBackup"
+          "kind:postgresql.cnpg.io/Backup"
+          "kind:postgresql.cnpg.io/Database"
+          "kind:postgresql.cnpg.io/Publication"
+          "kind:postgresql.cnpg.io/Subscription"
+          "kind:postgresql.cnpg.io/ImageCatalog"
+          "kind:postgresql.cnpg.io/ClusterImageCatalog"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "deployment/cnpg-cloudnative-pg";
@@ -315,19 +327,19 @@ in
         };
       };
 
-      bundles.cnpg-clusters.owner = {
+      floes.cnpg.bundles.cnpg-clusters.owner = {
 
         bootstrap = "install-target";
         steady = "argocd";
       };
-      bundles.cnpg-clusters.resources =
+      floes.cnpg.bundles.cnpg-clusters.resources =
         if hasClusters then clusterResources // initSqlResources // schemaReconcilerResources else { };
 
-      bundles.cnpg-clusters.createNamespaces = if hasClusters then clusterNamespaces else [ ];
+      floes.cnpg.bundles.cnpg-clusters.createNamespaces = if hasClusters then clusterNamespaces else [ ];
 
-      bundles.cnpg-clusters.requires = [
+      floes.cnpg.bundles.cnpg-clusters.requires = [
         "cnpg/operator/ready"
       ];
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

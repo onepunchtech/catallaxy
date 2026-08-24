@@ -10,11 +10,21 @@ pub fn set_verbose(verbose: bool) {
     VERBOSE.store(verbose, Ordering::Relaxed);
 }
 
+/// # Errors
+///
+/// If `name` is not on `PATH`.
 pub fn check_tool(name: &str) -> Result<()> {
     which::which(name).with_context(|| format!("required tool `{name}` not found in PATH"))?;
     Ok(())
 }
 
+/// Refuse early if the tools every command needs are missing.
+///
+/// # Errors
+///
+/// If `kubectl`, `helm` or `nix` is not on `PATH`, or `colima` is not and this
+/// is macOS. Reports the first one missing, not all of them; use
+/// [`check_all_tools`] for the whole picture.
 pub fn check_required_tools() -> Result<()> {
     let tools = ["kubectl", "helm", "nix"];
     for tool in tools {
@@ -40,10 +50,14 @@ pub fn check_all_tools() -> Vec<(String, bool, String)> {
 
 pub fn prepare_env(cmd: &mut Command) {
     super::trust::apply(cmd);
+    super::kubeconfig::apply(cmd);
+    super::egress::apply(cmd);
 }
 
 fn prepare(cmd: &mut Command) {
     super::trust::apply(cmd);
+    super::kubeconfig::apply(cmd);
+    super::egress::apply(cmd);
     if VERBOSE.load(Ordering::Relaxed) {
         eprintln!("{} {:?}", style("Running:").dim(), cmd);
     }
@@ -62,6 +76,12 @@ pub fn describe(cmd: &Command) -> String {
     }
 }
 
+/// Run a command with its output on this process's terminal and no stdin.
+///
+/// # Errors
+///
+/// If the command cannot be spawned, or exits non-zero. Its stderr went
+/// straight to the terminal, so the message carries only the exit code.
 pub fn run_streaming(cmd: &mut Command) -> Result<()> {
     prepare(cmd);
 
@@ -77,6 +97,11 @@ pub fn run_streaming(cmd: &mut Command) -> Result<()> {
     Ok(())
 }
 
+/// Run a command that may prompt, inheriting stdin as well as stdout.
+///
+/// # Errors
+///
+/// If the command cannot be spawned, or exits non-zero.
 pub fn run_interactive(cmd: &mut Command) -> Result<()> {
     prepare(cmd);
 
@@ -91,6 +116,13 @@ pub fn run_interactive(cmd: &mut Command) -> Result<()> {
     Ok(())
 }
 
+/// Feed `input` to a command and return its stdout.
+///
+/// # Errors
+///
+/// If the command cannot be spawned, its stdin cannot be written, or it exits
+/// non-zero. Writing to the stdin of a command that has already exited is an
+/// error here rather than a broken pipe the caller has to recognise.
 pub fn run_with_stdin(cmd: &mut Command, input: &[u8]) -> Result<String> {
     use std::io::Write;
 
@@ -126,6 +158,13 @@ pub fn run_with_stdin(cmd: &mut Command, input: &[u8]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Run a command and return its stdout, treating a non-zero exit as failure.
+///
+/// # Errors
+///
+/// If the command cannot be spawned, or exits non-zero, in which case its
+/// captured stderr is the message. Use [`run_output`] where a non-zero exit is
+/// an answer rather than a failure.
 pub fn run_capture(cmd: &mut Command) -> Result<String> {
     let output = run_output(cmd)?;
 
@@ -141,6 +180,12 @@ pub fn run_capture(cmd: &mut Command) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Run a command and hand back its exit status and both streams.
+///
+/// # Errors
+///
+/// Only if the command cannot be spawned. A non-zero exit is `Ok`, so callers
+/// have to check `status` themselves.
 pub fn run_output(cmd: &mut Command) -> Result<Output> {
     prepare(cmd);
 
@@ -149,12 +194,19 @@ pub fn run_output(cmd: &mut Command) -> Result<Output> {
         .context("Failed to execute command")
 }
 
+/// # Errors
+///
+/// Only if `bin` cannot be spawned. A non-zero exit is `Ok`.
 pub fn run_tool(bin: &str, args: &[String]) -> Result<ExitStatus> {
     let mut cmd = Command::new(bin);
     cmd.args(args);
     run_status(&mut cmd)
 }
 
+/// # Errors
+///
+/// Only if the command cannot be spawned. A non-zero exit is `Ok`. Output goes
+/// to this process's terminal.
 pub fn run_status(cmd: &mut Command) -> Result<ExitStatus> {
     prepare(cmd);
 

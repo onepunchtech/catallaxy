@@ -7,40 +7,37 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.velero;
 in
-(mkFloe {
-  name = "velero";
-  version = "7.2.1";
-  imports = [ ./options.nix ];
-
-  drift = [
-    {
-      group = "velero.io";
-      kinds = [
-        "Schedule"
-        "BackupStorageLocation"
+{
+  imports = [
+    (floeOptions {
+      name = "velero";
+      version = "7.2.1";
+      drift = [
+        {
+          group = "velero.io";
+          kinds = [
+            "Schedule"
+            "BackupStorageLocation"
+          ];
+          managedBy = [ "velero-server" ];
+          reason = ''
+            The velero controller defaults spec.skipImmediately on Schedule
+            and spec.default on BackupStorageLocation. Neither appears in
+            the rendered manifest.
+          '';
+        }
       ];
-      managedBy = [ "velero-server" ];
-      reason = ''
-        The velero controller defaults spec.skipImmediately on Schedule
-        and spec.default on BackupStorageLocation. Neither appears in
-        the rendered manifest.
-      '';
-    }
+    })
+    ./options.nix
   ];
-  module =
-    {
-      config,
-      lib,
-      pkgs,
-      cataCharts,
-      cfg,
-      ...
-    }:
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mapAttrs'
@@ -312,8 +309,15 @@ in
 
       };
 
-      bundles.velero-crds.yamls = [ cataCharts.velero.crds ];
-      bundles.velero-crds.provides = [ "velero/crds/established" ];
+      floes.velero.bundles.velero-crds.yamls = [ cataCharts.velero.crds ];
+      floes.velero.bundles.velero-crds.provides = [
+        "velero/crds/established"
+        "kind:velero.io/Schedule"
+        "kind:velero.io/Backup"
+        "kind:velero.io/Restore"
+        "kind:velero.io/BackupStorageLocation"
+        "kind:velero.io/VolumeSnapshotLocation"
+      ];
 
       floes.velero.images = {
         aws-plugin = {
@@ -326,7 +330,7 @@ in
         };
       };
 
-      bundles.velero = {
+      floes.velero.bundles.velero = {
         includeInBootstrap = false;
         helmCharts.velero = {
           chart = cfg.chart;
@@ -352,13 +356,13 @@ in
         };
       };
 
-      bundles.velero-schedules = {
+      floes.velero.bundles.velero-schedules = {
         resources = scheduleResources;
 
         requires = [ "velero/backup/ready" ];
       };
 
-      ops.backup.create = {
+      floes.velero.ops.backup.create = {
         description = "Create a Velero backup";
         options.cluster = {
           type = "enum";
@@ -383,7 +387,7 @@ in
         '';
       };
 
-      ops.backup.list = {
+      floes.velero.ops.backup.list = {
         description = "List Velero backups";
         options.cluster = {
           type = "enum";
@@ -396,7 +400,7 @@ in
         '';
       };
 
-      ops.backup.describe = {
+      floes.velero.ops.backup.describe = {
         description = "Describe a Velero backup";
         options.cluster = {
           type = "enum";
@@ -415,7 +419,7 @@ in
         '';
       };
 
-      ops.backup.delete = {
+      floes.velero.ops.backup.delete = {
         description = "Delete a Velero backup";
         options.cluster = {
           type = "enum";
@@ -434,7 +438,7 @@ in
         '';
       };
 
-      ops.backup.restore = {
+      floes.velero.ops.backup.restore = {
         description = "Restore from a Velero backup";
         options.cluster = {
           type = "enum";
@@ -453,7 +457,7 @@ in
         '';
       };
 
-      ops.backup.schedules = {
+      floes.velero.ops.backup.schedules = {
         description = "List Velero backup schedules";
         options.cluster = {
           type = "enum";
@@ -466,7 +470,7 @@ in
         '';
       };
 
-      ops.backup.trigger = {
+      floes.velero.ops.backup.trigger = {
         description = "Trigger a backup schedule manually";
         options.cluster = {
           type = "enum";
@@ -484,6 +488,6 @@ in
           velero backup create --from-schedule "$1" --kubecontext "$KUBE_CONTEXT"
         '';
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

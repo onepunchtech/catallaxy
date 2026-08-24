@@ -6,67 +6,62 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.openbao;
 in
-(mkFloe {
-  name = "openbao";
-  version = "0.1.0";
-  imports = [ ./options.nix ];
+{
+  imports = [
+    (floeOptions {
+      name = "openbao";
+      version = "0.1.0";
+    })
+    ./options.nix
+  ];
 
-  exports =
-    { lib, ... }:
-    {
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "openbao";
-        description = "Namespace OpenBao runs in.";
-      };
-      address = lib.mkOption {
-        type = lib.types.str;
-        default = "http://openbao.openbao.svc.cluster.local:8200";
-        description = ''
-          In-cluster address of the OpenBao API. This is what
-          `lab.secrets.stores.<n>.vault.server` wants: the store is read by
-          external-secrets from inside the cluster, not from your machine.
-        '';
-      };
-      externalAddress = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          Address of the OpenBao API from outside its own cluster, or empty
-          when no domain is set.
+  options.floes.openbao.exports = {
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "openbao";
+      description = "Namespace OpenBao runs in.";
+    };
+    address = lib.mkOption {
+      type = lib.types.str;
+      default = "http://openbao.openbao.svc.cluster.local:8200";
+      description = ''
+        In-cluster address of the OpenBao API. This is what
+        `lab.secrets.stores.<n>.vault.server` wants: the store is read by
+        external-secrets from inside the cluster, not from your machine.
+      '';
+    };
+    externalAddress = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        Address of the OpenBao API from outside its own cluster, or empty
+        when no domain is set.
 
-          This is the one a *different* cluster wants. `address` is an
-          in-cluster DNS name and resolves only where OpenBao runs, so a lab
-          whose other clusters read the store has to expose it and use this.
-        '';
-      };
-
-      sealed = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = ''
-          Whether OpenBao starts sealed and needs something to unseal it.
-          False in `dev` mode, and in `standalone` when `seal` is configured.
-          A consumer can read this to decide whether waiting for OpenBao to
-          answer is reasonable or whether it will hang until a human acts.
-        '';
-      };
+        This is the one a *different* cluster wants. `address` is an
+        in-cluster DNS name and resolves only where OpenBao runs, so a lab
+        whose other clusters read the store has to expose it and use this.
+      '';
     };
 
-  module =
-    {
-      config,
-      lib,
-      pkgs,
-      cfg,
-      peers,
-      ...
-    }:
+    sealed = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether OpenBao starts sealed and needs something to unseal it.
+        False in `dev` mode, and in `standalone` when `seal` is configured.
+        A consumer can read this to decide whether waiting for OpenBao to
+        answer is reasonable or whether it will hang until a human acts.
+      '';
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib) optionalAttrs optionals mkIf;
 
@@ -454,7 +449,7 @@ in
         sealed = !autoUnsealed;
       };
 
-      bundles.openbao = {
+      floes.openbao.bundles.openbao = {
         owner = {
           bootstrap = "install-target";
           steady = "argocd";
@@ -528,10 +523,6 @@ in
 
         createNamespaces = [ cfg.namespace ];
 
-        requires =
-          refs.needs peers.cert-manager.issuance "webhookReady"
-          ++ refs.needs peers.gateway.routing "publicReady";
-
         provides = [ "openbao/store/ready" ];
 
         # Only worth waiting on when something will unseal it. A sealed
@@ -574,7 +565,7 @@ in
       # initialise it and then fail on the first sealed call, having consumed
       # the one root token nobody kept. `seal = { }` means you unseal it, and
       # it means you initialise it too.
-      bundles.openbao-init = mkIf (cfg.mode != "dev" && autoUnsealed) {
+      floes.openbao.bundles.openbao-init = mkIf (cfg.mode != "dev" && autoUnsealed) {
         owner = {
           bootstrap = "install-target";
           steady = "argocd";
@@ -601,6 +592,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

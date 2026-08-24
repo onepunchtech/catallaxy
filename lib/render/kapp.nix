@@ -9,6 +9,8 @@
 
 {
   clusterName,
+  labName,
+  declaredBundles ? [ ],
   prefix ? "",
   imageLock ? { },
   imageRegistry ? null,
@@ -25,6 +27,12 @@
 let
   bundleEntries = dirBuilder.buildWaveDirs "kapp-${clusterName}-bundles" packages waves;
 
+  # Every bundle the cluster declares, not just the ones this tree renders.
+  # `lab up` applies a subset -- for an argocd lab, only the install-target
+  # set -- so the applied tree cannot say whether a bundle it is missing was
+  # dropped from the declaration or is simply owned by argocd. Pruning off the
+  # applied tree alone would delete everything argocd manages.
+  declaredBundlesFile = lib.concatStringsSep "\n" (lib.sort (a: b: a < b) declaredBundles);
 in
 pkgs.runCommand "kapp-${clusterName}"
   {
@@ -43,6 +51,10 @@ pkgs.runCommand "kapp-${clusterName}"
     } "$out/${clusterName}"}
 
     echo "kapp" > "$out/${clusterName}/.deploy-strategy"
+
+    cat > "$out/${clusterName}/.declared-bundles" <<'DECLARED'
+    ${declaredBundlesFile}
+    DECLARED
 
     cat > "$out/${clusterName}/.deploy-config" <<'EOF'
     waitTimeout: ${deployConfig.waitTimeout}

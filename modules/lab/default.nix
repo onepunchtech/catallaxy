@@ -28,6 +28,9 @@ in
     ./trust
     ./secrets
     ./images.nix
+    ./floes.nix
+    ./infra.nix
+    ./platforms
     ./lint.nix
     ./verify.nix
     ./e2e.nix

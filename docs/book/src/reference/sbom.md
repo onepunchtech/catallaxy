@@ -90,9 +90,9 @@ mapping those directory names to floes.
 
 An image in a bundle that names no floe would be recorded but owned by
 nobody. A check asserts that set is empty for every layout, so in practice
-each image has an owner. The stamp a bundle is attributed by comes from
-`mkFloe`, and it reaches bundles a floe declares in an imported submodule as
-well as those in its module body — the same stamp
+each image has an owner. The stamp a bundle is attributed by comes from the
+key it is declared under, and it reaches bundles a floe declares in an
+imported submodule as well as those in its module body — the same stamp
 `cluster.out.imageCompleteness` uses to decide which rendered bundles a
 floe's `imagesComplete` claim covers.
 

@@ -5,10 +5,13 @@
   yamlUtil,
   prefixUtil,
   imageUtil,
+  deliveryBundle,
 }:
 
 {
   clusterName,
+  labName,
+  declaredBundles ? [ ],
   prefix ? "",
   imageLock ? { },
   imageRegistry ? null,
@@ -85,6 +88,10 @@ let
           // {
             "argocd.argoproj.io/compare-options" = "IncludeMutationWebhook=true";
           };
+          labels = {
+            "catallaxy.io/lab" = labName;
+            "catallaxy.io/bundle" = deliveryBundle;
+          };
         };
         spec = {
           project = "default";
@@ -138,7 +145,11 @@ let
     metadata = {
       name = appName "${clusterName}-root";
       namespace = "argocd";
-      labels."app.kubernetes.io/managed-by" = "catallaxy";
+      labels = {
+        "app.kubernetes.io/managed-by" = "catallaxy";
+        "catallaxy.io/lab" = labName;
+        "catallaxy.io/bundle" = deliveryBundle;
+      };
     };
     spec = {
       project = "default";

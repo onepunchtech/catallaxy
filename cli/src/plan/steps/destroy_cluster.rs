@@ -6,7 +6,7 @@ use crate::domain::{ClusterSpec, ProvisionerKind, StepFailure};
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &DestroyClusterParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &DestroyClusterParams) -> Result<()> {
     let DestroyClusterParams {
         name: cluster_name,
         provisioner: _,
@@ -31,7 +31,7 @@ pub async fn run(sctx: &StepContext<'_>, p: &DestroyClusterParams) -> Result<()>
                 );
             }
             if spec.provisioner == ProvisionerKind::K3d
-                && !verify_no_stragglers(spec.provisioner_config.k3d.cluster_name.as_str())
+                && !io::k3d::sweep_stragglers(spec.provisioner_config.k3d.cluster_name.as_str())
             {
                 step_failed = true;
             }
@@ -82,48 +82,4 @@ fn k3d_already_gone(sctx: &StepContext<'_>, spec: &ClusterSpec) -> bool {
         cluster_short
     );
     true
-}
-
-fn verify_no_stragglers(k3d_cluster_name: &str) -> bool {
-    let container_prefix = format!("k3d-{k3d_cluster_name}-");
-    let out = match io::docker::containers_named(&container_prefix) {
-        Ok(o) if o.status.success() => o,
-        Ok(o) => {
-            println!(
-                "{} `docker ps` failed (exit {:?}): {}",
-                style("ERROR").red(),
-                o.status.code(),
-                String::from_utf8_lossy(&o.stderr),
-            );
-            return false;
-        }
-        Err(e) => {
-            println!(
-                "{} could not run `docker ps` to verify destroy: {e}",
-                style("ERROR").red(),
-            );
-            return false;
-        }
-    };
-
-    let stragglers: Vec<&str> = std::str::from_utf8(&out.stdout)
-        .unwrap_or("")
-        .lines()
-        .filter(|l| !l.is_empty())
-        .collect();
-    if stragglers.is_empty() {
-        return true;
-    }
-    println!(
-        "{} '{}' left {} container(s) behind: {}",
-        style("ERROR").red(),
-        k3d_cluster_name,
-        stragglers.len(),
-        stragglers.join(", "),
-    );
-    for c in &stragglers {
-        println!("{} docker rm -f {c}", style(">>>").yellow());
-        io::docker::force_remove_container(c);
-    }
-    false
 }

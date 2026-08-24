@@ -17,6 +17,11 @@ pub fn parse_gateway(route_output: &str) -> Option<String> {
         .map(|l| l.trim().trim_start_matches("gateway:").trim().to_string())
 }
 
+/// # Errors
+///
+/// Only if `sudo` cannot be spawned. A route that is not there is a non-zero
+/// `ExitStatus`, and both streams are discarded, so removing a route that was
+/// never added is quiet.
 pub fn delete(subnet: &str) -> std::io::Result<std::process::ExitStatus> {
     Command::new("sudo")
         .args(["route", "-n", "delete", "-net", subnet])
@@ -25,6 +30,10 @@ pub fn delete(subnet: &str) -> std::io::Result<std::process::ExitStatus> {
         .status()
 }
 
+/// # Errors
+///
+/// If `sudo` cannot be spawned, or exits non-zero because the operator
+/// declined the prompt or the route already exists.
 pub fn add(subnet: &str, gateway: &str) -> Result<()> {
     let status = Command::new("sudo")
         .args(["route", "-n", "add", "-net", subnet, gateway])

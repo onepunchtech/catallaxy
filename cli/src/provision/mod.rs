@@ -10,7 +10,7 @@ use crate::io;
 pub fn provisioner_cluster_name(spec: &ClusterSpec) -> &str {
     match spec.provisioner {
         ProvisionerKind::K3d => &spec.provisioner_config.k3d.cluster_name,
-        ProvisionerKind::Talos => &spec.provisioner_config.docker.cluster_name,
+        ProvisionerKind::Talos => &spec.provisioner_config.talos.cluster_name,
         ProvisionerKind::Crossplane | ProvisionerKind::External => "",
     }
 }
@@ -85,29 +85,58 @@ pub fn provision_cluster_with_registry(
         ProvisionerKind::Talos => {
             let docker_host = resolve_docker_host(ctx, spec)?;
             if io::talos::cluster_exists(&cluster_name, docker_host.as_deref()) {
-                println!(
-                    "{} Cluster '{name}' is already running",
-                    style(">>>").green()
-                );
-                return Ok(());
+                // Existing is not the same as matching. `cluster_create` below
+                // reads controlPlanes and workers, so raising either used to
+                // change the declaration and nothing else, under a green run.
+                match converge_existing_cluster(
+                    name,
+                    spec,
+                    docker_host.as_deref(),
+                    ctx.may_recreate(name),
+                )? {
+                    Convergence::Unchanged => return Ok(()),
+                    Convergence::MustRecreate => {
+                        io::talos::cluster_destroy(&cluster_name, docker_host.as_deref())?;
+                    }
+                }
             }
 
-            io::talos::cluster_create(
-                &cluster_name,
-                spec.kubernetes.control_planes,
-                spec.kubernetes.workers,
-                docker_host.as_deref(),
+            io::talos::cluster_create(io::talos::ClusterCreate {
+                name: &cluster_name,
+                workers: spec.kubernetes.workers,
+                talos: &spec.provisioner_config.talos,
+                docker_host: docker_host.as_deref(),
+            })?;
+
+            // talosctl returns as soon as it has started the containers, so
+            // without this the run marches on to a deploy against an API that
+            // is not up. The k3d path has always waited here.
+            wait_until_answering(
+                &spec.kube_context,
+                &spec.provisioner_config.docker.wait_timeout,
+            )?;
+
+            crate::host::state::write_cluster_shape(
+                &spec.lab_name,
+                name,
+                &crate::domain::cluster_shape::ClusterShape::of(spec),
             )?;
         }
         ProvisionerKind::Crossplane => {
+            // Nothing to do here, and that is the whole answer: the cluster is
+            // a Cluster CR applied with the rest of the manifests, so its
+            // declaration converges when Crossplane reconciles it rather than
+            // through a shape comparison catallaxy performs.
             println!(
-                "{} Crossplane clusters are provisioned via CAPI on the management cluster",
+                "{} Cluster '{name}' is declared as a Crossplane resource; \
+                 the manifest apply is what converges it",
                 style(">>>").cyan()
             );
         }
         ProvisionerKind::External => {
             println!(
-                "{} External cluster '{name}', no provisioning needed",
+                "{} Cluster '{name}' is external, so the lab declares nothing \
+                 about how it is built and changes to it are not catallaxy's to make",
                 style(">>>").cyan()
             );
         }
@@ -186,13 +215,14 @@ fn provision_k3d(
 ) -> Result<()> {
     let docker_host = resolve_docker_host(ctx, spec)?;
     if io::k3d::cluster_exists(cluster_name, docker_host.as_deref()) {
-        println!(
-            "{} Cluster '{name}' is already running",
-            style(">>>").green()
-        );
         io::k3d::kubeconfig_merge(cluster_name, docker_host.as_deref())?;
-        report_cluster_drift(name, spec);
-        return Ok(());
+        match converge_existing_cluster(name, spec, docker_host.as_deref(), ctx.may_recreate(name))?
+        {
+            Convergence::Unchanged => return Ok(()),
+            Convergence::MustRecreate => {
+                io::k3d::cluster_destroy(cluster_name, docker_host.as_deref())?;
+            }
+        }
     }
 
     let k3d = &spec.provisioner_config.k3d;
@@ -232,6 +262,7 @@ fn provision_k3d(
         no_traefik: k3d.no_traefik,
         no_service_lb: k3d.no_service_lb,
         no_flannel: k3d.no_flannel,
+        no_local_storage: k3d.no_local_storage,
         image: k3d.image.as_deref(),
         docker_host: docker_host.as_deref(),
         registries_yaml: registries_yaml_str.as_deref(),
@@ -246,12 +277,308 @@ fn provision_k3d(
         extra_volumes: &extra_volumes,
     })?;
 
+    // Explicitly, on this path too. Creation used to write the operator's
+    // default kubeconfig by k3d's own default, so the only merge cata asked
+    // for was on the already-exists path; turning that default off left a
+    // fresh cluster with no entry anywhere and nothing to wait on.
+    io::k3d::kubeconfig_merge(cluster_name, docker_host.as_deref())?;
+
     wait_until_answering(
         &spec.kube_context,
         &spec.provisioner_config.docker.wait_timeout,
     )?;
 
+    crate::host::state::write_cluster_shape(
+        &spec.lab_name,
+        name,
+        &crate::domain::cluster_shape::ClusterShape::of(spec),
+    )?;
+
     Ok(())
+}
+
+/// Whether the caller still has to build the cluster.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Convergence {
+    Unchanged,
+    MustRecreate,
+}
+
+/// Bring an existing cluster into line with the declaration, or say why it
+/// cannot be.
+///
+/// The comparison is against the shape the cluster was built from, not against
+/// the live cluster: most of these fields cannot be read back without parsing
+/// k3d internals, and a check that silently cannot see a field is the bug this
+/// exists to fix.
+///
+/// Adding workers is done here. Everything else is baked into node containers
+/// at creation, so the only convergence is recreation, which `--recreate`
+/// performs and a bare `lab up` refuses.
+fn converge_existing_cluster(
+    name: &str,
+    spec: &ClusterSpec,
+    docker_host: Option<&str>,
+    recreate: bool,
+) -> Result<Convergence> {
+    use crate::domain::cluster_shape::{ClusterShape, compare_shapes, describe};
+
+    let declared = ClusterShape::of(spec);
+    let recorded = match crate::host::state::read_cluster_shape(&spec.lab_name, name) {
+        Some(recorded) => recorded,
+        None => adopt_existing_cluster(name, spec, &declared)?,
+    };
+
+    let report = compare_shapes(&declared, &recorded);
+
+    if report.is_clean() {
+        println!(
+            "{} Cluster '{name}' is already running and matches the lab",
+            style(">>>").green()
+        );
+        report_out_of_band_drift(name, spec);
+        return Ok(Convergence::Unchanged);
+    }
+
+    // Growing in place is a k3d capability, not a general one. Talos in Docker
+    // has no equivalent of `k3d node create`, so for anything else a worker
+    // count that moved is handled like every other field: refuse, and say what
+    // would satisfy it.
+    if let Some(to_add) = report
+        .workers_to_add()
+        .filter(|_| matches!(spec.provisioner, crate::domain::ProvisionerKind::K3d))
+    {
+        println!(
+            "{} Cluster '{name}' is short {to_add} worker(s); adding them",
+            style(">>>").cyan()
+        );
+        let existing = io::k3d::node_names(&spec.provisioner_config.k3d.cluster_name, docker_host)
+            .len()
+            .max(1);
+        io::k3d::add_agents(
+            &spec.provisioner_config.k3d.cluster_name,
+            to_add,
+            existing,
+            docker_host,
+        )?;
+        crate::host::state::write_cluster_shape(&spec.lab_name, name, &declared)?;
+        return Ok(Convergence::Unchanged);
+    }
+
+    if report.is_convergeable_in_place()
+        && matches!(spec.provisioner, crate::domain::ProvisionerKind::K3d)
+    {
+        converge_k3d_in_place(name, spec, &report, &recorded, docker_host)?;
+        // Recorded only after the cluster agrees. Writing the declaration
+        // because convergence *ran* is how a node replaced with an unchanged
+        // image produced a record claiming the version had moved, and a drift
+        // check that read clean from then on.
+        confirm_converged(name, spec, &declared)?;
+        crate::host::state::write_cluster_shape(&spec.lab_name, name, &declared)?;
+        return Ok(Convergence::Unchanged);
+    }
+
+    if recreate {
+        println!("{}", describe(name, &report));
+        println!(
+            "{} --recreate given, so '{name}' will be destroyed and rebuilt",
+            style("Warning:").yellow()
+        );
+        return Ok(Convergence::MustRecreate);
+    }
+
+    anyhow::bail!("{}", describe(name, &report))
+}
+
+/// Refuse to record a shape the live cluster does not have.
+///
+/// Only the fields a running cluster can be asked about are checked; the rest
+/// are what the record exists for. But a node image that did not move is
+/// exactly the case where convergence silently achieved nothing.
+fn confirm_converged(
+    name: &str,
+    spec: &ClusterSpec,
+    declared: &crate::domain::cluster_shape::ClusterShape,
+) -> Result<()> {
+    let Some(want) = declared.image.as_deref() else {
+        return Ok(());
+    };
+    let Some(nodes) = io::kubectl::node_summary(&spec.kube_context) else {
+        return Ok(());
+    };
+    let Some(running) = nodes.kubelet_version.as_deref() else {
+        return Ok(());
+    };
+
+    // `rancher/k3s:v1.32.5-k3s1` against a kubelet of `v1.32.5+k3s1`.
+    let want_version = want.rsplit(':').next().unwrap_or(want).replace('-', "+");
+    if running.trim_start_matches('v') == want_version.trim_start_matches('v') {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "cluster '{name}' was converged but still runs {running}, while the lab \
+         declares {want}.\n\
+         Nothing has been recorded, so the next run will try again rather than \
+         reporting a match it does not have.\n\
+         `cata diagnose` shows what the node reports."
+    )
+}
+
+/// Bring a k3d cluster to its declared shape without losing it.
+///
+/// A k3d node keeps its datastore in a docker volume; the image only pins the
+/// binary. So a version bump, an apiserver flag or a CNI toggle is a container
+/// replacement against the same volume, and the cluster comes back as itself.
+///
+/// Nodes are replaced one at a time so a multi-server cluster keeps answering
+/// throughout. A single-server cluster cannot: its API is down for the
+/// restart, and the message says so rather than implying otherwise.
+fn converge_k3d_in_place(
+    name: &str,
+    spec: &ClusterSpec,
+    report: &crate::domain::cluster_shape::DriftReport,
+    recorded: &crate::domain::cluster_shape::ClusterShape,
+    docker_host: Option<&str>,
+) -> Result<()> {
+    use crate::domain::cluster_shape::Fix;
+
+    let cluster = &spec.provisioner_config.k3d.cluster_name;
+
+    for fix in report.fixes() {
+        match fix {
+            Fix::AddServers(n) => {
+                let existing = io::k3d::node_names(cluster, docker_host).len().max(1);
+                io::k3d::add_servers(cluster, n, existing, docker_host)?;
+            }
+            Fix::AddWorkers(n) => {
+                let existing = io::k3d::node_names(cluster, docker_host).len().max(1);
+                io::k3d::add_agents(cluster, n, existing, docker_host)?;
+            }
+            Fix::ReplaceLoadBalancer | Fix::ReplaceNode => {
+                replace_k3d_nodes(name, spec, recorded, docker_host)?;
+            }
+            Fix::RebuildOnly => {
+                println!(
+                    "{} Cluster '{name}' keeps running as it is; the change is to \
+                     which schemas its manifests are typed against",
+                    style(">>>").cyan(),
+                );
+            }
+            Fix::NewCluster => unreachable!("is_convergeable_in_place excluded this"),
+        }
+    }
+
+    Ok(())
+}
+
+fn replace_k3d_nodes(
+    name: &str,
+    spec: &ClusterSpec,
+    recorded: &crate::domain::cluster_shape::ClusterShape,
+    docker_host: Option<&str>,
+) -> Result<()> {
+    let cluster = &spec.provisioner_config.k3d.cluster_name;
+    let declared_version = &spec.kubernetes.version;
+
+    if !io::k3d_node::upgrade_is_one_step(&recorded.version, declared_version) {
+        anyhow::bail!(
+            "cluster '{name}' runs Kubernetes {} and the lab declares {declared_version}.\n\
+             Kubernetes supports one minor version of skew, so k3s cannot read a\n\
+             datastore that far behind forward. Step through the minors one at a\n\
+             time, or rebuild:\n  \
+             cata lab up --recreate {name}",
+            recorded.version,
+        );
+    }
+
+    let image = io::k3d::node_image_for(spec);
+    let nodes = io::k3d::node_names(cluster, docker_host);
+    let servers: Vec<&String> = nodes.iter().filter(|n| n.contains("-server-")).collect();
+
+    if servers.len() < 2 {
+        println!(
+            "{} Cluster '{name}' has one server, so its API is unavailable while \
+             the node restarts. Its data is not touched.",
+            style("note:").yellow(),
+        );
+    }
+
+    for node in &nodes {
+        // The loadbalancer holds no state and k3d rebuilds it from the
+        // cluster; only the k3s nodes carry a datastore worth preserving.
+        if node.contains("-serverlb") {
+            continue;
+        }
+        println!(
+            "{} Replacing node '{node}' on {image}, keeping its data",
+            style(">>>").cyan(),
+        );
+        let node_spec = io::k3d_node::inspect(node)?;
+        io::k3d_node::replace(&node_spec, &image, docker_host)?;
+        // The API is down while the container restarts, and `kubectl wait`
+        // treats ServiceUnavailable as a hard error rather than retrying, so
+        // the cluster has to be answering before the node can be asked about.
+        wait_until_answering(
+            &spec.kube_context,
+            &spec.provisioner_config.docker.wait_timeout,
+        )?;
+        io::k3d::wait_node_ready(&spec.kube_context, node)?;
+    }
+
+    Ok(())
+}
+
+/// A cluster with no record cannot be verified, but it can be checked against
+/// what a live cluster does answer for.
+///
+/// When those agree, the record is written and the run continues. That is an
+/// assertion about the fields nobody can read back, not a verification of
+/// them, and it says so. When they disagree there is nothing to assert.
+fn adopt_existing_cluster(
+    name: &str,
+    spec: &ClusterSpec,
+    declared: &crate::domain::cluster_shape::ClusterShape,
+) -> Result<crate::domain::cluster_shape::ClusterShape> {
+    let observed = io::kubectl::node_summary(&spec.kube_context);
+
+    let agrees = match &observed {
+        Some(nodes) => describe_cluster_drift(
+            spec.kubernetes.workers,
+            nodes.workers,
+            spec.provisioner_config.k3d.image.as_deref(),
+            nodes.kubelet_version.as_deref(),
+        )
+        .is_empty(),
+        None => false,
+    };
+
+    if !agrees {
+        anyhow::bail!(
+            "cluster '{name}' exists, but there is no record of the shape it was \
+             built from and it does not match what the lab declares in the fields \
+             a running cluster can be asked about.\n\
+             That happens when it was built by an older catallaxy, on another \
+             machine, or after the lab's state directory was cleared.\n\
+             Recreate it so the two are known to agree:\n  \
+             cata --flake .#<lab> lab up --recreate {name}"
+        );
+    }
+
+    println!(
+        "{} Cluster '{name}' predates the shape record. Its node count and k3s \
+         version match the lab, so the record is being written from the current \
+         declaration.",
+        style(">>>").yellow()
+    );
+    println!(
+        "      This asserts the fields a running cluster cannot be asked about \
+         (apiserver args, CNI flags, volumes, subnets) rather than verifying \
+         them. `lab up --recreate {name}` rebuilds it if you would rather know.",
+    );
+
+    crate::host::state::write_cluster_shape(&spec.lab_name, name, declared)?;
+    Ok(declared.clone())
 }
 
 fn wait_until_answering(kube_context: &str, wait_timeout: &str) -> Result<()> {
@@ -269,10 +596,9 @@ fn wait_until_answering(kube_context: &str, wait_timeout: &str) -> Result<()> {
     }
 
     anyhow::bail!(
-        "cluster was created but '{kube_context}' did not answer within {}. \
+        "cluster was created but '{kube_context}' did not answer within {wait_timeout}. \
          Raise provisioner.docker.waitTimeout if the machine is slow, or check \
          `docker logs` for the server node.",
-        wait_timeout,
     )
 }
 
@@ -308,7 +634,12 @@ pub fn describe_cluster_drift(
     drift
 }
 
-fn report_cluster_drift(name: &str, spec: &ClusterSpec) {
+/// The record says the cluster was built from what the lab declares. This
+/// asks the cluster itself, which catches what the record cannot: a node
+/// added or removed behind catallaxy's back. Only the fields a live cluster
+/// answers for honestly, and a warning rather than a refusal, because it is
+/// corroboration rather than the check.
+fn report_out_of_band_drift(name: &str, spec: &ClusterSpec) {
     let Some(nodes) = io::kubectl::node_summary(&spec.kube_context) else {
         return;
     };
@@ -325,15 +656,16 @@ fn report_cluster_drift(name: &str, spec: &ClusterSpec) {
     }
 
     println!(
-        "{} '{name}' no longer matches what the lab declares:",
+        "{} '{name}' was built from what the lab declares, but the running \
+         cluster has since changed:",
         style("Warning:").yellow(),
     );
     for line in &drift {
         println!("    - {line}");
     }
     println!(
-        "    `lab up` only creates a cluster that is missing; it does not reshape one \
-         that exists.\n    Recreate it to converge:  cata lab destroy && cata lab up"
+        "    Something outside catallaxy changed it. `lab up` does not reshape a \
+         cluster that exists.\n    Recreate it to converge:  cata lab destroy && cata lab up"
     );
 }
 
@@ -426,8 +758,11 @@ pub fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<Path
             continue;
         }
 
+        let provenance = crate::domain::provenance::Provenance::new(lab_name, ctx.flake_uri());
         for (svc_name, svc) in &lab.services {
-            if let Err(e) = crate::host::services::start_service(lab_name, svc_name, svc) {
+            if let Err(e) =
+                crate::host::services::start_service(lab_name, svc_name, svc, &provenance)
+            {
                 let description = svc.description.as_str();
                 println!(
                     "{} Failed to start {}: {}",
@@ -439,37 +774,23 @@ pub fn ensure_lab_services(ctx: &CataContext, cluster_name: &str) -> Option<Path
         }
 
         if let Some(port) = lab.registry_port {
-            let state_dir = crate::host::state::service_state_dir(lab_name, "registry");
-            if io::fs::create_dir_all(&state_dir).is_ok() {
-                let path = state_dir.join("registries.yaml");
-                let registry_yaml =
-                    crate::host::services::generate_registries_yaml(port, &lab.registry_upstreams);
-                if let Some(zone) = lab.dns_info.as_ref().map(|d| d.zone.as_str()) {
-                    let host_dir = state_dir.join("certs.d").join(format!("registry.{zone}"));
-                    if io::fs::create_dir_all(&host_dir).is_ok() {
-                        let _ = io::fs::write(
-                            host_dir.join("hosts.toml"),
-                            crate::host::services::generate_registry_hosts_toml(zone),
-                        );
-                        let ca_src =
-                            crate::host::state::service_state_dir(lab_name, "proxy").join("ca.crt");
-                        if ca_src.exists() {
-                            let _ = io::fs::copy(&ca_src, host_dir.join("ca.crt"));
-                        }
-                    }
-                }
-                if lab.dns_info.is_some() {
-                    let dns_ip = lab.dns_container().and_then(io::docker::first_network_ip);
-                    if let Some(dns_ip) = dns_ip {
-                        let _ = io::fs::write(
-                            state_dir.join("lab-resolv.conf"),
-                            crate::host::services::lab_resolv_conf(&dns_ip),
-                        );
-                    }
-                }
-                if io::fs::write(&path, registry_yaml).is_ok() {
-                    return Some(path);
-                }
+            let dns_ip = lab
+                .dns_info
+                .as_ref()
+                .and(lab.dns_container())
+                .and_then(io::docker::first_network_ip);
+            match crate::host::registry::write_node_config(
+                lab_name,
+                port,
+                &lab.registry_upstreams,
+                lab.dns_info.as_ref().map(|d| d.zone.as_str()),
+                dns_ip.as_deref(),
+            ) {
+                Ok(path) => return Some(path),
+                Err(e) => println!(
+                    "{} Could not write the registry config for '{lab_name}': {e:#}",
+                    style("Warning:").yellow(),
+                ),
             }
         }
     }

@@ -5,6 +5,13 @@ use console::style;
 
 use super::*;
 
+/// Poll until a CRD reports Established, or `timeout` elapses.
+///
+/// # Errors
+///
+/// If `timeout` is not a duration, if `context` is empty, or if the CRD is not
+/// Established in time. A CRD that never appears is a timeout, not a distinct
+/// error: a provider registers its CRDs when it is ready and not before.
 pub fn wait_crd_established(context: &str, crd_name: &str, timeout: &str) -> Result<()> {
     use std::time::{Duration, Instant};
 
@@ -16,7 +23,7 @@ pub fn wait_crd_established(context: &str, crd_name: &str, timeout: &str) -> Res
         let result = super::run::command()
             .args([
                 "--context",
-                context,
+                crate::io::kube_context::require_named(context)?,
                 "wait",
                 "--for=condition=Established",
                 &format!("crd/{crd_name}"),
@@ -72,6 +79,13 @@ pub fn unhealthy_provider_names(providers: &serde_json::Value) -> Vec<String> {
         .collect()
 }
 
+/// Poll until every installed Crossplane provider is Healthy, up to 300s.
+///
+/// # Errors
+///
+/// If `context` is empty, or the deadline passes. The message distinguishes no
+/// providers installed from providers installed but unhealthy, because zero
+/// providers would otherwise satisfy "all healthy" vacuously.
 pub fn wait_crossplane_healthy(context: &str) -> Result<()> {
     use std::time::{Duration, Instant};
     let timeout = Duration::from_secs(300);
@@ -81,7 +95,14 @@ pub fn wait_crossplane_healthy(context: &str) -> Result<()> {
 
     loop {
         let output = super::run::command()
-            .args(["--context", context, "get", "providers", "-o", "json"])
+            .args([
+                "--context",
+                crate::io::kube_context::require_named(context)?,
+                "get",
+                "providers",
+                "-o",
+                "json",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output();
@@ -131,6 +152,13 @@ pub fn wait_crossplane_healthy(context: &str) -> Result<()> {
     }
 }
 
+/// Poll until every managed resource is both Synced and Ready.
+///
+/// # Errors
+///
+/// If `context` is empty, or the deadline passes. A cluster with no managed
+/// resources yet keeps waiting rather than returning, so this cannot succeed
+/// before the resources exist.
 pub fn wait_managed_ready(context: &str, timeout_secs: u64) -> Result<()> {
     use std::time::{Duration, Instant};
     let timeout = Duration::from_secs(timeout_secs);
@@ -138,7 +166,14 @@ pub fn wait_managed_ready(context: &str, timeout_secs: u64) -> Result<()> {
 
     loop {
         let output = super::run::command()
-            .args(["--context", context, "get", "managed", "-o", "json"])
+            .args([
+                "--context",
+                crate::io::kube_context::require_named(context)?,
+                "get",
+                "managed",
+                "-o",
+                "json",
+            ])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output();
@@ -268,7 +303,20 @@ pub fn external_name_targets(json: &serde_json::Value) -> (Vec<AnnotateTarget>, 
     (targets, without_an_external_name)
 }
 
+/// Carry `crossplane.io/external-name` from the bootstrap cluster to the
+/// pivoted one, so the new Crossplane adopts the cloud resources rather than
+/// creating second copies.
+///
+/// # Errors
+///
+/// If either context is empty, if listing managed resources on the bootstrap
+/// fails, or if that listing is not JSON. A resource that fails to annotate is
+/// a warning, not an error, so success does not mean every name was copied;
+/// the count is printed.
 pub fn copy_external_names(bootstrap_ctx: &str, target_ctx: &str) -> Result<()> {
+    let bootstrap_ctx = crate::io::kube_context::require_named(bootstrap_ctx)?;
+    crate::io::kube_context::require_named(target_ctx)?;
+
     let output = super::run::command()
         .args(["--context", bootstrap_ctx, "get", "managed", "-o", "json"])
         .stdout(Stdio::piped())
@@ -322,11 +370,18 @@ pub fn copy_external_names(bootstrap_ctx: &str, target_ctx: &str) -> Result<()> 
     Ok(())
 }
 
+/// Set every managed resource to `deletionPolicy: Orphan`.
+///
+/// # Errors
+///
+/// If `context` is empty, or the patch fails. The message says what is at
+/// stake, because the caller's next step destroys the cluster and unorphaned
+/// resources would take the real cloud resources with them.
 pub fn orphan_managed_resources(context: &str) -> Result<()> {
     let status = super::run::command()
         .args([
             "--context",
-            context,
+            crate::io::kube_context::require_named(context)?,
             "patch",
             "managed",
             "--all",

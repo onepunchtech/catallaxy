@@ -19,11 +19,7 @@ pub fn run(sctx: &StepContext<'_>, p: &ApplyRootApplicationParams) -> Result<()>
     let kube_context = kube_context.as_deref();
 
     let kube_context = kube_context.ok_or_else(|| {
-        anyhow::anyhow!(
-            "apply-root-application: missing kubeContext for target '{target}'. \
-             The planner must populate `kubeContext` (see `runtimeCtxOf` in \
-             `lib/eval/deployment-plan.nix`)."
-        )
+        crate::plan::steps::missing_kube_context("apply-root-application", target)
     })?;
     let manifest_path = manifest_path.unwrap_or("");
     if manifest_path.is_empty() {

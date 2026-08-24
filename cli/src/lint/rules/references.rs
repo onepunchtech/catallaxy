@@ -103,7 +103,7 @@ fn check(
                 cluster: cluster.to_string(),
                 file: r.source_file.clone(),
                 resource: r.display_id(),
-                message: format!("references ConfigMap '{}' which does not exist", cm_ref),
+                message: format!("references ConfigMap '{cm_ref}' which does not exist"),
             });
         }
         for secret_ref in &r.secret_refs {
@@ -127,7 +127,7 @@ fn check(
                 cluster: cluster.to_string(),
                 file: r.source_file.clone(),
                 resource: r.display_id(),
-                message: format!("references Secret '{}' which does not exist", secret_ref),
+                message: format!("references Secret '{secret_ref}' which does not exist"),
             });
         }
     }

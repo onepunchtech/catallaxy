@@ -20,11 +20,7 @@ pub fn run(sctx: &StepContext<'_>, p: &BootstrapArgocdKubectlSsaParams) -> Resul
     let _namespace = namespace.as_deref();
 
     let kube_context = kube_context.ok_or_else(|| {
-        anyhow::anyhow!(
-            "bootstrap-argocd-kubectl-ssa: missing kubeContext for target '{target}'. \
-             The planner must populate `kubeContext` (see `runtimeCtxOf` in \
-             `lib/eval/deployment-plan.nix`). No safe default exists."
-        )
+        crate::plan::steps::missing_kube_context("bootstrap-argocd-kubectl-ssa", target)
     })?;
     let field_manager = field_manager.unwrap_or("catallaxy-bootstrap");
     let root = PathBuf::from(format!("{}/{manifest_root}", sctx.lab_package));

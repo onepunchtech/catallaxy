@@ -69,11 +69,11 @@ pub enum PkiCommands {
     },
 }
 
-pub async fn run(ctx: &CataContext, command: PkiCommands) -> Result<()> {
+pub fn run(ctx: &CataContext, command: PkiCommands) -> Result<()> {
     match command {
         PkiCommands::Init { name, force } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
-            init(ctx, &name, force).await
+            init(ctx, &name, force)
         }
         PkiCommands::Issue {
             user,
@@ -81,15 +81,15 @@ pub async fn run(ctx: &CataContext, command: PkiCommands) -> Result<()> {
             force,
         } => {
             let name = ctx.resolve_cluster_name(cluster.as_deref())?;
-            issue(ctx, &name, &user, force).await
+            issue(ctx, &name, &user, force)
         }
         PkiCommands::Provision { user, cluster } => {
             let name = ctx.resolve_cluster_name(cluster.as_deref())?;
-            provision(ctx, &name, &user).await
+            provision(ctx, &name, &user)
         }
         PkiCommands::List { name } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
-            list(ctx, &name).await
+            list(ctx, &name)
         }
         PkiCommands::Kubeconfig {
             user,
@@ -97,7 +97,7 @@ pub async fn run(ctx: &CataContext, command: PkiCommands) -> Result<()> {
             output,
         } => {
             let name = ctx.resolve_cluster_name(cluster.as_deref())?;
-            kubeconfig(ctx, &name, &user, output).await
+            kubeconfig(ctx, &name, &user, output)
         }
     }
 }
@@ -206,7 +206,7 @@ fn resolve_user(
     })
 }
 
-async fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> {
+fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> {
     let pki = get_pki_config(ctx, cluster_name)?;
 
     let ca_key = ca_key_path(cluster_name);
@@ -274,7 +274,7 @@ async fn init(ctx: &CataContext, cluster_name: &str, force: bool) -> Result<()> 
     Ok(())
 }
 
-async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -> Result<()> {
+fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -> Result<()> {
     let pki = get_pki_config(ctx, cluster_name)?;
 
     let ca_key_file = ca_key_path(cluster_name);
@@ -366,7 +366,7 @@ async fn issue(ctx: &CataContext, cluster_name: &str, user: &str, force: bool) -
     Ok(())
 }
 
-async fn provision(_ctx: &CataContext, cluster_name: &str, user: &str) -> Result<()> {
+fn provision(_ctx: &CataContext, cluster_name: &str, user: &str) -> Result<()> {
     let pki_config = get_pki_config(_ctx, cluster_name)?;
 
     let user_config = pki_config
@@ -425,7 +425,7 @@ async fn provision(_ctx: &CataContext, cluster_name: &str, user: &str) -> Result
     Ok(())
 }
 
-async fn list(ctx: &CataContext, cluster_name: &str) -> Result<()> {
+fn list(ctx: &CataContext, cluster_name: &str) -> Result<()> {
     let pki = get_pki_config(ctx, cluster_name)?;
 
     println!(
@@ -530,7 +530,7 @@ async fn list(ctx: &CataContext, cluster_name: &str) -> Result<()> {
     Ok(())
 }
 
-async fn kubeconfig(
+fn kubeconfig(
     ctx: &CataContext,
     cluster_name: &str,
     user: &str,
@@ -618,8 +618,7 @@ async fn kubeconfig(
 
     println!("\n  {} Merge into your kubeconfig:", style("Tip:").bold());
     println!(
-        "    KUBECONFIG=~/.kube/config:{} kubectl config view --flatten > ~/.kube/config.merged",
-        output_display
+        "    KUBECONFIG=~/.kube/config:{output_display} kubectl config view --flatten > ~/.kube/config.merged"
     );
     println!("    kubectl --context {cluster_name}-{user} get pods");
 

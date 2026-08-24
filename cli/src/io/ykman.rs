@@ -3,6 +3,11 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
+/// # Errors
+///
+/// If `ykman` cannot be spawned, or exits non-zero. Its output goes to the
+/// terminal, so a PIN or touch prompt reaches the operator and its complaint
+/// is already on screen.
 pub fn import_key(
     slot: &str,
     key: &Path,
@@ -29,6 +34,9 @@ pub fn import_key(
     Ok(())
 }
 
+/// # Errors
+///
+/// If `ykman` cannot be spawned, or exits non-zero.
 pub fn import_certificate(slot: &str, certificate: &Path, serial: Option<&str>) -> Result<()> {
     let mut cmd = Command::new("ykman");
     cmd.args(["piv", "certificates", "import"]);

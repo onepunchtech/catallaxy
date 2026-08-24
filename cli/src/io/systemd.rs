@@ -12,6 +12,10 @@ pub fn is_active(unit: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// # Errors
+///
+/// If `sudo` cannot be spawned, or exits non-zero because the operator
+/// declined the prompt or the unit failed to start.
 pub fn restart(unit: &str) -> Result<()> {
     let mut cmd = Command::new("sudo");
     cmd.args(["systemctl", "restart", unit]);

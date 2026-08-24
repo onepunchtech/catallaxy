@@ -44,7 +44,7 @@ enum Commands {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    match run(cli).await {
+    match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{e:#}");
@@ -53,13 +53,13 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn run(cli: Cli) -> anyhow::Result<()> {
+fn run(cli: Cli) -> anyhow::Result<()> {
     cata::io::process::set_verbose(cli.verbose);
 
     let ctx = config::Context::new(cli.flake, cli.verbose)?;
 
     match cli.command {
         Commands::Docs { command } => docs::run(command, cata::commands::cli::Cli::command()),
-        Commands::Generate(args) => generate::run(&ctx, args).await,
+        Commands::Generate(args) => generate::run(&ctx, args),
     }
 }

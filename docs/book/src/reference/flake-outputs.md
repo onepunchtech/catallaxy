@@ -35,7 +35,7 @@ manages.
 ### `lib`
 
 ```
-lib.floe.mkFloe            author a floe
+lib.floe.floeOptions       author a floe
 lib.floe.evalFloe          isolation-test a floe
 lib.floe.refs              capability and reference types
 lib.mkIdempotentJob        one-shot Jobs that survive re-apply
@@ -50,7 +50,7 @@ This is the **stable API**. `modules/` is internal: configure through
 options, do not import module files. `lib/eval/` and `lib/render/` are
 internal too.
 
-See [Nix Helpers](./helpers.md) and [mkFloe API](./floe-api.md).
+See [Nix Helpers](./helpers.md) and [Floe API](./floe-api.md).
 
 ### `templates.consumer`
 
@@ -58,7 +58,7 @@ See [Nix Helpers](./helpers.md) and [mkFloe API](./floe-api.md).
 nix flake init -t github:onepunchtech/catallaxy#consumer
 ```
 
-A working lab plus a worked `mkFloe` example. See
+A working lab plus a worked floe example. See
 [Build Your Own Lab](../start-here/your-own-lab.md).
 
 ## Per-system

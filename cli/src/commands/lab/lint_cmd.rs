@@ -8,7 +8,7 @@ use crate::domain::CdConfig;
 use crate::io;
 use crate::lint;
 
-pub async fn run(
+pub fn run(
     ctx: &CataContext,
     name: Option<String>,
     path: Option<PathBuf>,

@@ -7,40 +7,44 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.trust-manager;
 in
-(mkFloe {
-  name = "trust-manager";
-  imports = [ ./options.nix ];
-  exports =
-    { lib, ... }:
-    {
+{
+  imports = [
+    (floeOptions {
+      name = "trust-manager";
+    })
+    ./options.nix
+  ];
 
-      bundleDistribution = lib.mkOption {
-        type = refs.mkCapability {
-          readyToken = refs.tokenOption ''"The controller is up and reconciling Bundles."'';
-          namespace = lib.mkOption {
-            type = lib.types.str;
-            description = "Namespace the controller watches for Bundle sources.";
-          };
-          secretTargets = lib.mkOption {
-            type = lib.types.bool;
-            description = ''
-              Whether Bundles may target Secrets as well as ConfigMaps.
-              Without it a `target.secret` Bundle stays silently
-              pending: the controller starts with no Secret-write RBAC.
-            '';
-          };
+  options.floes.trust-manager.exports = {
+
+    bundleDistribution = lib.mkOption {
+      type = refs.mkCapability {
+        readyToken = refs.tokenOption ''"The controller is up and reconciling Bundles."'';
+        namespace = lib.mkOption {
+          type = lib.types.str;
+          description = "Namespace the controller watches for Bundle sources.";
         };
-        default = null;
-        description = "Bundle distribution, or null when this floe is off.";
+        secretTargets = lib.mkOption {
+          type = lib.types.bool;
+          description = ''
+            Whether Bundles may target Secrets as well as ConfigMaps.
+            Without it a `target.secret` Bundle stays silently
+            pending: the controller starts with no Secret-write RBAC.
+          '';
+        };
       };
+      default = null;
+      description = "Bundle distribution, or null when this floe is off.";
     };
-  module =
-    { cfg, peers, ... }:
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       bundlesReadyToken = "trust-manager/bundles/ready";
     in
@@ -77,7 +81,7 @@ in
         secretTargets = true;
       };
 
-      bundles.trust-manager = {
+      floes.trust-manager.bundles.trust-manager = {
 
         owner = {
           bootstrap = "install-target";
@@ -100,8 +104,11 @@ in
           };
         };
 
-        requires = refs.needs peers.cert-manager.issuance "webhookReady";
-        provides = [ bundlesReadyToken ];
+        requires = [ "certificate-issuance/webhook/ready" ];
+        provides = [
+          bundlesReadyToken
+          "kind:trust.cert-manager.io/Bundle"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "deployment/trust-manager";
@@ -110,6 +117,6 @@ in
           timeout = "3m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

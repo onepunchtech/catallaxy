@@ -5,7 +5,7 @@ use crate::domain::plan::CertGenerateParams;
 use crate::host::pki;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &CertGenerateParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &CertGenerateParams) -> Result<()> {
     let CertGenerateParams { zone } = p;
 
     if sctx.dry_run {

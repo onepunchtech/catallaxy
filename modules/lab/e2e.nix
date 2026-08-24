@@ -7,12 +7,28 @@
 let
   inherit (lib) mkOption types;
 
-  localProvisioners = [ "k3d" ];
+  # Provisioners proven to stand a lab up unattended. Deliberately narrower
+  # than `lib/eval/deployment-graph.nix`, which counts a provisioner as local
+  # if it needs no account. The gate is about what has been shown to complete.
+  #
+  # Talos took three things k3d gave for free. Its nodes are on a network
+  # talosctl makes and will not let anything join, so the lab's proxy reaches
+  # into that network rather than the cluster joining the lab's. k3s's
+  # ServiceLB binds 80 and 443 on the node, so the gateway there is a NodePort
+  # the lab pins and the proxy dials. And a Gateway with no address to assign
+  # never publishes one, so it is waited on by `Programmed` instead.
+  #
+  # Verified by standing it up from nothing: podinfo answers 200 through the
+  # lab's haproxy.
+  provenUnattended = [
+    "k3d"
+    "talos"
+  ];
 
   clusters = config.lab.out.allClusters;
 
   nonLocalClusters = lib.attrNames (
-    lib.filterAttrs (_: c: !(builtins.elem c.cluster.provisioner localProvisioners)) clusters
+    lib.filterAttrs (_: c: !(builtins.elem c.cluster.provisioner provenUnattended)) clusters
   );
 
   provisioningClusters = lib.attrNames (lib.filterAttrs (_: c: c.cluster.provisions != { }) clusters);
@@ -38,7 +54,7 @@ let
   reasons =
     lib.optional (clusters == { }) "the lab declares no clusters"
     ++ lib.optional (nonLocalClusters != [ ]) (
-      "${quote nonLocalClusters} is not provisioned by k3d, so standing it up needs an account somewhere"
+      "${quote nonLocalClusters} uses a provisioner CI has not been shown to complete a lab on unattended"
     )
     ++ lib.optional (provisioningClusters != [ ]) (
       "${quote provisioningClusters} provisions further clusters, which happens off this machine"

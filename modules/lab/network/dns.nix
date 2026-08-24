@@ -155,7 +155,15 @@ in
     hostPort = mkOption {
       type = types.port;
       default = 5354;
-      description = "Host-mapped port for the DNS server (for host access). Avoids 5353 which conflicts with mDNS.";
+      description = ''
+        Host-mapped port for the DNS server, for host access.
+
+        5354 avoids 5353, which is mDNS. A lab that moves off the default so
+        it can run beside another should also skip 5355, which is LLMNR and
+        which systemd-resolved holds on most Linux hosts: it looks free in a
+        table of registered names and is not. The port preflight in `lab up`
+        catches it, but only once you try.
+      '';
     };
 
     tsigKeyname = mkOption {

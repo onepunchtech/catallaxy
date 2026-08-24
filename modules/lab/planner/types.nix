@@ -122,12 +122,19 @@ let
             default = [ ];
             example = lib.literalExpression ''[ (t.needs (t.cluster "mgmt").reachable) ]'';
             description = ''
-              Anchors naming steps this one runs after. An anchor is
-              `provides:<token>`, `kind:<kind>`, `kind:<kind>:<cluster>`, or
-              any of those behind `optional:`, which allows it to match
-              nothing. A bare step name is not an anchor: a name belongs to
-              whichever module emitted it, and a published token is the
-              interface.
+              Names this step runs after, in the one dependency namespace.
+
+              A bare name is a token some step publishes; `provides:<token>`
+              says the same thing explicitly. `kind:<kind>` and
+              `kind:<kind>:<cluster>` address steps by what they are. Any of
+              them behind `optional:` is allowed to match nothing.
+
+              A step's own key is not a name here. It belongs to whichever
+              module emitted it, and a cluster's steps are renamed to
+              `<cluster>-<name>` before the sort runs, so the key you wrote
+              no longer exists by then. This is the one place the grammar
+              differs from a bundle's, where a bundle name is stable and does
+              resolve.
 
               Build them with `lib.planTokens` rather than writing the
               strings, so a typo fails eval here instead of quietly
@@ -148,10 +155,25 @@ let
             type = types.listOf types.str;
             default = [ ];
             description = ''
-              Tokens that must be true before this step runs. Every step
-              publishing one becomes a predecessor, and a token nobody
-              publishes fails eval, which is the difference between this and
-              `after = [ (t.wants tok) ]`.
+              Names that must be true before this step runs, in the same
+              grammar as `after`.
+
+              The two differ in strength rather than in what a name means: a
+              name nobody supplies fails eval here, where `after` would take
+              `optional:` and produce no edge.
+            '';
+          };
+          conflicts = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description = ''
+              Names a second publisher of would be a race rather than a
+              merge.
+
+              A step that publishes an exclusive name also conflicts with it,
+              so two publishers collide and one does not collide with itself.
+              Checked per direction: a deploy step and a teardown step never
+              run together, so they cannot conflict.
             '';
           };
           provides = mkOption {

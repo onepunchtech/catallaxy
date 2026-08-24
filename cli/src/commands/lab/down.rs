@@ -3,7 +3,7 @@ use console::style;
 
 use crate::config::Context as CataContext;
 
-pub async fn run(ctx: &CataContext, name: &str) -> Result<()> {
+pub fn run(ctx: &CataContext, name: &str) -> Result<()> {
     println!(
         "{} Stopping lab '{name}' (use 'lab destroy' to delete everything)",
         style("catallaxy").cyan().bold()
@@ -54,9 +54,33 @@ pub async fn run(ctx: &CataContext, name: &str) -> Result<()> {
 
     println!();
     println!(
-        "{} Lab '{name}' is stopped. Run 'lab up' to resume.",
+        "{} Lab '{name}': clusters stopped. Run 'lab up' to resume.",
         style("catallaxy").cyan().bold()
     );
+
+    let running: Vec<String> = lab["services"]
+        .as_object()
+        .map(|svcs| {
+            svcs.iter()
+                .filter(|(_, svc)| {
+                    svc["container"]
+                        .as_str()
+                        .is_some_and(crate::io::docker::container_running)
+                })
+                .map(|(svc_name, _)| svc_name.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if !running.is_empty() {
+        println!(
+            "{} Host services are still running and still holding their ports: {}.\n    \
+             `lab down` stops clusters only. Another lab's `lab up` will refuse to \
+             start while these hold the same ports; `lab destroy` removes them.",
+            style(">>>").yellow(),
+            running.join(", "),
+        );
+    }
 
     Ok(())
 }

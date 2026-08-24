@@ -7,23 +7,23 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
   planTokens = import ../../../../../lib/plan-tokens.nix { inherit lib; };
+  cfg = config.floes.external-dns;
 in
-(mkFloe {
-  name = "external-dns";
-  version = "1.15.0";
-  imports = [ ./options.nix ];
-  module =
-    {
-      config,
-      lib,
-      cfg,
-      ...
-    }:
+{
+  imports = [
+    (floeOptions {
+      name = "external-dns";
+      version = "1.15.0";
+    })
+    ./options.nix
+  ];
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mkIf
@@ -89,7 +89,7 @@ in
           tag = "v0.16.1";
         };
 
-        bundles.external-dns = {
+        floes.external-dns.bundles.external-dns = {
 
           owner = {
             bootstrap = "install-target";
@@ -141,7 +141,7 @@ in
       }
 
       (mkIf (cfg.policy == "sync" && (config.cluster.provider or null) != "docker") {
-        steps.external-dns-purge-records = {
+        floes.external-dns.steps.external-dns-purge-records = {
           kind = "run-script";
           direction = "teardown";
           description = "Delete external-dns-watched resources cluster-wide and wait for records to drain";
@@ -252,6 +252,6 @@ in
             "${script}/bin/external-dns-purge-records";
         };
       })
-    ];
-})
-  __floeModuleArgs
+    ]
+  );
+}

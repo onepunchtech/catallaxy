@@ -159,7 +159,7 @@ step:
 The floe declares it, in the same DSL a lab would use:
 
 ```nix
-steps.netbird-mesh-join = {
+floes.netbird.steps.netbird-mesh-join = {
   kind = "run-script";
   direction = "deploy";
   scope = "lab";                    # the operator's machine, not a cluster

@@ -19,6 +19,10 @@ fn command() -> Command {
     cmd
 }
 
+/// # Errors
+///
+/// Only if `gh` cannot be spawned. A refusal by GitHub is a non-zero
+/// `ExitStatus`, which the caller has to check.
 pub fn open_github_pull_request(
     clone_dir: &Path,
     title: &str,
@@ -31,6 +35,10 @@ pub fn open_github_pull_request(
     ]))
 }
 
+/// # Errors
+///
+/// Only if `glab` cannot be spawned. A refusal by GitLab is a non-zero
+/// `ExitStatus`, which the caller has to check.
 pub fn open_gitlab_merge_request(
     clone_dir: &Path,
     title: &str,
@@ -52,6 +60,10 @@ pub fn open_gitlab_merge_request(
     ]))
 }
 
+/// # Errors
+///
+/// Only if `git` cannot be spawned. A missing repo or branch is a non-zero
+/// `ExitStatus`.
 pub fn clone_shallow(
     repo: &str,
     branch: &str,
@@ -64,6 +76,9 @@ pub fn clone_shallow(
         .status()
 }
 
+/// # Errors
+///
+/// Only if `git` cannot be spawned. A missing repo is a non-zero `ExitStatus`.
 pub fn clone(repo: &str, into: &Path) -> std::io::Result<std::process::ExitStatus> {
     command()
         .args(["clone", repo])
@@ -78,6 +93,10 @@ fn in_repo(clone_dir: &Path, args: &[&str]) -> Command {
     cmd
 }
 
+/// # Errors
+///
+/// Only if `git` cannot be spawned. A branch that already exists is a non-zero
+/// `ExitStatus`, and git's complaint about it is discarded.
 pub fn create_branch(clone_dir: &Path, branch: &str) -> std::io::Result<std::process::ExitStatus> {
     in_repo(clone_dir, &["checkout", "-b", branch])
         .stdout(Stdio::null())
@@ -85,20 +104,38 @@ pub fn create_branch(clone_dir: &Path, branch: &str) -> std::io::Result<std::pro
         .status()
 }
 
+/// # Errors
+///
+/// Only if `git` cannot be spawned. A directory that is not a repo is a
+/// non-zero `ExitStatus`.
 pub fn stage_all(clone_dir: &Path) -> std::io::Result<std::process::ExitStatus> {
     in_repo(clone_dir, &["add", "-A"]).status()
 }
 
+/// Whether the index matches HEAD, as an exit status: zero means clean.
+///
+/// # Errors
+///
+/// Only if `git` cannot be spawned. Having staged changes is the non-zero
+/// `ExitStatus`, and is the answer rather than a failure.
 pub fn staged_tree_is_clean(clone_dir: &Path) -> std::io::Result<std::process::ExitStatus> {
     in_repo(clone_dir, &["diff", "--cached", "--quiet"]).status()
 }
 
+/// # Errors
+///
+/// Only if `git` cannot be spawned. Nothing to commit is a non-zero
+/// `ExitStatus`; call [`staged_tree_is_clean`] first to tell the two apart.
 pub fn commit(clone_dir: &Path, message: &str) -> std::io::Result<std::process::ExitStatus> {
     in_repo(clone_dir, &["commit", "-m", message])
         .stdout(Stdio::null())
         .status()
 }
 
+/// # Errors
+///
+/// Only if `git` cannot be spawned. A rejected push, including one rejected
+/// for want of credentials, is a non-zero `ExitStatus`.
 pub fn push(
     clone_dir: &Path,
     remote: &str,

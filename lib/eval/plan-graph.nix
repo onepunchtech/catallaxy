@@ -4,45 +4,19 @@ let
   inherit (lib)
     attrNames
     concatMap
+    concatStringsSep
     elemAt
-    filter
     filterAttrs
     foldl'
-    genAttrs
-    hasAttr
     hasPrefix
     length
-    mapAttrsToList
     removePrefix
     splitString
-    unique
     ;
 
-  parseAnchor =
-    anchor:
-    if hasPrefix "optional:" anchor then
-      {
-        hard = false;
-        body = removePrefix "optional:" anchor;
-      }
-    else
-      {
-        hard = true;
-        body = anchor;
-      };
+  shared = import ./graph.nix { inherit lib; };
 
-  buildProvidesIdx =
-    steps:
-    foldl' (
-      acc: name:
-      foldl' (
-        inner: tok:
-        inner
-        // {
-          ${tok} = (inner.${tok} or [ ]) ++ [ name ];
-        }
-      ) acc (steps.${name}.provides or [ ])
-    ) { } (attrNames steps);
+  inherit (shared) parseAnchor buildProvidesIdx;
 
   matchAnchor =
     steps: providesIdx: body:
@@ -60,18 +34,7 @@ let
     else if hasPrefix "provides:" body then
       providesIdx.${removePrefix "provides:" body} or [ ]
     else
-      throw ''
-        '${body}' is not an anchor. Anchor grammar:
-          provides:<token>        every step publishing that token
-          kind:<kind>             every step of that kind
-          kind:<kind>:<cluster>   the same, narrowed to one cluster
-        Prefix any of them with 'optional:' to allow matching nothing.
-
-        A bare step name is not an anchor. A name is its emitter's private
-        vocabulary and moves when the emitter changes; a published token is
-        the interface. If the step you meant publishes no token, give it one
-        and anchor on that.
-      '';
+      providesIdx.${body} or [ ];
 
   originOf =
     steps: stepName:
@@ -80,39 +43,50 @@ let
     in
     if declared == null then "lab.steps.${stepName}" else declared;
 
-  resolveAnchorList =
-    steps: providesIdx: stepName: field: anchors:
-    concatMap (
-      a:
-      let
-        p = parseAnchor a;
-        matches = matchAnchor steps providesIdx p.body;
-      in
-      if matches == [ ] && p.hard then
-        throw ''
-          ${originOf steps stepName}: ${field} anchor '${a}' matched no step.
-          Prefix with 'optional:' to silence this error when the anchor is
-          allowed to match nothing.
-        ''
-      else
-        matches
-    ) anchors;
+  resolveAnchorList = shared.resolveAnchorList {
+    inherit matchAnchor;
+    onUnmatched =
+      {
+        nodes,
+        node,
+        field,
+        body,
+        ...
+      }:
+      throw ''
+        ${originOf nodes node}: ${field} names '${body}', which no step provides.
 
-  resolveRequires =
-    steps: providesIdx: stepName: requires:
-    concatMap (
-      req:
-      let
-        providers = providesIdx.${req} or [ ];
-      in
-      if providers == [ ] then
-        throw ''
-          ${originOf steps stepName}: requires '${req}' but no step provides it.
-          Declare a step with `provides = [ "${req}" ]` or drop the require.
-        ''
-      else
-        providers
-    ) requires;
+        A bare name is looked up among the tokens steps publish. `kind:<kind>`
+        and `kind:<kind>:<cluster>` address steps by what they are, which is
+        the only way to name a step: a step's own key is private to whichever
+        module emitted it, and a cluster's steps are renamed to
+        `<cluster>-<name>` before they get here.
+
+        Supply it with `provides = [ "${body}" ]` on the step that does, or
+        write it as 'optional:${body}' if it is allowed to match nothing.
+      '';
+  };
+
+  conflictErrors = shared.conflictErrors {
+    inherit matchAnchor;
+    onConflict =
+      {
+        nodes,
+        name,
+        conflicted,
+        others,
+      }:
+      ''
+        ${originOf nodes name} conflicts with '${conflicted}', which ${
+          concatStringsSep " and " (map (n: "${originOf nodes n}") others)
+        } also provides.
+
+        Two steps making the same thing true both run, in whichever order
+        the sort happens to pick, and the second undoes or duplicates the
+        first. Drop one, or have the second wait on the token instead of
+        publishing it.
+      '';
+  };
 
   buildEdges =
     steps:
@@ -126,7 +100,7 @@ let
           s = steps.${name};
         in
         (resolveAnchorList steps providesIdx name "after" (s.after or [ ]))
-        ++ (resolveRequires steps providesIdx name (s.requires or [ ]));
+        ++ (resolveAnchorList steps providesIdx name "requires" (s.requires or [ ]));
 
       invertedBefore =
         let
@@ -147,70 +121,22 @@ let
             ${p.postName} = (acc.${p.postName} or [ ]) ++ [ p.preName ];
           }
         ) { } pairs;
-
-      predsOf =
-        name: filter (n: n != name) (unique ((directPreds name) ++ (invertedBefore.${name} or [ ])));
     in
-    genAttrs names predsOf;
-
-  kahnSort =
-    edges:
-    let
-      names = attrNames edges;
-
-      successors =
-        let
-          allPairs = concatMap (post: map (pre: { inherit pre post; }) edges.${post}) names;
-        in
-        foldl' (
-          acc: p:
-          acc
-          // {
-            ${p.pre} = (acc.${p.pre} or [ ]) ++ [ p.post ];
-          }
-        ) (genAttrs names (_: [ ])) allPairs;
-
-      initialInDeg = genAttrs names (n: length edges.${n});
-
-      loop =
-        state:
-        let
-          zero = filter (n: state.inDeg.${n} == 0) state.remaining;
-          zeroSorted = lib.sort (a: b: a < b) zero;
-        in
-        if zeroSorted == [ ] then
-          if state.remaining == [ ] then
-            state.result
-          else
-            throw ''
-              lab.steps: dependency cycle among: ${builtins.toJSON state.remaining}.
-              At least one pair of steps mutually require each other via
-              after/before/requires edges. Inspect the anchor lists on the
-              named steps and break the cycle.
-            ''
-        else
-          let
-            pick = builtins.head zeroSorted;
-            newRemaining = filter (n: n != pick) state.remaining;
-            newInDeg = foldl' (
-              acc: succ:
-              acc
-              // {
-                ${succ} = acc.${succ} - 1;
-              }
-            ) state.inDeg (successors.${pick} or [ ]);
-          in
-          loop {
-            remaining = newRemaining;
-            inDeg = newInDeg;
-            result = state.result ++ [ pick ];
-          };
-    in
-    loop {
-      remaining = names;
-      inDeg = initialInDeg;
-      result = [ ];
+    shared.buildEdges {
+      nodes = steps;
+      directPreds = name: (directPreds name) ++ (invertedBefore.${name} or [ ]);
     };
+
+  kahnSort = shared.kahnSort {
+    onCycle =
+      { remaining, ... }:
+      throw ''
+        lab.steps: dependency cycle among: ${builtins.toJSON remaining}.
+        At least one pair of steps mutually require each other via
+        after/before/requires edges. Inspect the anchor lists on the
+        named steps and break the cycle.
+      '';
+  };
 
   topoSort =
     { steps }:
@@ -227,6 +153,7 @@ in
     buildProvidesIdx
     matchAnchor
     buildEdges
+    conflictErrors
     kahnSort
     topoSort
     ;

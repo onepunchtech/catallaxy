@@ -60,8 +60,7 @@ in
   lab.steps.verify-lab-dns = {
     kind = "run-script";
     direction = "deploy";
-    description = "Check the host resolves the lab zone before anything dials it over TLS";
-    after = [ (planTokens.wants planTokens.lab.hostDns) ];
+    description = "Check the lab's own DNS answers for the zone before anything dials it";
     before = [ (planTokens.wantsKind "create-cluster") ];
     params.bin = "${
       pkgs.writeShellApplication {
@@ -69,12 +68,19 @@ in
         runtimeInputs = [ pkgs.dnsutils ];
         text = ''
           zone="${config.lab.dns.zone}"
-          if ! dig +short "argocd.$zone" | grep -q .; then
-            echo "host cannot resolve *.$zone" >&2
-            echo "run 'cata lab dns --setup', or point your resolver at the lab's CoreDNS" >&2
+          port="${toString config.lab.dns.hostPort}"
+
+          # Asks the lab's DNS directly rather than the host's resolver. The
+          # host is not expected to know the zone: it has to be told, with
+          # sudo, and everything that reaches a lab hostname goes through the
+          # lab's own proxy instead. Testing the host here failed a lab that
+          # was working.
+          if ! dig +short @127.0.0.1 -p "$port" "argocd.$zone" | grep -q .; then
+            echo "the lab's DNS on 127.0.0.1:$port does not answer for *.$zone" >&2
+            echo "check the ${config.lab.dns.containerName} container is running" >&2
             exit 1
           fi
-          echo "host resolves *.$zone"
+          echo "lab DNS answers for *.$zone"
         '';
       }
     }/bin/verify-lab-dns";

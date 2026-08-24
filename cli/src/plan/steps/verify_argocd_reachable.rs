@@ -15,11 +15,7 @@ pub fn run(sctx: &StepContext<'_>, p: &VerifyArgocdReachableParams) -> Result<()
     let namespace = namespace.as_deref();
 
     let kube_context = kube_context.ok_or_else(|| {
-        anyhow::anyhow!(
-            "verify-argocd-reachable: missing kubeContext for target '{target}'. \
-             The planner must populate `kubeContext` (see `runtimeCtxOf` in \
-             `lib/eval/deployment-plan.nix`)."
-        )
+        crate::plan::steps::missing_kube_context("verify-argocd-reachable", target)
     })?;
     let namespace = namespace.unwrap_or("argocd");
     if sctx.dry_run {

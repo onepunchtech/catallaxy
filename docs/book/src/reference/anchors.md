@@ -67,8 +67,8 @@ A bundle's kinds come from its `resources` and nothing else. A kind inside a
 see, so a chart-only bundle answers no `kind:` anchor and is reached by
 `provides:` or `bundle:` instead.
 
-`floe:<name>` matches every bundle a floe declared. Provenance is stamped
-automatically at the point `mkFloe` merges a floe's module output, so a floe
+`floe:<name>` matches every bundle a floe declared. Provenance is the key
+the bundle was written under, `floes.<name>.bundles.<bundle>`, so a floe
 author never sets it and cannot forget to. A bundle a lab declares directly
 answers no `floe:` anchor.
 
@@ -80,9 +80,8 @@ with the strongly-connected set). Each message names the offending bundle
 and tells you what to do about it.
 
 A `requires` nobody satisfies usually means a floe was enabled without its
-dependency; `mkFloe`'s own `requires` catches the common cases earlier with
-a message naming both floes. A bundle that both provides and requires the
-same token is not a cycle, because self-edges are filtered.
+dependency. A bundle that both provides and requires the same token is not a
+cycle, because self-edges are filtered.
 
 ## Structural auto-edges
 
@@ -122,9 +121,9 @@ cata --flake .#<lab> lab plan                           # steps, and what each p
 ```
 
 Take a peer's tokens from its capability rather than spelling them:
-`refs.needs peers.gateway.routing "publicReady"` in `requires`, and
-`refs.orderAfter` in `after`. No capability, no edge, so the edge appears
-exactly when there is something to wait for.
+`refs.needs config.floes.gateway.exports.routing "publicReady"` in
+`requires`, and `refs.orderAfter` in `after`. No capability, no edge, so the
+edge appears exactly when there is something to wait for.
 
 Two are worth knowing by name.
 

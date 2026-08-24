@@ -7,22 +7,22 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.external-secrets;
 in
-(mkFloe {
-  name = "external-secrets";
-  version = "0.10.0";
-  imports = [ ./options.nix ];
-  module =
-    {
-      lib,
-      cataCharts,
-      cfg,
-      ...
-    }:
+{
+  imports = [
+    (floeOptions {
+      name = "external-secrets";
+      version = "0.10.0";
+    })
+    ./options.nix
+  ];
+
+  config = lib.mkIf cfg.enable (
     let
       kappLib = import ../../../../../lib/util/kapp.nix { inherit lib; };
     in
@@ -58,16 +58,27 @@ in
 
       };
 
-      bundles.external-secrets-crds = {
+      floes.external-secrets.bundles.external-secrets-crds = {
         owner = {
           bootstrap = "install-target";
           steady = "argocd";
         };
         yamls = [ cataCharts.external-secrets.crds ];
-        provides = [ "external-secrets/crds/established" ];
+        provides = [
+          "external-secrets/crds/established"
+          "kind:external-secrets.io/ExternalSecret"
+          "kind:external-secrets.io/ClusterExternalSecret"
+          "kind:external-secrets.io/SecretStore"
+          "kind:external-secrets.io/ClusterSecretStore"
+          "kind:external-secrets.io/PushSecret"
+          "kind:external-secrets.io/ClusterPushSecret"
+          "kind:generators.external-secrets.io/Password"
+          "kind:generators.external-secrets.io/UUID"
+          "kind:generators.external-secrets.io/Fake"
+        ];
       };
 
-      bundles.external-secrets = {
+      floes.external-secrets.bundles.external-secrets = {
 
         owner = {
           bootstrap = "install-target";
@@ -104,6 +115,6 @@ in
           timeout = "5m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

@@ -7,31 +7,24 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
   planTokens = import ../../../../../lib/plan-tokens.nix { inherit lib; };
   verifyTypes = import ../../../verify-types.nix { inherit lib; };
+  cfg = config.floes.argocd;
 in
-(mkFloe {
-  name = "argocd";
-  version = "v2.13.0";
-  imports = [ ./options.nix ];
-
-  requires = [
-    "gateway"
-    "reloader"
+{
+  imports = [
+    (floeOptions {
+      name = "argocd";
+      version = "v2.13.0";
+    })
+    ./options.nix
   ];
-  module =
-    {
-      config,
-      lib,
-      cfg,
-      k8sHelpers,
-      peers,
-      ...
-    }:
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mapAttrsToList
@@ -172,6 +165,13 @@ in
         }) cfg.repositories
       );
 
+      labCaHosts = lib.unique (
+        lib.mapAttrsToList (
+          _: repo: lib.head (lib.splitString "/" (lib.removePrefix "https://" repo.url))
+        ) (filterAttrs (_: repo: repo.verifyWithLabCA) cfg.repositories)
+        ++ cfg.tls.labCAHosts
+      );
+
       hasOidcCaBundle = cfg.oidc.caBundle != null;
       oidcCaCertPath = "/etc/ssl/certs/oidc-ca.crt";
 
@@ -261,7 +261,13 @@ in
       };
     in
     {
-      steps =
+      cluster.trust.caConfigMaps = map (host: {
+        namespace = cfg.namespace;
+        name = "argocd-tls-certs-cm";
+        key = host;
+      }) labCaHosts;
+
+      floes.argocd.steps =
         let
           clusterName = config.cluster.name;
           t = planTokens;
@@ -361,11 +367,11 @@ in
 
       assertions = [
         {
-          assertion = !cfg.oidc.enable || (peers.kanidm.identity != null);
+          assertion = !cfg.oidc.enable || (config.floes.kanidm.exports.identity != null);
           message = "argocd OIDC login requires floes.kanidm to be enabled (produces the OAuth2 client Secret via kaniop).";
         }
         {
-          assertion = cfg.tls.issuerRef == null || (peers.cert-manager.issuance != null);
+          assertion = cfg.tls.issuerRef == null || (config.floes.cert-manager.exports.issuance != null);
           message = "argocd tls.issuerRef is set but floes.cert-manager is disabled; the Certificate CR will not reconcile.";
         }
       ];
@@ -417,7 +423,7 @@ in
 
       };
 
-      bundles.argocd = {
+      floes.argocd.bundles.argocd = {
 
         owner = {
           bootstrap = "install-target";
@@ -514,6 +520,7 @@ in
               [
 
                 { configs.cm = driftCustomizations; }
+                (optionalAttrs (labCaHosts != [ ]) { configs.tls.create = false; })
                 oidcConfig
                 (optionalAttrs
                   (cfg.rbac.groupBindings != { } || cfg.rbac.defaultRole != "" || cfg.rbac.extraPolicy != "")
@@ -557,17 +564,16 @@ in
 
         createNamespaces = [ cfg.namespace ];
 
-        requires =
-          refs.needs peers.cert-manager.issuance "webhookReady"
-          ++ refs.needs peers.gateway.routing "publicReady"
-          ++ refs.needs peers.reloader.watching "ready"
+        requires = [
+          "config-reload/ready"
+        ]
 
-          ++ optional (hasOidcCaBundle && cfg.oidc.caBundle.readyToken != null) cfg.oidc.caBundle.readyToken;
+        ++ optional (hasOidcCaBundle && cfg.oidc.caBundle.readyToken != null) cfg.oidc.caBundle.readyToken;
 
-        after =
-          refs.orderAfter peers.kanidm.identity "instanceReady"
-
-          ++ optionals cfg.oidc.enable (refs.orderAfter peers.kanidm.identity "provisioningReady");
+        after = [
+          "optional:identity/instance/ready"
+        ]
+        ++ optional cfg.oidc.enable "identity/provisioning/ready";
         provides = [ "argocd/server/ready" ];
         readyProbe = {
           kind = "condition";
@@ -577,6 +583,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

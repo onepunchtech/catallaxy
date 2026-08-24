@@ -91,6 +91,8 @@ let
   stepKindDocs = pkgs.writeText "step-kinds.md" (import ../lib/docs/step-kinds.nix { inherit lib; });
 
   e2e = import ./e2e.nix { inherit lib pkgs cataWrapped; };
+  e2e-all = import ./e2e-all.nix { inherit lib pkgs e2e; };
+  refresh-digests = import ./refresh-digests.nix { inherit lib pkgs; };
 
   siteUrl = "https://onepunchtech.github.io/catallaxy";
 
@@ -130,6 +132,8 @@ in
     cataWrapped
     mkScript
     e2e
+    e2e-all
+    refresh-digests
     optionDocs
     stepKindDocs
     docs

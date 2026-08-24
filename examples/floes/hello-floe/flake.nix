@@ -1,5 +1,5 @@
 {
-  description = "hello-floe: a minimal external floe demonstrating the mkFloe API";
+  description = "hello-floe: a minimal external floe, an ordinary NixOS module";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -23,26 +23,29 @@
         "aarch64-darwin"
       ];
 
-      flake.floes.hello = catallaxy.lib.floe.mkFloe {
-        name = "hello";
-        version = "1.29-alpine";
+      flake.floes.hello =
+        { config, lib, ... }:
+        let
+          cfg = config.floes.hello;
+        in
+        {
+          imports = [
+            (catallaxy.lib.floe.floeOptions {
+              name = "hello";
+              version = "1.29-alpine";
+            })
+          ];
 
-        exports =
-          { lib, ... }:
-          {
-            url = lib.mkOption {
+          options.floes.hello = {
+            exports.url = lib.mkOption {
               type = lib.types.str;
               description = "In-cluster URL of the nginx Service.";
             };
-            port = lib.mkOption {
+            exports.port = lib.mkOption {
               type = lib.types.port;
               default = 80;
             };
-          };
 
-        options =
-          { lib, ... }:
-          {
             image = lib.mkOption {
               type = lib.types.str;
               default = "nginx:1.29-alpine";
@@ -55,15 +58,8 @@
             };
           };
 
-        module =
-          {
-            config,
-            lib,
-            cfg,
-            ...
-          }:
-          {
-            bundles.hello.resources = {
+          config = lib.mkIf cfg.enable {
+            floes.hello.bundles.hello.resources = {
               hello-deployment = {
                 apiVersion = "apps/v1";
                 kind = "Deployment";
@@ -121,12 +117,9 @@
               };
             };
 
-            floes.hello.exports = {
-              url = "http://hello.${cfg.namespace}.svc.cluster.local:${toString cfg.exports.port}";
-
-            };
+            floes.hello.exports.url = "http://hello.${cfg.namespace}.svc.cluster.local:${toString cfg.exports.port}";
           };
-      };
+        };
 
       perSystem =
         { system, pkgs, ... }:

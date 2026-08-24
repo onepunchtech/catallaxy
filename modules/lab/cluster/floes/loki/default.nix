@@ -7,68 +7,71 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.loki;
 in
-(mkFloe {
-  name = "loki";
-  version = "6.16.0";
-  imports = [ ./options.nix ];
+{
+  imports = [
+    (floeOptions {
+      name = "loki";
+      version = "6.16.0";
+    })
+    ./options.nix
+  ];
 
-  exports =
-    { lib, ... }:
-    {
-      logIngest = lib.mkOption {
-        type = refs.mkCapability {
-          ready = refs.tokenOption ''"Loki is accepting writes and serving queries."'';
-        };
-        default = null;
-        description = ''
-          Log ingestion, or null when this floe is off. Consumers that
-          export logs here assert on this rather than on
-          `floes.loki.enable`.
-        '';
+  options.floes.loki.exports = {
+    logIngest = lib.mkOption {
+      type = refs.mkCapability {
+        ready = refs.tokenOption ''"Loki is accepting writes and serving queries."'';
       };
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "loki.loki.svc.cluster.local";
-        description = "In-cluster Loki service DNS name.";
-      };
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "loki";
-        description = "Namespace Loki runs in.";
-      };
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = 3100;
-        description = "Loki HTTP API port.";
-      };
-      url = lib.mkOption {
-        type = lib.types.str;
-        default = "http://loki.loki.svc.cluster.local:3100";
-        description = "Loki base URL (http://host:port).";
-      };
-      pushUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "http://loki.loki.svc.cluster.local:3100/loki/api/v1/push";
-        description = "Loki push endpoint (loki/api/v1/push).";
-      };
-      queryUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "http://loki.loki.svc.cluster.local:3100";
-        description = "Loki query endpoint.";
-      };
-      otlpUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "http://loki.loki.svc.cluster.local:3100/otlp";
-        description = "Loki OTLP ingestion endpoint (Loki 3.0+).";
-      };
+      default = null;
+      description = ''
+        Log ingestion, or null when this floe is off. Consumers that
+        export logs here assert on this rather than on
+        `floes.loki.enable`.
+      '';
     };
-  module =
-    { cfg, ... }:
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "loki.loki.svc.cluster.local";
+      description = "In-cluster Loki service DNS name.";
+    };
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "loki";
+      description = "Namespace Loki runs in.";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 3100;
+      description = "Loki HTTP API port.";
+    };
+    url = lib.mkOption {
+      type = lib.types.str;
+      default = "http://loki.loki.svc.cluster.local:3100";
+      description = "Loki base URL (http://host:port).";
+    };
+    pushUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://loki.loki.svc.cluster.local:3100/loki/api/v1/push";
+      description = "Loki push endpoint (loki/api/v1/push).";
+    };
+    queryUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://loki.loki.svc.cluster.local:3100";
+      description = "Loki query endpoint.";
+    };
+    otlpUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://loki.loki.svc.cluster.local:3100/otlp";
+      description = "Loki OTLP ingestion endpoint (Loki 3.0+).";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib) optionalAttrs;
 
@@ -150,7 +153,7 @@ in
 
       };
 
-      bundles.loki = {
+      floes.loki.bundles.loki = {
         helmCharts.loki = {
           chart = cfg.chart;
           releaseName = "loki";
@@ -207,7 +210,10 @@ in
 
         createNamespaces = [ cfg.namespace ];
 
-        provides = [ "loki/read/ready" ];
+        provides = [
+          "loki/read/ready"
+          "logs/ingest/ready"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "statefulset/loki";
@@ -216,6 +222,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

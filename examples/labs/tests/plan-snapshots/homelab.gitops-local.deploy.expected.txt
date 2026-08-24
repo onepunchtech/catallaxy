@@ -4,13 +4,14 @@
 [004] ensure-secrets name=ensure-secrets params.stores=["bootstrap"]
 [005] trust-bundle name=trust-bundle
 [006] setup-services name=setup-services
-[007] dns-setup name=dns-setup params.host=127.0.0.1 params.port=5354 params.zone=homelab.test
-[008] registry-setup name=registry-setup params.port=5050 params.upstreams=["codeberg.org","registry.k8s.io","ghcr.io","quay.io","docker.io"] params.zone=homelab.test
-[009] run-script name=verify-lab-dns params.bin=/nix/store/HASH-verify-lab-dns/bin/verify-lab-dns
-[010] warm-cache name=warm-cache
-[011] create-cluster name=create-cluster-core params.name=core params.provisioner=k3d
-[012] bootstrap-argocd-kubectl-ssa name=core-bootstrap-argocd cluster=core params.fieldManager=catallaxy-bootstrap params.kubeContext=k3d-homelab-gitops-local-core params.manifestRoot=bootstrap/core params.namespace=argocd params.target=core params.waitTimeoutSeconds=600
-[013] bootstrap-forgejo-repos name=core-bootstrap-forgejo cluster=core params.jobLabelSelector="app.kubernetes.io/component=forgejo-bootstrap,catallaxy.io/idempotent-job-hash=6d6db325a9" params.kubeContext=k3d-homelab-gitops-local-core params.namespace=forgejo params.target=core
-[014] create-cluster name=create-cluster-obs params.name=obs params.provisioner=k3d
+[007] registry-setup name=registry-setup params.port=5054 params.upstreams=["codeberg.org","registry.k8s.io","ghcr.io","quay.io","docker.io","public.ecr.aws","oci.external-secrets.io"] params.zone=homelab.test
+[008] run-script name=verify-lab-dns params.bin=/nix/store/HASH-verify-lab-dns/bin/verify-lab-dns
+[009] warm-cache name=warm-cache
+[010] create-cluster name=create-cluster-core params.name=core params.provisioner=k3d
+[011] bootstrap-argocd-kubectl-ssa name=core-bootstrap-argocd cluster=core params.fieldManager=catallaxy-bootstrap params.kubeContext=k3d-homelab-gitops-local-core params.manifestRoot=bootstrap/core params.namespace=argocd params.target=core params.waitTimeoutSeconds=600
+[012] bootstrap-forgejo-repos name=core-bootstrap-forgejo cluster=core params.jobLabelSelector="app.kubernetes.io/component=forgejo-bootstrap,catallaxy.io/idempotent-job-hash=307a9151d0" params.kubeContext=k3d-homelab-gitops-local-core params.namespace=forgejo params.target=core
+[013] create-cluster name=create-cluster-obs params.name=obs params.provisioner=k3d
+[014] bootstrap-argocd-kubectl-ssa name=obs-bootstrap-argocd cluster=obs params.fieldManager=catallaxy-bootstrap params.kubeContext=k3d-homelab-gitops-local-obs params.manifestRoot=bootstrap/obs params.namespace=argocd params.target=obs params.waitTimeoutSeconds=600
 [015] publish-manifests name=publish-manifests
 [016] apply-root-application name=core-apply-root cluster=core params.kubeContext=k3d-homelab-gitops-local-core params.manifestPath=manifests/core/root-app.yaml params.target=core
+[017] apply-root-application name=obs-apply-root cluster=obs params.kubeContext=k3d-homelab-gitops-local-obs params.manifestPath=manifests/obs/root-app.yaml params.target=obs

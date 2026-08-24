@@ -22,8 +22,9 @@ A's manifests existing. Applying a CRD and the CRD being usable are two
 different moments, and most ordering bugs live in the gap.
 
 Take a peer's token from its capability rather than spelling it:
-`refs.needs peers.gateway.routing "publicReady"` in `requires`. The grammar
-for both fields is in [Anchors and Tokens](./anchors.md).
+`refs.needs config.floes.gateway.exports.routing "publicReady"` in
+`requires`. The grammar for both fields is in
+[Anchors and Tokens](./anchors.md).
 
 ## Choosing a ready probe
 

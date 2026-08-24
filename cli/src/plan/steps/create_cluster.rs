@@ -4,7 +4,7 @@ use crate::domain::plan::CreateClusterParams;
 use crate::host::state;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &CreateClusterParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &CreateClusterParams) -> Result<()> {
     let CreateClusterParams {
         name,
         provisioner: _,

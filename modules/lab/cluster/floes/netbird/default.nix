@@ -7,166 +7,156 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
   planTokens = import ../../../../../lib/plan-tokens.nix { inherit lib; };
+  cfg = config.floes.netbird;
 in
-(mkFloe {
-  name = "netbird";
-
-  imports = [ ./options.nix ];
-
-  drift = [
-    {
-      group = "netbird.io";
-      kinds = [
-        "Group"
-        "SetupKey"
+{
+  imports = [
+    (floeOptions {
+      name = "netbird";
+      drift = [
+        {
+          group = "netbird.io";
+          kinds = [
+            "Group"
+            "SetupKey"
+          ];
+          managedBy = [ "netbird-operator" ];
+          reason = "netbird-operator writes reconciled state back onto the Group/SetupKey CRs it owns.";
+        }
       ];
-      managedBy = [ "netbird-operator" ];
-      reason = "netbird-operator writes reconciled state back onto the Group/SetupKey CRs it owns.";
-    }
+    })
+    ./options.nix
   ];
 
-  requires = [ ];
-
-  exports =
-    { lib, ... }:
-    {
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "netbird";
-        description = "Kubernetes namespace the management plane runs in.";
-      };
-      domain = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public FQDN of the netbird management dashboard (echoes cfg.domain).";
-      };
-      signalDomain = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public FQDN of the netbird signal service.";
-      };
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "In-cluster DNS name of the management Service.";
-      };
-      managementUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          External management URL (https). Agents outside the cluster
-          (operator laptops joined to the mesh) point at this.
-        '';
-      };
-      hostClient = lib.mkOption {
-        type = lib.types.attrs;
-        default = { };
-        description = ''
-          This lab's host-side netbird, for a lab that wants to drive the
-          mesh itself rather than take the `netbird-mesh-join` /
-          `netbird-mesh-leave` steps the floe declares:
-
-            cli      : wrapper carrying this lab's --service /
-                       --daemon-addr / --config / --log-file, so an
-                       invocation cannot reach the operator's own daemon
-            joinBin  : the SSO login the join step runs
-            leaveBin : the counterpart the leave step runs
-            package  : the netbird derivation everything above is built
-                       from, and the version all four server images follow
-
-          Empty when the floe is disabled, so a consumer reading it in an
-          option default gets `{ }` rather than an eval error.
-        '';
-      };
-      managementInternalUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          In-cluster management URL (http). Agents running as Pods
-          inside the same cluster should use this, which avoids a hairpin
-          through the public gateway and the TLS-terminating LB.
-        '';
-      };
-      signalHost = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "In-cluster DNS name of the signal Service.";
-      };
-      signalPort = lib.mkOption {
-        type = lib.types.port;
-        default = 80;
-        description = ''
-          In-cluster port for the signal Service: the primary listener,
-          serving gRPC over HTTP with the WebSocket proxy, which is what
-          a current agent dials.
-
-          The Service also carries `grpc-compat` on 10000. That is
-          netbird's legacy bare-gRPC listener, which signal runs only to
-          keep agents that were already connected on the old default
-          port from dropping. Dialing it for a new connection is not the
-          supported path.
-        '';
-      };
-      oauthRedirectUrls = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [ ];
-        description = ''
-          Loopback callback URLs this lab's `netbird up` may listen on,
-          derived from `client.callbackPorts`.
-
-          The IdP client that netbird logs in through must register every
-          one of them: netbird picks whichever port is free at login
-          time, and an unregistered redirect URI is refused by the IdP.
-          Read this rather than restating the literals; the port set is
-          netbird's to choose.
-        '';
-      };
-      clusterRouterSecret = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          Name of the Secret holding the cluster-router SetupKey. The
-          operator's `netbird-agent` in-cluster Pod reads this to join
-          the mesh as a routing peer.
-        '';
-      };
-      operatorSecret = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          Name of the Secret holding the operator SetupKey, used to
-          onboard human operator devices.
-        '';
-      };
-      setupKeyDataKey = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Data key inside the SetupKey Secrets that holds the key value.";
-      };
-      apiTokenSecretName = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          Name of the Secret holding the PAT used by the bootstrap Job
-          to call netbird's management API for one-time provisioning.
-        '';
-      };
+  options.floes.netbird.exports = {
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "netbird";
+      description = "Kubernetes namespace the management plane runs in.";
     };
-  module =
-    {
-      config,
-      lib,
-      pkgs,
-      cataCharts,
-      k8sHelpers,
-      cfg,
-      peers,
-      ...
-    }:
+    domain = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public FQDN of the netbird management dashboard (echoes cfg.domain).";
+    };
+    signalDomain = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public FQDN of the netbird signal service.";
+    };
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "In-cluster DNS name of the management Service.";
+    };
+    managementUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        External management URL (https). Agents outside the cluster
+        (operator laptops joined to the mesh) point at this.
+      '';
+    };
+    hostClient = lib.mkOption {
+      type = lib.types.attrs;
+      default = { };
+      description = ''
+        This lab's host-side netbird, for a lab that wants to drive the
+        mesh itself rather than take the `netbird-mesh-join` /
+        `netbird-mesh-leave` steps the floe declares:
+
+          cli      : wrapper carrying this lab's --service /
+                     --daemon-addr / --config / --log-file, so an
+                     invocation cannot reach the operator's own daemon
+          joinBin  : the SSO login the join step runs
+          leaveBin : the counterpart the leave step runs
+          package  : the netbird derivation everything above is built
+                     from, and the version all four server images follow
+
+        Empty when the floe is disabled, so a consumer reading it in an
+        option default gets `{ }` rather than an eval error.
+      '';
+    };
+    managementInternalUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        In-cluster management URL (http). Agents running as Pods
+        inside the same cluster should use this, which avoids a hairpin
+        through the public gateway and the TLS-terminating LB.
+      '';
+    };
+    signalHost = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "In-cluster DNS name of the signal Service.";
+    };
+    signalPort = lib.mkOption {
+      type = lib.types.port;
+      default = 80;
+      description = ''
+        In-cluster port for the signal Service: the primary listener,
+        serving gRPC over HTTP with the WebSocket proxy, which is what
+        a current agent dials.
+
+        The Service also carries `grpc-compat` on 10000. That is
+        netbird's legacy bare-gRPC listener, which signal runs only to
+        keep agents that were already connected on the old default
+        port from dropping. Dialing it for a new connection is not the
+        supported path.
+      '';
+    };
+    oauthRedirectUrls = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = ''
+        Loopback callback URLs this lab's `netbird up` may listen on,
+        derived from `client.callbackPorts`.
+
+        The IdP client that netbird logs in through must register every
+        one of them: netbird picks whichever port is free at login
+        time, and an unregistered redirect URI is refused by the IdP.
+        Read this rather than restating the literals; the port set is
+        netbird's to choose.
+      '';
+    };
+    clusterRouterSecret = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        Name of the Secret holding the cluster-router SetupKey. The
+        operator's `netbird-agent` in-cluster Pod reads this to join
+        the mesh as a routing peer.
+      '';
+    };
+    operatorSecret = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        Name of the Secret holding the operator SetupKey, used to
+        onboard human operator devices.
+      '';
+    };
+    setupKeyDataKey = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Data key inside the SetupKey Secrets that holds the key value.";
+    };
+    apiTokenSecretName = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        Name of the Secret holding the PAT used by the bootstrap Job
+        to call netbird's management API for one-time provisioning.
+      '';
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
 
       oauthRedirectUrls = map (port: "http://localhost:${toString port}/") cfg.client.callbackPorts;
@@ -2656,39 +2646,48 @@ in
           tag = "v0.7.0";
         };
 
-        bundles.netbird-operator-crds = {
+        floes.netbird.bundles.netbird-operator-crds = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
           };
           yamls = [ cfg.operator.crds ];
-          provides = [ "netbird/operator-crds/established" ];
+          provides = [
+            "netbird/operator-crds/established"
+            "kind:netbird.io/Group"
+            "kind:netbird.io/SetupKey"
+            "kind:netbird.io/NBGroup"
+            "kind:netbird.io/NBPolicy"
+            "kind:netbird.io/NBResource"
+            "kind:netbird.io/NBRoutingPeer"
+            "kind:netbird.io/NBSetupKey"
+          ];
         };
       })
 
       (mkIf (cfg.enable && cfg.management.enable) {
-        ops.netbird.login = {
+        floes.netbird.ops.netbird.login = {
 
           description = "Join the lab's Netbird mesh (browser SSO via kanidm)";
           package = netbirdOpsScripts.login;
         };
-        ops.netbird.logout = {
+        floes.netbird.ops.netbird.logout = {
           description = "Leave the lab's Netbird mesh and stop its daemon";
           package = netbirdOpsScripts.logout;
         };
-        ops.netbird.status = {
+        floes.netbird.ops.netbird.status = {
           description = "Show this lab's netbird client status (not your own daemon's)";
           package = netbirdOpsScripts.status;
         };
-        ops.netbird.peers = {
+        floes.netbird.ops.netbird.peers = {
           description = "List peers registered with the lab's Netbird management server";
           package = netbirdOpsScripts.peers;
         };
-        ops.netbird.routes = {
+        floes.netbird.ops.netbird.routes = {
           description = "List routes registered with the lab's Netbird management server";
           package = netbirdOpsScripts.routes;
         };
-        ops.netbird.check-config = {
+        floes.netbird.ops.netbird.check-config = {
           description = "Preflight: validate OIDC wiring against the live IdP from inside the netbird namespace";
           package = netbirdOpsScripts.check-config;
         };
@@ -2698,7 +2697,7 @@ in
         # Both are read back as bytes rather than as strings: the datastore
         # key is base64 of a 32-byte AES key, and the relay secret keys an
         # HMAC. base64 encoding satisfies either reading.
-        secrets.generate = {
+        floes.netbird.secrets.generate = {
           netbird-datastore-enc-key = {
             inherit (cfg) namespace;
             key = "key";
@@ -2713,7 +2712,7 @@ in
           };
         };
 
-        bundles.netbird-prechart = {
+        floes.netbird.bundles.netbird-prechart = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -2726,7 +2725,7 @@ in
       })
 
       (mkIf (cfg.enable && cfg.management.enable) {
-        bundles.netbird = {
+        floes.netbird.bundles.netbird = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -2745,12 +2744,9 @@ in
 
             "netbird/prechart/ready"
           ]
-          ++ refs.needs peers.cert-manager.issuance "webhookReady"
-          ++ refs.needs peers.gateway.routing "publicReady"
-
           ++ lib.optional (hasCaBundle && cfg.tls.caBundle.readyToken != null) cfg.tls.caBundle.readyToken;
 
-          after = refs.orderAfter peers.kanidm.identity "instanceReady";
+          after = [ "optional:identity/instance/ready" ];
           provides = [ "netbird/management/ready" ];
           readyProbe = {
             kind = "condition";
@@ -2767,7 +2763,7 @@ in
       })
 
       (mkIf (cfg.enable && cfg.management.enable && idpMachineTokenRef != null) {
-        bundles.netbird-bootstrap = {
+        floes.netbird.bundles.netbird-bootstrap = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -2781,12 +2777,12 @@ in
             "netbird/management/ready"
           ]
 
-          ++ refs.needs peers.cert-manager.issuance "webhookReady";
+          ++ [ "certificate-issuance/webhook/ready" ];
 
           after = [
             "optional:provides:coredns/lab-dns/ready"
-          ]
-          ++ refs.orderAfter peers.kanidm.identity "provisioningReady";
+            "optional:identity/provisioning/ready"
+          ];
           provides = [ "netbird/api-key/ready" ];
           readyProbe = {
             kind = "jsonpath";
@@ -2799,7 +2795,7 @@ in
       })
 
       (mkIf (cfg.enable && cfg.routing.enable && cfg.operator.enable) {
-        bundles.netbird-routing = {
+        floes.netbird.bundles.netbird-routing = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -2833,7 +2829,7 @@ in
       })
 
       (mkIf (cfg.enable && cfg.operator.enable) {
-        bundles.netbird-admin-reconciler = {
+        floes.netbird.bundles.netbird-admin-reconciler = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -2849,7 +2845,7 @@ in
       })
 
       (mkIf (cfg.enable && cfg.operator.enable) {
-        bundles.netbird-operator = {
+        floes.netbird.bundles.netbird-operator = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -2861,7 +2857,7 @@ in
             "netbird/operator-crds/established"
           ]
 
-          ++ refs.needs peers.cert-manager.issuance "webhookReady";
+          ++ [ "certificate-issuance/webhook/ready" ];
           provides = [ "netbird/operator/ready" ];
           readyProbe = {
             kind = "condition";
@@ -2895,7 +2891,7 @@ in
       })
 
       (mkIf (cfg.enable && cfg.operator.enable) {
-        bundles.netbird-state = {
+        floes.netbird.bundles.netbird-state = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -2920,7 +2916,7 @@ in
       })
 
       (mkIf cfg.agent.enable {
-        steps.netbird-agent-peer-cleanup = {
+        floes.netbird.steps.netbird-agent-peer-cleanup = {
           kind = "run-script";
           direction = "teardown";
           description = "Deregister this cluster's Netbird agent peer";
@@ -2959,7 +2955,7 @@ in
 
         shell.packages = [ netbirdClient.cli ];
 
-        steps.netbird-mesh-join = {
+        floes.netbird.steps.netbird-mesh-join = {
           kind = "run-script";
           direction = "deploy";
           description = "Join this lab's netbird mesh";
@@ -2978,7 +2974,7 @@ in
           policy.interactive = true;
         };
 
-        steps.netbird-mesh-leave = {
+        floes.netbird.steps.netbird-mesh-leave = {
           kind = "run-script";
           direction = "teardown";
           description = "Leave the lab mesh and stop this lab's netbird daemon";
@@ -2994,7 +2990,7 @@ in
       })
 
       (mkIf cfg.agent.enable {
-        bundles.netbird-agent = {
+        floes.netbird.bundles.netbird-agent = {
           owner = {
             bootstrap = "install-target";
             steady = "argocd";
@@ -3263,6 +3259,6 @@ in
           };
         };
       })
-    ];
-})
-  __floeModuleArgs
+    ]
+  );
+}

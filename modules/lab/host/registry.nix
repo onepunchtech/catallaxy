@@ -158,6 +158,14 @@ in
           host = "docker.io";
           url = "https://registry-1.docker.io";
         }
+        {
+          host = "public.ecr.aws";
+          url = "https://public.ecr.aws";
+        }
+        {
+          host = "oci.external-secrets.io";
+          url = "https://oci.external-secrets.io";
+        }
       ];
       description = ''
         Public registries that the lab's zot proxies via pull-through.
@@ -169,10 +177,13 @@ in
             zot endpoint.
 
         Add a new entry when a component pulls from an upstream not
-        in the default list; without the matching `host`,
-        containerd will go straight to the public registry, bypass
-        the cache, and depend on the node's resolver fall-through
-        to public DNS.
+        in the default list. Without the matching `host`, containerd
+        goes straight to the public registry and has to resolve it
+        itself, which a lab node cannot do: its resolver asks the
+        lab's DNS first, and that is authoritative for the zone and
+        answers REFUSED for everything else, which the resolver
+        treats as an answer rather than moving on. The pull fails on
+        a name that resolves perfectly well from the host.
       '';
     };
 

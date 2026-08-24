@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use console::style;
 
 use crate::domain::plan::SyncKubeconfigParams;
@@ -21,16 +21,17 @@ pub fn run(sctx: &StepContext<'_>, p: &SyncKubeconfigParams) -> Result<()> {
             "{} Syncing kubeconfig for '{cluster_name}'...",
             style(">>>").cyan()
         );
-        match crate::crossplane::sync_kubeconfig(&context, cluster_name) {
-            Ok(()) => println!(
-                "{} Kubeconfig synced for '{cluster_name}'",
-                style(">>>").green(),
-            ),
-            Err(e) => println!(
-                "{} Failed to sync kubeconfig for '{cluster_name}': {e}",
-                style("Warning:").yellow(),
-            ),
-        }
+        crate::crossplane::sync_kubeconfig(&context, cluster_name).with_context(|| {
+            format!(
+                "could not sync the kubeconfig for '{cluster_name}'. Every later \
+                 step addresses that cluster through the context this writes, so \
+                 continuing would target a stale cluster or none at all"
+            )
+        })?;
+        println!(
+            "{} Kubeconfig synced for '{cluster_name}'",
+            style(">>>").green(),
+        );
     }
     Ok(())
 }

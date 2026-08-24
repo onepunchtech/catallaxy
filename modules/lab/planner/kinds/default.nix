@@ -16,6 +16,9 @@
   "docker-network-create" = import ./docker-network-create.nix { inherit lib; };
   "ensure-secrets" = import ./ensure-secrets.nix { inherit lib; };
   "host-trust-install" = import ./host-trust-install.nix { inherit lib; };
+  "infra-apply" = import ./infra-apply.nix { inherit lib; };
+  "infra-destroy" = import ./infra-destroy.nix { inherit lib; };
+  "infra-plan" = import ./infra-plan.nix { inherit lib; };
   "pivot" = import ./pivot.nix { inherit lib; };
   "publish-images" = import ./publish-images.nix { inherit lib; };
   "publish-manifests" = import ./publish-manifests.nix { inherit lib; };

@@ -11,8 +11,14 @@ const MAX_ATTEMPTS: u32 = 6;
 
 const BACKOFF: Duration = Duration::from_secs(8);
 
+/// Whether deploying these manifests would change anything.
+///
+/// # Errors
+///
+/// If `kapp` cannot be spawned, or exits anything other than 0 or 3. Those two
+/// are the answer: 0 is no changes, 3 is changes pending.
 pub fn diff(kube_context: &str, app_name: &str, manifests_dir: &str) -> Result<bool> {
-    let prefixed_app_name = format!("cata-{}", app_name);
+    let prefixed_app_name = format!("cata-{app_name}");
 
     let mut cmd = Command::new("kapp");
     cmd.args([
@@ -39,13 +45,17 @@ pub fn diff(kube_context: &str, app_name: &str, manifests_dir: &str) -> Result<b
     }
 }
 
+/// # Errors
+///
+/// If `kapp` cannot be spawned, or every attempt exits non-zero. Retried with
+/// a fixed backoff, so the error reported is the last attempt's.
 pub fn deploy(
     kube_context: &str,
     app_name: &str,
     manifests_dir: &str,
     timeout: &str,
 ) -> Result<()> {
-    let prefixed_app_name = format!("cata-{}", app_name);
+    let prefixed_app_name = format!("cata-{app_name}");
 
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=MAX_ATTEMPTS {

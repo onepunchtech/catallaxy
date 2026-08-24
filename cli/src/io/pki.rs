@@ -22,6 +22,9 @@ pub enum KeyAlgorithm {
 }
 
 impl KeyAlgorithm {
+    /// # Errors
+    ///
+    /// If `name` is not one of the algorithms above.
     pub fn parse(name: &str) -> Result<Self> {
         match name {
             "ecdsa-p256" => Ok(KeyAlgorithm::EcdsaP256),
@@ -44,6 +47,9 @@ impl std::fmt::Display for KeyAlgorithm {
     }
 }
 
+/// # Errors
+///
+/// If the platform's random source cannot produce a key.
 pub fn key_pair(algorithm: KeyAlgorithm) -> Result<KeyPair> {
     Ok(match algorithm {
         KeyAlgorithm::EcdsaP256 => KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?,
@@ -51,6 +57,9 @@ pub fn key_pair(algorithm: KeyAlgorithm) -> Result<KeyPair> {
     })
 }
 
+/// # Errors
+///
+/// If a key cannot be generated, or the certificate cannot be signed.
 pub fn self_signed_ca(cn: &str, algorithm: KeyAlgorithm, days: u32) -> Result<CaPem> {
     let key = key_pair(algorithm)?;
     let params = ca_params(cn, days);
@@ -62,6 +71,12 @@ pub fn self_signed_ca(cn: &str, algorithm: KeyAlgorithm, days: u32) -> Result<Ca
     })
 }
 
+/// A CA constrained to sign leaves only, signed by `root`.
+///
+/// # Errors
+///
+/// If the root's key or certificate does not parse, or a key cannot be
+/// generated, or the certificate cannot be signed.
 pub fn intermediate_ca(
     root: &CaPem,
     cn: &str,
@@ -107,6 +122,11 @@ fn ca_params(cn: &str, days: u32) -> CertificateParams {
 /// RSA CA on disk keeps signing with it: rcgen cannot mint RSA keys but it
 /// can sign with one it is given. That is what lets this replace the openssl
 /// invocations without invalidating a CA users have already trusted.
+///
+/// # Errors
+///
+/// If the CA's key or certificate does not parse, if any entry in `dns_names`
+/// is not a name a SAN can carry, or if the certificate cannot be signed.
 pub fn server_cert(ca: &CaPem, dns_names: &[String], days: u32) -> Result<CaPem> {
     let ca_key = KeyPair::from_pem(&ca.key_pem)
         .map_err(|e| anyhow::anyhow!("the CA private key does not parse: {e}"))?;

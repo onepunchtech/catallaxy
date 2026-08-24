@@ -50,12 +50,12 @@ pub enum ClusterCommands {
     },
 }
 
-pub async fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
+pub fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
     match command {
-        ClusterCommands::List => list(ctx).await,
+        ClusterCommands::List => list(ctx),
         ClusterCommands::Init { name } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
-            init(ctx, &name).await
+            init(ctx, &name)
         }
         ClusterCommands::Up {
             name,
@@ -64,20 +64,20 @@ pub async fn run(ctx: &CataContext, command: ClusterCommands) -> Result<()> {
             force,
         } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
-            up(ctx, &name, bundle, dry_run, force).await
+            up(ctx, &name, bundle, dry_run, force)
         }
         ClusterCommands::Down { name } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
-            down(ctx, &name).await
+            down(ctx, &name)
         }
         ClusterCommands::Status { name } => {
             let name = ctx.resolve_cluster_name(name.as_deref())?;
-            status(ctx, &name).await
+            status(ctx, &name)
         }
     }
 }
 
-async fn list(ctx: &CataContext) -> Result<()> {
+fn list(ctx: &CataContext) -> Result<()> {
     println!("{} Defined clusters", style("catallaxy").cyan().bold());
     println!();
 
@@ -102,7 +102,7 @@ async fn list(ctx: &CataContext) -> Result<()> {
     Ok(())
 }
 
-async fn init(ctx: &CataContext, name: &str) -> Result<()> {
+fn init(ctx: &CataContext, name: &str) -> Result<()> {
     io::process::check_required_tools()?;
 
     println!(
@@ -132,14 +132,14 @@ async fn init(ctx: &CataContext, name: &str) -> Result<()> {
     Ok(())
 }
 
-async fn up(
+fn up(
     ctx: &CataContext,
     name: &str,
     bundle: Option<String>,
     dry_run: bool,
     force: bool,
 ) -> Result<()> {
-    init(ctx, name).await?;
+    init(ctx, name)?;
 
     crate::apply::apply(
         ctx,
@@ -150,10 +150,9 @@ async fn up(
             ..crate::apply::ApplyRequest::for_cluster(name)
         },
     )
-    .await
 }
 
-async fn down(ctx: &CataContext, name: &str) -> Result<()> {
+fn down(ctx: &CataContext, name: &str) -> Result<()> {
     println!(
         "{} Stopping cluster '{name}'",
         style("catallaxy").cyan().bold()
@@ -163,7 +162,7 @@ async fn down(ctx: &CataContext, name: &str) -> Result<()> {
     crate::provision::deprovision_cluster(ctx, name, &spec)
 }
 
-async fn status(ctx: &CataContext, name: &str) -> Result<()> {
+fn status(ctx: &CataContext, name: &str) -> Result<()> {
     println!(
         "{} Cluster '{name}' status",
         style("catallaxy").cyan().bold()

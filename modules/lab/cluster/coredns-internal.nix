@@ -84,6 +84,7 @@ in
 
   config = mkIf dns.coredns.enable {
     bundles.coredns-lab-dns = {
+      declaredBy = "cluster";
 
       owner = {
         bootstrap = "install-target";

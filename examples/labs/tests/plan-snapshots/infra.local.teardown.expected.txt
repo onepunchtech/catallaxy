@@ -1,0 +1,4 @@
+[001] destroy-cluster name=destroy-cluster-app params.name=app params.provisioner=k3d
+[002] infra-destroy name=infra-destroy-after-clusters params.stack=after-clusters
+[003] infra-destroy name=infra-destroy-before-clusters params.stack=before-clusters
+[004] remove-network name=remove-network

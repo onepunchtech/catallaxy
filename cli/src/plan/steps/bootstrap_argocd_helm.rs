@@ -19,13 +19,8 @@ pub fn run(sctx: &StepContext<'_>, p: &BootstrapArgocdHelmParams) -> Result<()> 
     let kube_context = kube_context.as_deref();
     let namespace = namespace.as_deref();
 
-    let kube_context = kube_context.ok_or_else(|| {
-        anyhow::anyhow!(
-            "bootstrap-argocd-helm: missing kubeContext for target '{target}'. \
-             The planner must populate `kubeContext` (see `runtimeCtxOf` in \
-             `lib/eval/deployment-plan.nix`)."
-        )
-    })?;
+    let kube_context = kube_context
+        .ok_or_else(|| crate::plan::steps::missing_kube_context("bootstrap-argocd-helm", target))?;
     let namespace = namespace.unwrap_or("argocd");
     let full_values = format!("{}/{values_path}", sctx.lab_package);
     if !Path::new(&full_values).exists() {

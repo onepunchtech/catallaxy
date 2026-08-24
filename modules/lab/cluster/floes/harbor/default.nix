@@ -8,31 +8,22 @@
   contracts,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.harbor;
 in
-(mkFloe {
-  name = "harbor";
-  version = "1.19.1";
-  imports = [ ./options.nix ];
-
-  requires = [
-    "gateway"
-    "cert-manager"
+{
+  imports = [
+    (floeOptions {
+      name = "harbor";
+      version = "1.19.1";
+    })
+    ./options.nix
   ];
-  module =
-    {
-      config,
-      lib,
-      cataCharts,
-      k8sHelpers,
-      cfg,
-      peers,
-      contracts,
-      ...
-    }:
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         optionalAttrs
@@ -588,6 +579,8 @@ in
 
     in
     {
+      floes.harbor.capabilities.provides.oci-registry = { };
+
       cluster.registryDomains = lib.optional (cfg.domain != "") cfg.domain;
 
       assertions = [
@@ -614,7 +607,7 @@ in
         tag = "1.32.4";
       };
 
-      secrets.generate = {
+      floes.harbor.secrets.generate = {
         ${cfg.adminPasswordSecret} = {
           inherit (cfg) namespace;
           key = "HARBOR_ADMIN_PASSWORD";
@@ -705,7 +698,7 @@ in
 
       };
 
-      bundles.harbor = {
+      floes.harbor.bundles.harbor = {
         resources =
           exposureResources
           // bootstrapRbac
@@ -743,10 +736,11 @@ in
           "secret:${cfg.namespace}/${cfg.adminPasswordSecret}"
           "secret:${cfg.namespace}/${cfg.secretKeySecret}"
         ]
-        ++ refs.needs peers.cert-manager.issuance "webhookReady"
-        ++ refs.needs peers.gateway.routing "publicReady"
         ++ optional (hasCaBundle && cfg.tls.caBundle.readyToken != null) cfg.tls.caBundle.readyToken;
-        provides = [ "harbor/registry/ready" ];
+        provides = [
+          "harbor/registry/ready"
+          "oci-registry"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "deployment/harbor-core";
@@ -755,6 +749,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

@@ -7,37 +7,40 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.seaweedfs;
 in
-(mkFloe {
-  name = "seaweedfs";
-  version = "3.71";
-  imports = [ ./options.nix ];
+{
+  imports = [
+    (floeOptions {
+      name = "seaweedfs";
+      version = "3.71";
+    })
+    ./options.nix
+  ];
 
-  exports =
-    { lib, ... }:
-    {
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "seaweedfs";
-        description = "Namespace SeaweedFS runs in.";
-      };
-      s3Endpoint = lib.mkOption {
-        type = lib.types.str;
-        default = "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333";
-        description = "S3 API endpoint (http URL) for buckets and objects.";
-      };
-      filerEndpoint = lib.mkOption {
-        type = lib.types.str;
-        default = "http://seaweedfs-filer.seaweedfs.svc.cluster.local:8888";
-        description = "Filer HTTP endpoint (for direct file operations).";
-      };
+  options.floes.seaweedfs.exports = {
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "seaweedfs";
+      description = "Namespace SeaweedFS runs in.";
     };
-  module =
-    { cfg, ... }:
+    s3Endpoint = lib.mkOption {
+      type = lib.types.str;
+      default = "http://seaweedfs-s3.seaweedfs.svc.cluster.local:8333";
+      description = "S3 API endpoint (http URL) for buckets and objects.";
+    };
+    filerEndpoint = lib.mkOption {
+      type = lib.types.str;
+      default = "http://seaweedfs-filer.seaweedfs.svc.cluster.local:8888";
+      description = "Filer HTTP endpoint (for direct file operations).";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib) optionalAttrs;
 
@@ -69,7 +72,7 @@ in
 
       floes.seaweedfs.imagesComplete = true;
 
-      bundles.seaweedfs = {
+      floes.seaweedfs.bundles.seaweedfs = {
         helmCharts.seaweedfs = {
           chart = cfg.chart;
           releaseName = "seaweedfs";
@@ -139,6 +142,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

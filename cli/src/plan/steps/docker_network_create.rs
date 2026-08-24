@@ -5,7 +5,7 @@ use crate::domain::plan::DockerNetworkCreateParams;
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &DockerNetworkCreateParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &DockerNetworkCreateParams) -> Result<()> {
     let DockerNetworkCreateParams {
         name,
         subnet,

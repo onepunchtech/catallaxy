@@ -18,6 +18,10 @@ const POLL_INTERVAL_SECS: u64 = 10;
 
 const DIAGNOSTIC_DUMP_GRACE_SECS: u64 = 45;
 
+/// What a diagnostic field reads when the query itself failed, which is not
+/// the same as the field being empty.
+const UNAVAILABLE: &str = "(unavailable)";
+
 pub fn run(sctx: &StepContext<'_>, p: &ReleaseClusterCloudResourcesParams) -> Result<()> {
     let ReleaseClusterCloudResourcesParams {
         target,
@@ -31,8 +35,8 @@ pub fn run(sctx: &StepContext<'_>, p: &ReleaseClusterCloudResourcesParams) -> Re
         .map(String::from)
         .unwrap_or_else(|| target.to_string());
 
-    if !io::kubectl::api_reachable(&kube_ctx) {
-        report_unreachable(sctx, &kube_ctx);
+    if !sctx.kubectl.api_reachable(&kube_ctx) {
+        report_unreachable(sctx.kubectl, &sctx.failures, &kube_ctx);
         return Ok(());
     }
 
@@ -83,30 +87,59 @@ pub fn run(sctx: &StepContext<'_>, p: &ReleaseClusterCloudResourcesParams) -> Re
     Ok(())
 }
 
-fn report_unreachable(sctx: &StepContext<'_>, kube_ctx: &str) {
-    let ctx_in_kubeconfig = io::kubectl::context_in_kubeconfig(kube_ctx);
-    if ctx_in_kubeconfig {
-        println!(
-            "{} '{}' unreachable; assuming already gone",
-            style(">>>").green(),
-            kube_ctx
-        );
-        return;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reachability {
+    Reachable,
+    InKubeconfigButDown,
+    NotInKubeconfig,
+}
+
+pub fn classify_reachability(in_kubeconfig: bool, api_answers: bool) -> Reachability {
+    match (in_kubeconfig, api_answers) {
+        (_, true) => Reachability::Reachable,
+        (true, false) => Reachability::InKubeconfigButDown,
+        (false, false) => Reachability::NotInKubeconfig,
     }
+}
+
+fn report_unreachable(
+    kubectl: &dyn crate::io::kubectl::Kubectl,
+    failures: &std::cell::RefCell<Vec<StepFailure>>,
+    kube_ctx: &str,
+) {
+    let verdict = classify_reachability(kubectl.context_in_kubeconfig(kube_ctx), false);
+
+    let detail = match verdict {
+        Reachability::Reachable => return,
+        Reachability::InKubeconfigButDown => {
+            "it is configured but did not answer, so whether its cloud resources \
+             were released is unknown"
+        }
+        Reachability::NotInKubeconfig => {
+            "it is missing from kubeconfig, so nothing could be released. If \
+             clusters were renamed or the kubeconfig was cleaned before an \
+             earlier destroy completed, this is expected"
+        }
+    };
+
     println!(
-        "{} '{}' is not in kubeconfig, skipping cloud-resource release.\n\
-         {} If clusters were renamed or the operator's kubeconfig was cleaned\n\
-         {} before an earlier destroy completed, cloud LBs / Volumes may still\n\
-         {} be paid-for. Verify with your cloud provider's own console/CLI.",
+        "{} '{}' could not be reached: {}\n\
+         {} This step deletes LoadBalancer Services and PersistentVolumes that the\n\
+         {} Cluster resource does not own, so the cascade delete will not collect\n\
+         {} them. Cloud LBs and Volumes may still be paid-for. Verify with your\n\
+         {} cloud provider's own console or CLI.",
         style("Warning:").yellow(),
         kube_ctx,
+        detail,
+        style(">>>").yellow(),
         style(">>>").yellow(),
         style(">>>").yellow(),
         style(">>>").yellow(),
     );
-    sctx.failures.borrow_mut().push(StepFailure::new(
+
+    failures.borrow_mut().push(StepFailure::new(
         STEP,
-        format!("'{kube_ctx}' is missing from kubeconfig, so nothing was released"),
+        format!("cloud resources on '{kube_ctx}' were never confirmed released ({detail})"),
     ));
 }
 
@@ -428,7 +461,8 @@ fn dump_stuck_state(kube_ctx: &str, remaining_ns: &[String]) {
         let finalizers = io::kubectl::stdout_of(
             kube_ctx,
             &["get", "ns", ns, "-o", "jsonpath={.spec.finalizers[*]}"],
-        );
+        )
+        .unwrap_or_else(|| UNAVAILABLE.to_string());
         let cond = io::kubectl::stdout_of(
             kube_ctx,
             &[
@@ -438,7 +472,8 @@ fn dump_stuck_state(kube_ctx: &str, remaining_ns: &[String]) {
                 "-o",
                 "jsonpath={range .status.conditions[?(@.status=='True')]}{.type}={.reason},{end}",
             ],
-        );
+        )
+        .unwrap_or_else(|| UNAVAILABLE.to_string());
         println!(
             "{}   {}",
             style(">>>").yellow(),
@@ -446,7 +481,7 @@ fn dump_stuck_state(kube_ctx: &str, remaining_ns: &[String]) {
         );
     }
 
-    let pvc_lines = io::kubectl::stdout_of(
+    match io::kubectl::stdout_of(
         kube_ctx,
         &[
             "get",
@@ -455,23 +490,31 @@ fn dump_stuck_state(kube_ctx: &str, remaining_ns: &[String]) {
             "-o",
             "jsonpath={range .items[*]}{.metadata.namespace}|{.metadata.name}|{.spec.volumeName}|{.metadata.finalizers[*]}{'\\n'}{end}",
         ],
-    );
-    for pvc in pvc_lines.lines().filter_map(parse_pvc_line) {
-        let pv_status = if pvc.pv.is_empty() {
-            "(unbound)".to_string()
-        } else {
-            io::kubectl::stdout_of(
-                kube_ctx,
-                &[
-                    "get",
-                    "pv",
-                    pvc.pv,
-                    "-o",
-                    "jsonpath={.status.phase} reclaim={.spec.persistentVolumeReclaimPolicy}",
-                ],
-            )
-        };
-        println!("{}   {}", style(">>>").yellow(), pvc.describe(&pv_status));
+    ) {
+        None => println!(
+            "{}   could not list PersistentVolumeClaims, so any that are stuck are not shown here",
+            style(">>>").yellow()
+        ),
+        Some(pvc_lines) => {
+            for pvc in pvc_lines.lines().filter_map(parse_pvc_line) {
+                let pv_status = if pvc.pv.is_empty() {
+                    "(unbound)".to_string()
+                } else {
+                    io::kubectl::stdout_of(
+                        kube_ctx,
+                        &[
+                            "get",
+                            "pv",
+                            pvc.pv,
+                            "-o",
+                            "jsonpath={.status.phase} reclaim={.spec.persistentVolumeReclaimPolicy}",
+                        ],
+                    )
+                    .unwrap_or_else(|| UNAVAILABLE.to_string())
+                };
+                println!("{}   {}", style(">>>").yellow(), pvc.describe(&pv_status));
+            }
+        }
     }
 
     println!(
@@ -673,6 +716,77 @@ mod tests {
             pvc.describe("Bound reclaim=Delete"),
             "pvc/harbor/data-0: pv=pvc-abc [Bound reclaim=Delete] \
              finalizers=[kubernetes.io/pvc-protection]"
+        );
+    }
+
+    #[test]
+    fn a_cluster_that_answers_is_reachable_however_kubeconfig_looks() {
+        assert_eq!(classify_reachability(true, true), Reachability::Reachable);
+        assert_eq!(classify_reachability(false, true), Reachability::Reachable);
+    }
+
+    #[test]
+    fn a_configured_cluster_that_does_not_answer_is_not_proof_it_is_gone() {
+        assert_eq!(
+            classify_reachability(true, false),
+            Reachability::InKubeconfigButDown
+        );
+    }
+
+    #[test]
+    fn a_cluster_missing_from_kubeconfig_is_its_own_verdict() {
+        assert_eq!(
+            classify_reachability(false, false),
+            Reachability::NotInKubeconfig
+        );
+    }
+
+    #[test]
+    fn neither_unreachable_verdict_is_reachable() {
+        for verdict in [
+            classify_reachability(true, false),
+            classify_reachability(false, false),
+        ] {
+            assert_ne!(verdict, Reachability::Reachable);
+        }
+    }
+
+    // The polarity this asserts is the bug that shipped: an unreachable but
+    // configured cluster was read as proof of deletion and recorded nothing,
+    // so teardown exited 0 while LoadBalancers and volumes stayed paid-for.
+    #[test]
+    fn a_configured_but_silent_cluster_records_a_failure() {
+        use crate::io::kubectl::seam::fake::FakeKubectl;
+
+        let kubectl = FakeKubectl::new().with_contexts(&["k3d-gone"]);
+        let failures = std::cell::RefCell::new(Vec::new());
+
+        report_unreachable(&kubectl, &failures, "k3d-gone");
+
+        let recorded = failures.borrow();
+        assert_eq!(recorded.len(), 1, "an unverified release must be a failure");
+        assert!(
+            recorded[0].detail.contains("did not answer"),
+            "{:?}",
+            recorded[0]
+        );
+    }
+
+    #[test]
+    fn a_cluster_missing_from_kubeconfig_also_records_a_failure() {
+        use crate::io::kubectl::seam::fake::FakeKubectl;
+
+        let kubectl = FakeKubectl::new().with_contexts(&["k3d-other"]);
+        let failures = std::cell::RefCell::new(Vec::new());
+
+        report_unreachable(&kubectl, &failures, "k3d-gone");
+
+        let recorded = failures.borrow();
+        assert_eq!(recorded.len(), 1);
+        assert!(
+            recorded[0].detail.contains("missing from kubeconfig"),
+            "{:?}",
+            recorded[0]
         );
     }
 }

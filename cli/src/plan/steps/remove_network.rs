@@ -4,7 +4,7 @@ use console::style;
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>) -> Result<()> {
     let docker_subnet = sctx.lab.network.docker_subnet.as_str();
 
     if cfg!(target_os = "macos") {

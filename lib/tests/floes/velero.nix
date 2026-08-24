@@ -20,12 +20,13 @@ let
     {
       config._module.freeformType = lib.types.attrs;
 
-      options.cluster = lib.mkOption {
-        type = lib.types.attrs;
-        default = {
-          name = "isolation-test";
-          ref.kubeContext = "iso-ctx";
-        };
+      options.cluster.name = lib.mkOption {
+        type = lib.types.str;
+        default = "isolation-test";
+      };
+      options.cluster.ref.kubeContext = lib.mkOption {
+        type = lib.types.str;
+        default = "iso-ctx";
       };
 
     };

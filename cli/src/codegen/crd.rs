@@ -232,7 +232,7 @@ fn yaml_to_json(yaml: &yaml_rust2::Yaml) -> Result<Value> {
                 let key = match k {
                     yaml_rust2::Yaml::String(s) => s.clone(),
                     yaml_rust2::Yaml::Integer(i) => i.to_string(),
-                    other => format!("{:?}", other),
+                    other => format!("{other:?}"),
                 };
                 map.insert(key, yaml_to_json(v)?);
             }

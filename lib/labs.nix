@@ -13,21 +13,60 @@
 
 let
 
+  labModules =
+    modules:
+    [
+      modulesPath
+      {
+        _module.args.cataCharts = cataCharts;
+        _module.args.k8sSpecs = k8sSpecs;
+        _module.args.k8sHelpers = import ./k8s-helpers.nix { inherit lib; };
+        _module.args.contracts = import ./contracts { inherit lib; };
+      }
+    ]
+    ++ modules;
+
+  labSpecialArgs = { inherit lib pkgs; };
+
   mkLab =
     { modules }:
     pureLib.evalModule {
-      modules = [
-        modulesPath
-        {
-          _module.args.cataCharts = cataCharts;
-          _module.args.k8sSpecs = k8sSpecs;
-          _module.args.k8sHelpers = import ./k8s-helpers.nix { inherit lib; };
-          _module.args.contracts = import ./contracts { inherit lib; };
-        }
-      ]
-      ++ modules;
-      specialArgs = { inherit lib pkgs; };
+      modules = labModules modules;
+      specialArgs = labSpecialArgs;
     };
+
+  labRefusal =
+    {
+      modules,
+      force ? (config: config.lab.name),
+    }:
+    let
+      result = lib.evalModules {
+        modules = labModules modules;
+        specialArgs = labSpecialArgs;
+      };
+
+      messages = map (a: a.message) (lib.filter (a: !a.assertion) result.config.assertions);
+
+      attempt = builtins.tryEval (
+        builtins.deepSeq [
+          messages
+          (force result.config)
+        ] messages
+      );
+    in
+    if attempt.success then attempt.value else null;
+
+  labForce =
+    { modules, force }:
+    builtins.tryEval (
+      builtins.deepSeq (force
+        (lib.evalModules {
+          modules = labModules modules;
+          specialArgs = labSpecialArgs;
+        }).config
+      ) "evaluated"
+    );
 
   discoverExampleLabs =
     let
@@ -54,6 +93,21 @@ let
         ) envFiles;
     in
     lib.foldl' lib.mergeAttrs { } (lib.mapAttrsToList labsIn labDirs);
+
+  # Labs that exist to be checked rather than run. They render and snapshot
+  # like any other, and never enter the e2e set, which is what makes them the
+  # cheap place to pin behaviour no example happens to exercise.
+  discoverFixtureLabs =
+    let
+      dir = examplesPath + "/tests";
+      isLab = name: type: type == "regular" && lib.hasSuffix ".nix" name;
+    in
+    lib.mapAttrs' (
+      filename: _:
+      lib.nameValuePair (lib.removeSuffix ".nix" filename) (mkLab {
+        modules = [ (dir + "/${filename}") ];
+      })
+    ) (lib.filterAttrs isLab (builtins.readDir dir));
 
   mkLabShell =
     lab:
@@ -88,8 +142,11 @@ in
 {
   inherit
     mkLab
+    labRefusal
+    labForce
     mkLabShell
     discoverExampleLabs
+    discoverFixtureLabs
     k8sTypegenConfig
     ;
 }

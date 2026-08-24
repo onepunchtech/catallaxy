@@ -33,3 +33,8 @@ Not committed to, and each would want a design discussion first.
 - managing breaking changes when clusters depend on older version of
   catallaxy
   - migration guide? Or something built in/automatic
+
+- docker compose compatibility
+  - import from docker compose?
+- native linux compatibility
+  - runtime without k8s?

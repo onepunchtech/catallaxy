@@ -66,32 +66,43 @@ let
     };
   };
 
+  # The consumer names no edge at all: emitting a Widget is what puts it after
+  # whoever installs the Widget CRD.
   ordered = wavesOf {
+    bundles.crds.declaredBy = "cluster";
     bundles.crds.resources.widgets = crd;
-    bundles.consumer = {
-      resources.cm = resource "ConfigMap" "cm";
-      after = [ "kind:CustomResourceDefinition" ];
+    bundles.consumer.declaredBy = "cluster";
+    bundles.consumer.resources.w = {
+      apiVersion = "example.com/v1";
+      kind = "Widget";
+      metadata = {
+        name = "hello";
+        namespace = "default";
+      };
     };
   };
 
-  # A bundle whose only workload comes from a chart declares no resources, so
-  # its kinds are empty and it cannot answer a `kind:` anchor.
+  # A chart's kinds are not eval-visible, so a bundle whose CRDs arrive that
+  # way says what it installs rather than being scanned for it.
   chartOnly = wavesOf {
+    bundles.chart.declaredBy = "cluster";
     bundles.chart.helmCharts.thing = {
       chart = pkgs.emptyDirectory;
       releaseName = "thing";
       namespace = "default";
     };
+    bundles.user.declaredBy = "cluster";
     bundles.user = {
       resources.cm = resource "ConfigMap" "cm";
-      after = [ "optional:kind:Deployment" ];
+      after = [ "optional:kind:apps/Deployment" ];
     };
   };
 
-  # `floe:` needs a real floe, because provenance is stamped at the mkFloe
-  # seam and a lab-declared bundle carries none.
+  # `floe:` needs a real floe, because provenance is the key a bundle is
+  # declared under and a lab-declared bundle carries none.
   withFloe = wavesOf {
     floes.reloader.enable = true;
+    bundles.user.declaredBy = "cluster";
     bundles.user = {
       resources.cm = resource "ConfigMap" "cm";
       after = [ "floe:reloader" ];
@@ -118,9 +129,27 @@ lib.runTests {
   # edge, which is what makes the anchor safe to rely on.
   testAHardKindAnchorMatchingNothingThrows = {
     expr = throws (wavesOf {
+      bundles.user.declaredBy = "cluster";
       bundles.user = {
         resources.cm = resource "ConfigMap" "cm";
-        after = [ "kind:Deployment" ];
+        after = [ "kind:example.com/NoSuchKind" ];
+      };
+    });
+    expected = true;
+  };
+
+  # The derived form of the same refusal: nothing here says `after`, the
+  # Widget resource does.
+  testACustomResourceWithNoCrdThrows = {
+    expr = throws (wavesOf {
+      bundles.orphan.declaredBy = "cluster";
+      bundles.orphan.resources.w = {
+        apiVersion = "example.com/v1";
+        kind = "Widget";
+        metadata = {
+          name = "hello";
+          namespace = "default";
+        };
       };
     });
     expected = true;
@@ -145,6 +174,7 @@ lib.runTests {
 
   testAFloeAnchorNamingNoFloeThrows = {
     expr = throws (wavesOf {
+      bundles.user.declaredBy = "cluster";
       bundles.user = {
         resources.cm = resource "ConfigMap" "cm";
         after = [ "floe:nothing" ];

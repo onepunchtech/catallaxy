@@ -119,17 +119,17 @@ you.
 
 Exported from `lib/pure.nix`. The stable public surface.
 
-| Export                     | Signature                       | For                               |
-| -------------------------- | ------------------------------- | --------------------------------- |
-| `floe.mkFloe`              | see [mkFloe API](./floe-api.md) | authoring a floe                  |
-| `floe.evalFloe`            | see [mkFloe API](./floe-api.md) | isolation testing                 |
-| `floe.refs`                | capability and reference types  | floes with a typed interface      |
-| `mkIdempotentJob`          | below                           | one-shot bootstrap Jobs           |
-| `hashContent`              | `attrs -> 10-char sha256`       | content-addressing anything       |
-| `mkNetworkPolicy`          | policy builder                  | cluster network policy            |
-| `mkPreserveRuntimePatches` | kapp rebase rules               | preserving runtime-written fields |
-| `network`                  | CIDR arithmetic                 | subnet maths in provisioners      |
-| `evalModule`               | the lab evaluator               | building a lab outside `mkLab`    |
+| Export                     | Signature                      | For                               |
+| -------------------------- | ------------------------------ | --------------------------------- |
+| `floe.floeOptions`         | see [Floe API](./floe-api.md)  | authoring a floe                  |
+| `floe.evalFloe`            | see [Floe API](./floe-api.md)  | isolation testing                 |
+| `floe.refs`                | capability and reference types | floes with a typed interface      |
+| `mkIdempotentJob`          | below                          | one-shot bootstrap Jobs           |
+| `hashContent`              | `attrs -> 10-char sha256`      | content-addressing anything       |
+| `mkNetworkPolicy`          | policy builder                 | cluster network policy            |
+| `mkPreserveRuntimePatches` | kapp rebase rules              | preserving runtime-written fields |
+| `network`                  | CIDR arithmetic                | subnet maths in provisioners      |
+| `evalModule`               | the lab evaluator              | building a lab outside `mkLab`    |
 
 ### `mkIdempotentJob`
 

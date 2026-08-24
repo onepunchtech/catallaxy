@@ -1,0 +1,2 @@
+[001] destroy-cluster name=destroy-cluster-app params.name=app params.provisioner=k3d
+[002] remove-network name=remove-network

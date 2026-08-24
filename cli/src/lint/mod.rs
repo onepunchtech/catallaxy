@@ -185,7 +185,7 @@ pub fn run_lint(package_path: &Path, skip: &[String]) -> Result<bool> {
         }
 
         let resources = manifest::load_manifests(&manifest_dir)
-            .with_context(|| format!("loading manifests for cluster '{}'", cluster_name))?;
+            .with_context(|| format!("loading manifests for cluster '{cluster_name}'"))?;
 
         println!(
             "  {} {} ({} resources)",
@@ -520,7 +520,7 @@ mod tests {
 
     fn write_script(dir: &Path, name: &str, body: &str) -> PathBuf {
         let path = dir.join(name);
-        crate::io::fs::write(&path, format!("#!/bin/sh\n{}\n", body)).unwrap();
+        crate::io::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
         let mut perms = crate::io::fs::metadata(&path).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&path, perms).unwrap();

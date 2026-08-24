@@ -134,7 +134,7 @@ impl K8sResourceType {
         let api_version = if group.is_empty() || group == "core" {
             version.clone()
         } else {
-            format!("{}/{}", group, version)
+            format!("{group}/{version}")
         };
 
         Self {

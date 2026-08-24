@@ -1,5 +1,13 @@
 use anyhow::{Context, Result};
 
+/// An HTTP client that trusts the lab's CA as well as the system roots.
+///
+/// # Errors
+///
+/// If the active CA bundle exists but is not PEM, or the client cannot be
+/// built. A bundle that cannot be read is a warning and the client is still
+/// returned, because the system roots alone are enough for anything outside
+/// the lab.
 pub fn client(builder: reqwest::ClientBuilder) -> Result<reqwest::Client> {
     let mut builder = builder;
     if let Some(bundle) = super::trust::active_bundle() {

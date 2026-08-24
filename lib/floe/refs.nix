@@ -53,7 +53,4 @@ rec {
       inherit description;
     };
 
-  needs = cap: field: if cap == null || (cap.${field} or null) == null then [ ] else [ cap.${field} ];
-
-  orderAfter = cap: field: map (t: "provides:${t}") (needs cap field);
 }

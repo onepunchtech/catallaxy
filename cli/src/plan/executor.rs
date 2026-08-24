@@ -3,8 +3,11 @@ use console::style;
 
 use crate::config::Context as CataContext;
 use crate::domain::LabSpec;
+use crate::domain::StepFailure;
 use crate::domain::plan::{Direction, PlannedStep, StepParams};
 use crate::io;
+
+const MAX_BACKOFF_SECS: u64 = 60;
 
 use super::StepContext;
 use super::steps;
@@ -15,6 +18,7 @@ pub async fn execute(
     dry_run: bool,
     direction: Direction,
     up_to: Option<&str>,
+    allow_infra: bool,
 ) -> Result<()> {
     let mut ctx_owned = ctx.clone();
     if ctx_owned.flake_ref.fragment.is_none() {
@@ -45,10 +49,11 @@ pub async fn execute(
     );
 
     let secrets_cache = load_stores_upfront(ctx, lab_name, &lab)?;
-    let lab_package = build_lab_package_for(ctx, lab_name, direction)?;
+    let (lab_package, build_failures) = build_lab_package_for(ctx, lab_name, direction)?;
 
     let step_ctx = StepContext {
         ctx,
+        kubectl: &crate::io::kubectl::seam::Real,
         lab_name,
         lab: &lab,
         lab_package: &lab_package,
@@ -56,7 +61,8 @@ pub async fn execute(
         strategy: lab.cd.strategy,
         bootstrap: lab.cd.bootstrap,
         dry_run,
-        failures: std::cell::RefCell::new(Vec::new()),
+        allow_infra,
+        failures: std::cell::RefCell::new(build_failures),
     };
 
     let stop_after = resolve_stop_after(&steps, up_to, direction)?;
@@ -83,6 +89,10 @@ pub async fn execute(
             );
         }
         return Err(e);
+    }
+
+    if direction == Direction::Teardown && failures.is_empty() {
+        crate::host::state::forget_lab_record(lab_name);
     }
 
     if direction == Direction::Teardown && !failures.is_empty() {
@@ -181,7 +191,7 @@ async fn run_one(
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=attempts {
         if attempt > 1 {
-            let backoff_secs = 2u64.pow(attempt - 2);
+            let backoff_secs = 2u64.checked_pow(attempt - 2).unwrap_or(MAX_BACKOFF_SECS);
             eprintln!(
                 "{} attempt {}/{} after {}s (last error: {})",
                 style(">>>").yellow(),
@@ -203,22 +213,22 @@ async fn run_one(
 
 async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep) -> Result<()> {
     match &step.params {
-        StepParams::SetupServices(_) => steps::setup_services::run(sctx).await,
-        StepParams::DockerNetworkCreate(p) => steps::docker_network_create::run(sctx, p).await,
-        StepParams::CertGenerate(p) => steps::cert_generate::run(sctx, p).await,
+        StepParams::SetupServices(_) => steps::setup_services::run(sctx),
+        StepParams::DockerNetworkCreate(p) => steps::docker_network_create::run(sctx, p),
+        StepParams::CertGenerate(p) => steps::cert_generate::run(sctx, p),
         StepParams::TrustBundle(_) => steps::trust_bundle::run(sctx),
-        StepParams::HostTrustInstall(_) => steps::host_trust_install::run(sctx).await,
-        StepParams::DnsSetup(p) => steps::dns_setup::run(sctx, p).await,
-        StepParams::DnsTeardown(p) => steps::dns_teardown::run(sctx, p).await,
-        StepParams::ColimaNetworkRoute(p) => steps::colima_network_route::run(sctx, p).await,
-        StepParams::RegistrySetup(p) => steps::registry_setup::run(sctx, p).await,
+        StepParams::HostTrustInstall(_) => steps::host_trust_install::run(sctx),
+        StepParams::DnsSetup(p) => steps::dns_setup::run(sctx, p),
+        StepParams::DnsTeardown(p) => steps::dns_teardown::run(sctx, p),
+        StepParams::ColimaNetworkRoute(p) => steps::colima_network_route::run(sctx, p),
+        StepParams::RegistrySetup(p) => steps::registry_setup::run(sctx, p),
         StepParams::WarmCache(_) => steps::warm_cache::run(sctx).await,
-        StepParams::CreateCluster(p) => steps::create_cluster::run(sctx, p).await,
+        StepParams::CreateCluster(p) => steps::create_cluster::run(sctx, p),
         StepParams::EnsureSecrets(p) => steps::ensure_secrets::run(sctx, p),
-        StepParams::DeployManifests(p) => steps::deploy_manifests::run(sctx, p).await,
+        StepParams::DeployManifests(p) => steps::deploy_manifests::run(sctx, p),
         StepParams::WaitForResources(p) => steps::wait_for_resources::run(sctx, p).await,
         StepParams::SyncKubeconfig(p) => steps::sync_kubeconfig::run(sctx, p),
-        StepParams::Pivot(p) => steps::pivot::run(sctx, p).await,
+        StepParams::Pivot(p) => steps::pivot::run(sctx, p),
         StepParams::PublishImages(p) => steps::publish_images::run(sctx, p),
         StepParams::PublishManifests(_) => steps::publish_manifests::run(sctx).await,
         StepParams::ApplyRootApplication(p) => steps::apply_root_application::run(sctx, p),
@@ -229,14 +239,17 @@ async fn dispatch(sctx: &StepContext<'_>, step: &PlannedStep) -> Result<()> {
         StepParams::BootstrapArgocdHelm(p) => steps::bootstrap_argocd_helm::run(sctx, p),
         StepParams::VerifyArgocdReachable(p) => steps::verify_argocd_reachable::run(sctx, p),
         StepParams::RunScript(p) => steps::run_script::run(sctx, step, p),
-        StepParams::DestroyCluster(p) => steps::destroy_cluster::run(sctx, p).await,
+        StepParams::InfraPlan(p) => steps::infra::plan(sctx, p),
+        StepParams::InfraApply(p) => steps::infra::apply(sctx, p).await,
+        StepParams::InfraDestroy(p) => steps::infra::destroy(sctx, p),
+        StepParams::DestroyCluster(p) => steps::destroy_cluster::run(sctx, p),
         StepParams::ReconcileManagedResource(p) => steps::reconcile_managed_resource::run(sctx, p),
         StepParams::DeleteManagedResource(p) => steps::delete_managed_resource::run(sctx, p),
         StepParams::WaitForClusterGone(p) => steps::wait_for_cluster_gone::run(sctx, p),
         StepParams::ReleaseClusterCloudResources(p) => {
             steps::release_cluster_cloud_resources::run(sctx, p)
         }
-        StepParams::RemoveNetwork(_) => steps::remove_network::run(sctx).await,
+        StepParams::RemoveNetwork(_) => steps::remove_network::run(sctx),
         StepParams::RemoveServices(_) => steps::remove_services::run(sctx),
     }
 }
@@ -285,13 +298,13 @@ fn build_lab_package_for(
     ctx: &CataContext,
     lab_name: &str,
     direction: Direction,
-) -> Result<String> {
+) -> Result<(String, Vec<StepFailure>)> {
     if direction == Direction::Deploy {
         println!();
         println!("{} Building lab manifests...", style(">>>").cyan());
         let pkg = crate::io::nix::build_lab_package(ctx, lab_name)?;
         println!("{} Lab package built", style(">>>").green());
-        Ok(pkg)
+        Ok((pkg, Vec::new()))
     } else {
         println!();
         println!(
@@ -301,7 +314,7 @@ fn build_lab_package_for(
         match crate::io::nix::build_lab_package(ctx, lab_name) {
             Ok(pkg) => {
                 println!("{} Lab package built", style(">>>").green());
-                Ok(pkg)
+                Ok((pkg, Vec::new()))
             }
             Err(e) => {
                 println!(
@@ -311,7 +324,16 @@ fn build_lab_package_for(
                      resources may leak.",
                     style("Warning:").yellow(),
                 );
-                Ok(String::new())
+                Ok((
+                    String::new(),
+                    vec![StepFailure::new(
+                        "build-lab-package",
+                        format!(
+                            "the lab package did not build, so every teardown hook and \
+                             external-name discovery was skipped: {e}"
+                        ),
+                    )],
+                ))
             }
         }
     }

@@ -1,0 +1,7 @@
+[001] docker-network-create name=docker-network-create params.gateway=172.25.0.1 params.name=minimal.talos params.subnet=172.25.0.0/16
+[002] colima-network-route name=colima-network-route params.profile=catallaxy params.subnet=172.25.0.0/16
+[003] setup-services name=setup-services
+[004] registry-setup name=registry-setup params.port=5051 params.upstreams=["codeberg.org","registry.k8s.io","ghcr.io","quay.io","docker.io","public.ecr.aws","oci.external-secrets.io"] params.zone=minimal.test
+[005] warm-cache name=warm-cache
+[006] create-cluster name=create-cluster-app params.name=app params.provisioner=talos
+[007] deploy-manifests name=deploy-manifests-app params.kubeContext=admin@minimal-talos-app params.target=app

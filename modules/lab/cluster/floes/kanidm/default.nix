@@ -8,252 +8,241 @@
   contracts,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.kanidm;
 in
-(mkFloe {
-  name = "kanidm";
-
+{
   imports = [
+    (floeOptions {
+      name = "kanidm";
+    })
     ./options.nix
     ./heal.nix
   ];
 
-  requires = [
-    "cert-manager"
-    "gateway"
-  ];
-  exports =
-    { lib, ... }:
-    {
-      identity = lib.mkOption {
-        type = refs.mkCapability {
-          instanceReady = refs.tokenOption ''
-            "The kanidm instance is serving." Consumers that only need
-            the OIDC endpoint to answer gate on this.
+  options.floes.kanidm.exports = {
+    identity = lib.mkOption {
+      type = refs.mkCapability {
+        instanceReady = refs.tokenOption ''
+          "The kanidm instance is serving." Consumers that only need
+          the OIDC endpoint to answer gate on this.
+        '';
+        provisioningReady = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          description = ''
+            "Declared OAuth2 clients exist and their Secrets are
+            minted." Null when nothing declares clients: a running
+            kanidm is not the same as a provisioned one, and a
+            consumer mounting a client Secret needs the difference.
           '';
-          provisioningReady = lib.mkOption {
-            type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = ''
-              "Declared OAuth2 clients exist and their Secrets are
-              minted." Null when nothing declares clients: a running
-              kanidm is not the same as a provisioned one, and a
-              consumer mounting a client Secret needs the difference.
-            '';
-          };
         };
-        default = null;
-        description = ''
-          Identity provision, or null when this floe is off. Consumers
-          assert on this rather than on `floes.kanidm.enable`.
-        '';
       };
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "kanidm.kanidm.svc.cluster.local";
-        description = "In-cluster DNS name of the kanidm Service.";
-      };
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "kanidm";
-        description = "Namespace kanidm runs in.";
-      };
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = 8443;
-        description = "Port the Service listens on.";
-      };
-      url = lib.mkOption {
-        type = lib.types.str;
-        default = "https://kanidm.kanidm.svc.cluster.local:8443";
-        description = "In-cluster URL, for peers that reach kanidm without leaving the cluster.";
-      };
-      externalUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public HTTPS URL, or empty when no domain is set.";
-      };
-
-      externalHost = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public hostname on its own, for a consumer that needs host and port apart.";
-      };
-      externalPort = lib.mkOption {
-        type = lib.types.port;
-        default = 443;
-        description = "Public port.";
-      };
-      domain = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "Public domain, or empty when kanidm is internal only.";
-      };
-      instanceName = lib.mkOption {
-        type = lib.types.str;
-        default = "kanidm";
-        description = "Name of the Kanidm custom resource, so a peer can address what the operator created.";
-      };
-      oidcIssuer = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "OIDC issuer URL a relying party should trust.";
-      };
-      oidcDiscovery = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = "OIDC discovery document URL.";
-      };
-      authorizationEndpoint = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          Browser authorization endpoint, on the public origin.
-
-          A user-agent flow must send the human to an address their
-          browser can reach, so unlike the token and JWKS endpoints this
-          one is deliberately public.
-        '';
-      };
-      tokenEndpoint = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          Token endpoint on the public origin, for a flow whose
-          redirect already went through a browser.
-        '';
-      };
-      internalTokenEndpoint = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          OAuth2 token endpoint on kanidm's in-cluster address.
-
-          The discovery document is built from `origin`, which is the
-          public URL a browser uses. A Pod that follows it reaches the
-          gateway's public listener, which on an internal-tier lab is not
-          served at all. Machine-to-machine callers take this instead of
-          parsing discovery.
-        '';
-      };
-
-      oauth2Clients = lib.mkOption {
-        default = { };
-        type = contracts.oidc.clientsType;
-        description = ''
-          Per-client OIDC records this identity provider publishes.
-
-          Consumers take one of these as their own `oidc.client`
-          option rather than reading this attrset by name, which is
-          what makes the provider swappable.
-        '';
-      };
-
-      oidcDiscoveryReadyProbe = lib.mkOption {
-        type = lib.types.attrs;
-        default = { };
-        description = "Probe a consumer can reuse to wait for discovery to answer, rather than restating the URL.";
-      };
-
-      adminPasswordsReadyProbe = lib.mkOption {
-        type = lib.types.attrs;
-        default = { };
-        description = "Probe a consumer can reuse to wait for the admin credentials to exist.";
-      };
-      caSecretRef = lib.mkOption {
-        type = lib.types.attrs;
-        default = { };
-        description = "Reference to the CA bundle a client needs to trust kanidm's certificate.";
-      };
-
-      serviceAccounts = lib.mkOption {
-        default = { };
-        type = lib.types.attrsOf (
-          lib.types.submodule {
-            options = {
-              name = lib.mkOption {
-                type = lib.types.str;
-                default = "";
-                description = "Name of the service account.";
-              };
-              namespace = lib.mkOption {
-                type = lib.types.str;
-                default = "";
-                description = "Namespace it belongs to.";
-              };
-
-              apiTokenSecrets = lib.mkOption {
-                default = { };
-                type = lib.types.attrsOf (
-                  lib.types.submodule {
-                    options = {
-                      secretName = lib.mkOption {
-                        type = lib.types.str;
-                        default = "";
-                        description = "Secret the token was written to.";
-                      };
-                      namespace = lib.mkOption {
-                        type = lib.types.str;
-                        default = "";
-                        description = "Namespace that Secret is in.";
-                      };
-                      purpose = lib.mkOption {
-                        type = lib.types.str;
-                        default = "readonly";
-                        description = "What the token may do.";
-                      };
-                    };
-                  }
-                );
-                description = "API tokens kanidm minted, keyed by the account they belong to.";
-              };
-              credentialsSecret = lib.mkOption {
-                type = lib.types.nullOr lib.types.str;
-                default = null;
-                description = "Secret holding the admin credentials, or null when none was minted.";
-              };
-            };
-          }
-        );
-        description = "Service accounts kanidm provisioned, so a peer can find one without guessing its name.";
-      };
-
-      groups = lib.mkOption {
-        default = { };
-        type = lib.types.attrsOf (
-          lib.types.submodule {
-            options = {
-              name = lib.mkOption {
-                type = lib.types.str;
-                default = "";
-                description = "Bare group name, as declared.";
-              };
-              spn = lib.mkOption {
-                type = lib.types.str;
-                default = "";
-                description = ''
-                  Security principal name, `<name>@<domain>`: the value
-                  kanidm emits in a `groups` claim.
-                '';
-              };
-            };
-          }
-        );
-        description = "Groups kanidm provisioned, so a peer can reference one without restating its name.";
-      };
+      default = null;
+      description = ''
+        Identity provision, or null when this floe is off. Consumers
+        assert on this rather than on `floes.kanidm.enable`.
+      '';
     };
-  module =
-    {
-      config,
-      lib,
-      cataCharts,
-      cfg,
-      peers,
-      ...
-    }:
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "kanidm.kanidm.svc.cluster.local";
+      description = "In-cluster DNS name of the kanidm Service.";
+    };
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "kanidm";
+      description = "Namespace kanidm runs in.";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 8443;
+      description = "Port the Service listens on.";
+    };
+    url = lib.mkOption {
+      type = lib.types.str;
+      default = "https://kanidm.kanidm.svc.cluster.local:8443";
+      description = "In-cluster URL, for peers that reach kanidm without leaving the cluster.";
+    };
+    externalUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public HTTPS URL, or empty when no domain is set.";
+    };
+
+    externalHost = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public hostname on its own, for a consumer that needs host and port apart.";
+    };
+    externalPort = lib.mkOption {
+      type = lib.types.port;
+      default = 443;
+      description = "Public port.";
+    };
+    domain = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public domain, or empty when kanidm is internal only.";
+    };
+    instanceName = lib.mkOption {
+      type = lib.types.str;
+      default = "kanidm";
+      description = "Name of the Kanidm custom resource, so a peer can address what the operator created.";
+    };
+    oidcIssuer = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "OIDC issuer URL a relying party should trust.";
+    };
+    oidcDiscovery = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "OIDC discovery document URL.";
+    };
+    authorizationEndpoint = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        Browser authorization endpoint, on the public origin.
+
+        A user-agent flow must send the human to an address their
+        browser can reach, so unlike the token and JWKS endpoints this
+        one is deliberately public.
+      '';
+    };
+    tokenEndpoint = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        Token endpoint on the public origin, for a flow whose
+        redirect already went through a browser.
+      '';
+    };
+    internalTokenEndpoint = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        OAuth2 token endpoint on kanidm's in-cluster address.
+
+        The discovery document is built from `origin`, which is the
+        public URL a browser uses. A Pod that follows it reaches the
+        gateway's public listener, which on an internal-tier lab is not
+        served at all. Machine-to-machine callers take this instead of
+        parsing discovery.
+      '';
+    };
+
+    oauth2Clients = lib.mkOption {
+      default = { };
+      type = contracts.oidc.clientsType;
+      description = ''
+        Per-client OIDC records this identity provider publishes.
+
+        Consumers take one of these as their own `oidc.client`
+        option rather than reading this attrset by name, which is
+        what makes the provider swappable.
+      '';
+    };
+
+    oidcDiscoveryReadyProbe = lib.mkOption {
+      type = lib.types.attrs;
+      default = { };
+      description = "Probe a consumer can reuse to wait for discovery to answer, rather than restating the URL.";
+    };
+
+    adminPasswordsReadyProbe = lib.mkOption {
+      type = lib.types.attrs;
+      default = { };
+      description = "Probe a consumer can reuse to wait for the admin credentials to exist.";
+    };
+    caSecretRef = lib.mkOption {
+      type = lib.types.attrs;
+      default = { };
+      description = "Reference to the CA bundle a client needs to trust kanidm's certificate.";
+    };
+
+    serviceAccounts = lib.mkOption {
+      default = { };
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            name = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = "Name of the service account.";
+            };
+            namespace = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = "Namespace it belongs to.";
+            };
+
+            apiTokenSecrets = lib.mkOption {
+              default = { };
+              type = lib.types.attrsOf (
+                lib.types.submodule {
+                  options = {
+                    secretName = lib.mkOption {
+                      type = lib.types.str;
+                      default = "";
+                      description = "Secret the token was written to.";
+                    };
+                    namespace = lib.mkOption {
+                      type = lib.types.str;
+                      default = "";
+                      description = "Namespace that Secret is in.";
+                    };
+                    purpose = lib.mkOption {
+                      type = lib.types.str;
+                      default = "readonly";
+                      description = "What the token may do.";
+                    };
+                  };
+                }
+              );
+              description = "API tokens kanidm minted, keyed by the account they belong to.";
+            };
+            credentialsSecret = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Secret holding the admin credentials, or null when none was minted.";
+            };
+          };
+        }
+      );
+      description = "Service accounts kanidm provisioned, so a peer can find one without guessing its name.";
+    };
+
+    groups = lib.mkOption {
+      default = { };
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            name = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = "Bare group name, as declared.";
+            };
+            spn = lib.mkOption {
+              type = lib.types.str;
+              default = "";
+              description = ''
+                Security principal name, `<name>@<domain>`: the value
+                kanidm emits in a `groups` claim.
+              '';
+            };
+          };
+        }
+      );
+      description = "Groups kanidm provisioned, so a peer can reference one without restating its name.";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mkIf
@@ -262,7 +251,7 @@ in
         optionalAttrs
         optional
         ;
-      kaniopEnabled = peers.kaniop.operator != null;
+      kaniopEnabled = config.floes.kaniop.exports.operator != null;
 
       chartRef = cfg.chart;
 
@@ -279,7 +268,9 @@ in
       };
 
       internalTierEnabled =
-        cfg.gateway.enable && cfg.gateway.tier == "public" && peers.gateway.internalEnabled;
+        cfg.gateway.enable
+        && cfg.gateway.tier == "public"
+        && (config.cluster.capabilities.resolved.api-gateway.internalEnabled or false);
 
       # Same Gateway namespace and listener, but pinned to the internal
       # Gateway rather than chosen by tier: this is the second route a public
@@ -453,7 +444,7 @@ in
         };
       };
 
-      caBundle = peers.cert-manager.caBundle;
+      caBundle = config.floes.cert-manager.exports.caBundle;
       hasTrustBundle = caBundle != null;
 
       kanidmCR = optionalAttrs kaniopEnabled {
@@ -537,15 +528,61 @@ in
         hasProvisioning
         ;
 
+      accountNames = lib.attrNames cfg.users ++ lib.attrNames cfg.serviceAccounts;
+      groupNames = lib.attrNames cfg.groups;
+      principals = accountNames ++ groupNames;
+
+      namedOrNone = names: if names == [ ] then "none" else lib.concatStringsSep ", " names;
+
+      danglingIn =
+        path: known: names:
+        map (name: { inherit path name; }) (lib.filter (n: !(builtins.elem n known)) names);
+
+      danglingRefs =
+        lib.concatLists (
+          lib.mapAttrsToList (
+            groupName: group: danglingIn "groups.${groupName}.members" principals group.members
+          ) cfg.groups
+        )
+        ++ lib.concatLists (
+          lib.mapAttrsToList (
+            clientName: client:
+            danglingIn "oauth2Clients.${clientName}.scopeMap" groupNames (map (s: s.group) client.scopeMap)
+            ++ danglingIn "oauth2Clients.${clientName}.supScopeMap" groupNames (
+              map (s: s.group) client.supScopeMap
+            )
+          ) cfg.oauth2Clients
+        );
+
       internalHost = "${cfg.instanceName}.${cfg.namespace}.svc.cluster.local";
 
-      useAcme = (peers.cert-manager.issuance or null) != null && peers.cert-manager.issuance.publicIssuer;
+      useAcme =
+        (config.floes.cert-manager.exports.issuance or null) != null
+        && config.floes.cert-manager.exports.issuance.publicIssuer;
       effectiveHost = if useAcme then cfg.domain else internalHost;
       effectiveUrl = if useAcme then cfg.origin else "https://${internalHost}:8443";
     in
     {
 
       assertions = [
+        {
+          assertion = danglingRefs == [ ];
+          message = ''
+            kanidm: a reference names a principal this floe does not declare:
+
+            ${lib.concatMapStringsSep "\n" (r: "  ${r.path} -> ${r.name}") danglingRefs}
+
+            It declares accounts ${
+              namedOrNone (lib.attrNames cfg.users ++ lib.attrNames cfg.serviceAccounts)
+            } and groups ${namedOrNone (lib.attrNames cfg.groups)}.
+
+            kanidm resolves these by name at reconcile time, so a name that
+            matches nothing is not an error there either: the group comes up
+            without the member, or the client grants its scopes to nobody.
+            What looks like a permissions bug in the running lab is a typo
+            here.
+          '';
+        }
         {
           assertion =
             !hasCrossNamespaceClient
@@ -684,7 +721,7 @@ in
         }) cfg.groups;
       };
 
-      ops.kanidm.init-user = {
+      floes.kanidm.ops.kanidm.init-user = {
         description = "Reset a kanidm account's password, for a first login";
         args = [
           {
@@ -748,7 +785,7 @@ in
 
       };
 
-      bundles = {
+      floes.kanidm.bundles = {
         kanidm = {
           owner = {
             bootstrap = "install-target";
@@ -764,11 +801,10 @@ in
             // internalRouteResource
             // backendTlsPolicy;
 
-          requires =
-            refs.needs peers.cert-manager.issuance "webhookReady"
-            ++ refs.needs peers.gateway.routing "publicReady"
-            ++ refs.needs peers.kaniop.operator "ready";
-          provides = [ "kanidm/instance/ready" ];
+          provides = [
+            "kanidm/instance/ready"
+            "identity/instance/ready"
+          ];
           # The two paths render different things, so they cannot share a
           # probe. kaniop reconciles a Kanidm CR that reports Available;
           # the chart renders a StatefulSet, which has no such condition and
@@ -890,7 +926,10 @@ in
           requires = lib.optionals (kaniopEnabled && hasProvisioning) [
             "kanidm/instance/ready"
           ];
-          provides = lib.optional (kaniopEnabled && hasProvisioning) "kanidm/provisioning/ready";
+          provides = lib.optionals (kaniopEnabled && hasProvisioning) [
+            "kanidm/provisioning/ready"
+            "identity/provisioning/ready"
+          ];
 
           readyProbe =
             if kaniopEnabled && hasProvisioning && oauth2Resources != { } then
@@ -917,6 +956,6 @@ in
               null;
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

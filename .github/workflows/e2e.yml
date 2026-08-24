@@ -18,15 +18,29 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  eligible-labs:
+    runs-on: ubuntu-latest
+    outputs:
+      labs: ${{ steps.derive.outputs.labs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v14
+      - id: derive
+        name: Derive the matrix from what can stand up unattended
+        run: |
+          labs=$(nix eval --json \
+            '.#legacyPackages.x86_64-linux.e2eLabs' \
+            | nix run nixpkgs#jq -- -c '[to_entries[] | select(.value.eligible) | .key]')
+          echo "labs=$labs" >> "$GITHUB_OUTPUT"
+          echo "matrix: $labs"
   lab:
+    needs: eligible-labs
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        lab:
-          - minimal.local
-          - homelab.local
+        lab: ${{ fromJSON(needs.eligible-labs.outputs.labs) }}
     name: ${{ matrix.lab }}
     steps:
       - uses: actions/checkout@v4

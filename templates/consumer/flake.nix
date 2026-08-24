@@ -19,7 +19,7 @@
 
         myFloes = import ./floes {
           inherit lib;
-          inherit (catallaxy.lib.floe) mkFloe;
+          inherit (catallaxy.lib.floe) floeOptions;
         };
 
         lab = catallaxy.legacyPackages.${system}.mkLab {

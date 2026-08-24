@@ -7,24 +7,23 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
   planTokens = import ../../../../../lib/plan-tokens.nix { inherit lib; };
+  cfg = config.floes.crossplane;
 in
-(mkFloe {
-  name = "crossplane";
-  version = "1.18.2";
-  imports = [ ./options.nix ];
-  module =
-    {
-      config,
-      lib,
-      cataCharts,
-      cfg,
-      ...
-    }:
+{
+  imports = [
+    (floeOptions {
+      name = "crossplane";
+      version = "1.18.2";
+    })
+    ./options.nix
+  ];
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mkIf
@@ -423,6 +422,10 @@ in
     in
     {
 
+      cluster.kubernetes.uncheckedResources = [
+        "kubernetes.digitalocean.crossplane.io/v1alpha1/Cluster"
+      ];
+
       cluster.provisions = lib.optionalAttrs cfg.digitalocean.enable (
         lib.mapAttrs (_: _: {
           resourceKind = "cluster.kubernetes.digitalocean.crossplane.io";
@@ -430,7 +433,7 @@ in
         }) cfg.digitalocean.kubernetesClusters
       );
 
-      steps =
+      floes.crossplane.steps =
         let
           pins = lib.mapAttrs (_: cluster: cluster.version) (cfg.digitalocean.kubernetesClusters or { });
           hasPins = cfg.digitalocean.enable && pins != { };
@@ -546,7 +549,7 @@ in
 
       };
 
-      bundles.crossplane-crds = {
+      floes.crossplane.bundles.crossplane-crds = {
         owner = {
           bootstrap = "install-target";
           steady = "argocd";
@@ -556,10 +559,15 @@ in
         ]
         ++ optional cfg.digitalocean.enable cataCharts.crossplaneProviderCrds.provider-upjet-digitalocean
         ++ optional cfg.cloudflare.enable cataCharts.crossplaneProviderCrds.provider-upjet-cloudflare;
-        provides = [ "crossplane/crds/established" ];
+        provides = [
+          "crossplane/crds/established"
+          "kind:pkg.crossplane.io/Provider"
+          "kind:pkg.crossplane.io/Configuration"
+          "kind:pkg.crossplane.io/Function"
+        ];
       };
 
-      bundles.crossplane = {
+      floes.crossplane.bundles.crossplane = {
 
         owner = {
           bootstrap = "install-target";
@@ -638,45 +646,53 @@ in
         })
       ];
 
-      bundles.crossplane-providers.owner = {
+      floes.crossplane.bundles.crossplane-providers.owner = {
         bootstrap = "install-target";
         steady = "argocd";
       };
-      bundles.crossplane-providers.resources = providerCRs;
-      bundles.crossplane-providers.requires = [
+      floes.crossplane.bundles.crossplane-providers.resources = providerCRs;
+      floes.crossplane.bundles.crossplane-providers.requires = [
         "crossplane/operator/ready"
       ];
-      bundles.crossplane-providers.provides = [
+      floes.crossplane.bundles.crossplane-providers.provides = [
         "crossplane/providers/installed"
+        "kind:digitalocean.crossplane.io/ProviderConfig"
+        "kind:upjet-cloudflare.upbound.io/ProviderConfig"
       ];
 
-      bundles.crossplane-provider-configs.owner = {
+      floes.crossplane.bundles.crossplane-provider-configs.owner = {
         bootstrap = "install-target";
         steady = "argocd";
       };
-      bundles.crossplane-provider-configs.resources = providerConfigCRs;
+      floes.crossplane.bundles.crossplane-provider-configs.resources = providerConfigCRs;
 
-      bundles.crossplane-provider-configs.requires = [
+      floes.crossplane.bundles.crossplane-provider-configs.requires = [
         "crossplane/providers/installed"
       ];
-      bundles.crossplane-provider-configs.provides = [
+      floes.crossplane.bundles.crossplane-provider-configs.provides = [
         "crossplane/provider-configs/ready"
+        "kind:droplet.digitalocean.crossplane.io/Droplet"
+        "kind:kubernetes.digitalocean.crossplane.io/Cluster"
+        "kind:networking.digitalocean.crossplane.io/Loadbalancer"
+        "kind:record.upjet-cloudflare.m.upbound.io/Record"
+        "kind:tunnel.upjet-cloudflare.m.upbound.io/Tunnel"
+        "kind:zone.upjet-cloudflare.m.upbound.io/Zone"
       ];
 
-      bundles.crossplane-resources.owner = {
+      floes.crossplane.bundles.crossplane-resources.owner = {
         bootstrap = "install-target";
         steady = "argocd";
       };
-      bundles.crossplane-resources.resources =
+      floes.crossplane.bundles.crossplane-resources.resources =
         (if cfg.digitalocean.enable then doResources else { })
         // (if cfg.cloudflare.enable then cfResources else { });
-      bundles.crossplane-resources.requires = [
+      floes.crossplane.bundles.crossplane-resources.requires = [
         "crossplane/provider-configs/ready"
       ];
-      bundles.crossplane-resources.provides = [
+      floes.crossplane.bundles.crossplane-resources.provides = [
         "crossplane/managed-resources/reconciling"
       ];
 
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

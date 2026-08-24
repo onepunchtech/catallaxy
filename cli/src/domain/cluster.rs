@@ -32,8 +32,28 @@ pub struct ClusterSpec {
 
     pub projections: Value,
 
+    #[serde(default)]
+    pub trust: ClusterTrust,
+
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
+}
+
+/// Where this cluster wants the lab's CA certificate to appear.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClusterTrust {
+    #[serde(default)]
+    pub ca_config_maps: Vec<CaConfigMap>,
+}
+
+/// One ConfigMap key the lab CA should be written to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaConfigMap {
+    pub namespace: String,
+    pub name: String,
+    pub key: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,7 +119,35 @@ impl DeployStrategy {
 #[serde(rename_all = "camelCase")]
 pub struct ProvisionerConfig {
     pub k3d: K3dConfig,
+    /// Talos gets its own block. It used to borrow `docker.clusterName`,
+    /// which is the shared docker-daemon config and carries no lab prefix, so
+    /// two labs with the same cluster name collided on container names.
+    #[serde(default)]
+    pub talos: TalosConfig,
     pub docker: DockerConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TalosConfig {
+    pub cluster_name: String,
+    pub image: Option<String>,
+    pub kubernetes_version: Option<String>,
+    pub subnet: String,
+    pub exposed_ports: Vec<String>,
+    pub mounts: Vec<String>,
+    pub memory: String,
+    pub cpus: String,
+    /// Machine config patches. Talos is configured through these rather than
+    /// through flags: registry mirrors, CA trust, nameservers, API server
+    /// arguments and the CNI choice are all machine config.
+    pub config_patches: Vec<String>,
+    /// Containers attached to the cluster's own docker network once it
+    /// exists. talosctl will not join an existing network, and kube-proxy
+    /// will not serve a NodePort on an interface added after the fact, so
+    /// whatever has to reach the cluster joins its network instead.
+    #[serde(default)]
+    pub reachable_from: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +160,7 @@ pub struct K3dConfig {
     #[serde(rename = "noServiceLB")]
     pub no_service_lb: bool,
     pub no_flannel: bool,
+    pub no_local_storage: bool,
     pub ports: Vec<String>,
     pub extra_api_server_args: Vec<String>,
     pub extra_volumes: Vec<ExtraVolume>,
@@ -213,10 +262,12 @@ impl ClusterSpec {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn cluster_json() -> Value {
+    /// A spec as the Nix layer actually emits one. Shared so other modules
+    /// test against the real shape rather than a hand-built approximation.
+    pub(crate) fn cluster_json() -> Value {
         serde_json::json!({
             "name": "app",
             "labName": "minimal.local",
@@ -239,6 +290,7 @@ mod tests {
                     "network": "minimal.local",
                     "noTraefik": true,
                     "noServiceLB": false,
+                    "noLocalStorage": false,
                     "noFlannel": false,
                     "ports": [],
                     "extraApiServerArgs": [],

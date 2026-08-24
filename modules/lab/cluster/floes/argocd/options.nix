@@ -108,6 +108,28 @@ in
               description = "Skip TLS certificate verification";
             };
 
+            verifyWithLabCA = mkOption {
+              type = types.bool;
+              default = false;
+              description = ''
+                Verify this repository's certificate against the lab's CA.
+
+                A repository the lab hosts is served under a certificate the
+                lab's own CA signed, which no image ships a root for. argocd
+                reads repository CAs from the `argocd-tls-certs-cm` ConfigMap
+                and nowhere else, keyed by hostname, so pointing it at the
+                trust bundle in the namespace does not reach it.
+
+                Setting this hands that ConfigMap to `cata lab up`, which
+                writes the lab CA under this repository's hostname while the
+                cluster is being created. The chart stops creating it, since
+                two owners of one object is how it ends up empty.
+
+                A repository behind a publicly signed certificate needs none
+                of this and should leave it off.
+              '';
+            };
+
             tlsClientCertSecretRef = mkOption {
               type = types.nullOr (
                 types.submodule {
@@ -252,6 +274,24 @@ in
     };
 
     tls = {
+      labCAHosts = mkOption {
+        type = types.listOf types.str;
+        default = [ ];
+        example = lib.literalExpression ''[ "git.homelab.test" ]'';
+        description = ''
+          Hosts whose certificates are signed by the lab's CA.
+
+          The same effect as `repositories.<name>.verifyWithLabCA`, for a
+          repository this floe does not register. A registration that
+          arrives as a Secret from somewhere else, such as one a subscription
+          materialises with credentials in it, still needs argocd to trust
+          the host it points at, and declaring it as a repository here only
+          to say so would register it twice: argocd would then have two
+          entries for one URL and use whichever it found first, which is how
+          a working credential stops being used.
+        '';
+      };
+
       issuerRef = mkOption {
         type = types.nullOr (
           types.submodule {

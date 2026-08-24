@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-use crate::commands::{apply, cluster, diagnose, images, kubeconfig, lab, new, pki, secrets};
+use crate::commands::{apply, cluster, diagnose, images, kubeconfig, lab, pki, secrets};
 use crate::config::Context as CataContext;
 
 #[derive(Parser)]
@@ -68,25 +68,18 @@ pub enum Commands {
         #[command(subcommand)]
         command: images::ImagesCommands,
     },
-
-    #[command(about = "Scaffold new pieces of a lab")]
-    New {
-        #[command(subcommand)]
-        command: new::NewCommands,
-    },
 }
 
 pub async fn dispatch(ctx: &CataContext, command: Commands) -> anyhow::Result<()> {
     match command {
-        Commands::Cluster { command } => cluster::run(ctx, command).await,
+        Commands::Cluster { command } => cluster::run(ctx, command),
         Commands::Lab { command } => lab::run(ctx, command).await,
-        Commands::Apply(args) => apply::run(ctx, args).await,
-        Commands::Diagnose(args) => diagnose::run(ctx, args).await,
-        Commands::Pki { command } => pki::run(ctx, command).await,
-        Commands::Secrets { command } => secrets::run(ctx, command).await,
-        Commands::Kubeconfig { command } => kubeconfig::run(ctx, command).await,
+        Commands::Apply(args) => apply::run(ctx, args),
+        Commands::Diagnose(args) => diagnose::run(ctx, args),
+        Commands::Pki { command } => pki::run(ctx, command),
+        Commands::Secrets { command } => secrets::run(ctx, command),
+        Commands::Kubeconfig { command } => kubeconfig::run(ctx, command),
         Commands::Images { command } => images::run(ctx, command).await,
-        Commands::New { command } => new::run(command).await,
     }
 }
 

@@ -104,8 +104,32 @@ in
     noServiceLB = mkOption {
       type = types.bool;
 
-      default = false;
-      description = "Disable default ServiceLB (Klipper)";
+      default = config.floes.cilium.lbIPAM.enable or false;
+      defaultText = lib.literalExpression "config.floes.cilium.lbIPAM.enable";
+      description = ''
+        Disable k3s's bundled ServiceLB (Klipper). Defaults to on exactly
+        when cilium's LoadBalancer IPAM is enabled to replace it, the same way
+        `noFlannel` does for the CNI. Two controllers both writing
+        `status.loadBalancer.ingress` on every LoadBalancer Service is a race,
+        not a redundancy.
+      '';
+    };
+
+    noLocalStorage = mkOption {
+      type = types.bool;
+
+      default = config.floes.openebs.enable or false;
+      defaultText = lib.literalExpression "config.floes.openebs.enable";
+      description = ''
+        Disable k3s's bundled local-path-provisioner. Defaults to on exactly
+        when the openebs floe is enabled to replace it.
+
+        openebs installs a StorageClass also named `local-path` and also
+        marked the cluster default. Nothing in the module system can see that
+        collision, because it happens on a live object rather than on an
+        option: a PVC naming no storageClassName binds to whichever of the two
+        defaults the API server picks.
+      '';
     };
 
     noFlannel = mkOption {
@@ -184,8 +208,20 @@ in
 
     network = mkOption {
       type = types.nullOr types.str;
-      default = null;
-      description = "Docker network to create k3d cluster on (uses --network flag). When set, all clusters share this network for cross-cluster DNS.";
+      default = lab.name;
+      defaultText = lib.literalExpression "lab.name";
+      description = ''
+        Docker network to create this k3d cluster on.
+
+        The lab's own network by default, which is where its DNS, registry
+        and ingress are, and where the lab's other clusters are. A cluster
+        given its own network cannot reach any of them: nothing fails at
+        creation, and the symptom is every address in the lab timing out
+        from inside that cluster.
+
+        Null puts the cluster on whatever network k3d makes for it, which
+        is only right for a cluster that is meant to be isolated.
+      '';
     };
 
     autoDeployManifests = mkOption {
@@ -216,6 +252,14 @@ in
     config.cluster.provisioner == "k3d"
   ) "k3d-${config.provisioner.k3d.clusterName}";
 
+  config.cluster.provisionerOut.ingressBackend = mkIf (
+    config.cluster.provisioner == "k3d"
+  ) "k3d-${config.provisioner.k3d.clusterName}-server-0";
+
+  config.cluster.provisionerOut.publishesGatewayPorts = mkIf (config.cluster.provisioner == "k3d") (
+    !config.provisioner.k3d.noServiceLB
+  );
+
   config.assertions = lib.optional (config.cluster.provisioner == "k3d") {
     assertion = builtins.stringLength config.provisioner.k3d.clusterName <= 32;
     message =
@@ -231,6 +275,37 @@ in
       + "`provisioner.k3d.clusterName` explicitly to something shorter.";
   };
 
+  config.cluster.capabilities.provides = lib.mkIf (config.cluster.provisioner == "k3d") (
+    lib.optionalAttrs (!config.provisioner.k3d.noFlannel) {
+      cni = {
+        exclusive = true;
+        provider = "k3s's bundled Flannel";
+        disableWith = "provisioner.k3d.noFlannel = true";
+      };
+    }
+    // lib.optionalAttrs (!config.provisioner.k3d.noServiceLB) {
+      loadbalancer-addresses = {
+        exclusive = true;
+        provider = "k3s's bundled ServiceLB";
+        disableWith = "provisioner.k3d.noServiceLB = true";
+      };
+    }
+    // lib.optionalAttrs (!config.provisioner.k3d.noLocalStorage) {
+      default-storage-class = {
+        exclusive = true;
+        provider = "k3s's bundled local-path-provisioner";
+        disableWith = "provisioner.k3d.noLocalStorage = true";
+      };
+    }
+    // lib.optionalAttrs (!config.provisioner.k3d.noTraefik) {
+      ingress = {
+        exclusive = true;
+        provider = "k3s's bundled Traefik";
+        disableWith = "provisioner.k3d.noTraefik = true";
+      };
+    }
+  );
+
   config.lifecycle.preProvision = lib.optional (config.cluster.provisioner == "k3d") {
     name = "k3d-drift-check";
     description = "Check k3d cluster on disk for stale --service-cidr / --cluster-cidr";
@@ -239,6 +314,10 @@ in
   };
 
   config.provisioner.k3d = mkIf (config.cluster.provisioner == "k3d") {
+
+    # k3s applies whatever is in its auto-deploy directory at boot, so the
+    # cluster's bootstrap manifests are satisfied by mounting them there.
+    autoDeployManifests = config.cluster.bootstrapManifests;
 
     ports = map (
       p: "${toString p.host}:${toString p.container}/udp@server:0"
@@ -272,7 +351,12 @@ in
         }
       ]
 
-      ++ lib.optionals (lab.proxy.enable or false) [
+      # Gated on the proxy serving TLS, not merely existing. The CA is minted
+      # by the `cert-generate` step, which the deployment plan only emits when
+      # the proxy terminates TLS. A proxy with TLS off has no CA, so mounting
+      # one names a file nothing in the plan creates and the cluster refuses
+      # to start on it.
+      ++ lib.optionals ((lab.proxy.enable or false) && (lab.proxy.tls.enable or true)) [
         {
           hostPath = "{{STATE_DIR}}/proxy/ca.crt";
           containerPath = "/etc/ssl/certs/lab-ca.crt";

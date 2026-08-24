@@ -99,10 +99,13 @@ impl VerifyContext<'_> {
     }
 }
 
+/// The reachable-from-here publishes, as (host, container) pairs.
+///
+/// A gateway-bound publish is for pods and containers inside the lab, and
+/// verify runs on this machine.
 fn published_port(mapping: &str) -> Option<(u16, u16)> {
-    let mapping = mapping.split('/').next().unwrap_or(mapping);
-    let (host, container) = mapping.split_once(':')?;
-    Some((host.parse().ok()?, container.parse().ok()?))
+    let m = crate::domain::port_mapping::PortMapping::parse(mapping)?;
+    m.is_host_reachable().then_some((m.host, m.container))
 }
 
 pub fn ingress_endpoint(published: &[(u16, u16)]) -> Option<(&'static str, u16)> {
@@ -184,6 +187,21 @@ pub fn diag(
 
 #[cfg(test)]
 mod tests {
+
+    /// The ingress publishes on loopback and on the lab's own gateway, so a
+    /// mapping carries an address. Reading the address as the host port made
+    /// verify say a working lab published no ingress at all.
+    #[test]
+    fn the_ingress_port_is_found_whatever_it_is_bound_to() {
+        assert_eq!(super::published_port("127.0.0.1:8080:80"), Some((8080, 80)));
+        assert_eq!(super::published_port("8080:80"), Some((8080, 80)));
+        assert_eq!(
+            super::published_port("127.0.0.1:9443:443"),
+            Some((9443, 443))
+        );
+        // The gateway publish is for pods, not for anything running here.
+        assert_eq!(super::published_port("172.20.0.1:80:80"), None);
+    }
     use super::*;
 
     use serde_json::{Value, json};
@@ -237,7 +255,7 @@ mod tests {
             "lifecycle": { "preProvision": [] },
             "provisionerConfig": {
                 "k3d": { "clusterName": name, "image": null, "network": null,
-                         "noTraefik": true, "noServiceLB": false, "noFlannel": false,
+                         "noTraefik": true, "noServiceLB": false, "noFlannel": false, "noLocalStorage": false,
                          "ports": [], "extraApiServerArgs": [], "extraVolumes": [],
                          "autoDeployManifests": [] },
                 "docker": { "clusterName": name, "waitTimeout": "10m",

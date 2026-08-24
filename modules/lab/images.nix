@@ -10,8 +10,50 @@ let
     mapAttrsToList
     ;
 
+  floesAnywhere = lib.zipAttrsWith (_: lib.head) (
+    map (c: c.floes or { }) (lib.attrValues config.lab.clusters)
+  );
+
+  labelsOfFloe = floeName: lib.attrNames ((floesAnywhere.${floeName} or { }).images or { });
+
+  namedOrNothing = names: if names == [ ] then "nothing" else lib.concatStringsSep ", " names;
+
+  strayPins = lib.concatLists (
+    mapAttrsToList (
+      floeName: labels:
+      if !(floesAnywhere ? ${floeName}) then
+        [
+          {
+            path = "lab.images.pinned.${floeName}";
+            found = "is not a floe. This lab's clusters know: ${namedOrNothing (lib.attrNames floesAnywhere)}";
+          }
+        ]
+      else
+        map (label: {
+          path = "lab.images.pinned.${floeName}.${label}";
+          found = "is not an image ${floeName} declares. It declares: ${namedOrNothing (labelsOfFloe floeName)}";
+        }) (lib.filter (l: !(builtins.elem l (labelsOfFloe floeName))) (lib.attrNames labels))
+    ) config.lab.images.pinned
+  );
+
 in
 {
+  config.lab.assertions = lib.optional (strayPins != [ ]) {
+    assertion = false;
+    message = ''
+      A pin names an image nothing declares:
+
+      ${lib.concatMapStringsSep "\n" (p: "  ${p.path} ${p.found}") strayPins}
+
+      A pin is matched by label, so a name that matches nothing is applied
+      to nothing. That is worse than it sounds: the same path also decides
+      which images `lab.images.registry` leaves alone, so a mistyped pin
+      does not exempt its image either. With a registry set, the image is
+      moved to the mirror while the pin reads as though it had taken
+      effect.
+    '';
+  };
+
   options.lab.images = {
     requireDigest = mkOption {
       type = types.bool;

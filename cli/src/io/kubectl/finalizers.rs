@@ -28,10 +28,10 @@ pub fn strip_finalizers_in_terminating_namespaces(
         return stripped;
     }
 
-    let mut list = super::run::command();
+    let Ok(mut list) = super::run::contextual(kube_ctx) else {
+        return stripped;
+    };
     list.args([
-        "--context",
-        kube_ctx,
         "get",
         "crd",
         "-o",
@@ -53,10 +53,10 @@ pub fn strip_finalizers_in_terminating_namespaces(
             continue;
         }
         for ns in &terminating {
-            let mut get = super::run::command();
+            let Ok(mut get) = super::run::contextual(kube_ctx) else {
+                return stripped;
+            };
             get.args([
-                "--context",
-                kube_ctx,
                 "-n",
                 ns,
                 "get",
@@ -73,10 +73,10 @@ pub fn strip_finalizers_in_terminating_namespaces(
                 continue;
             }
             for name in &names {
-                let mut patch = super::run::command();
+                let Ok(mut patch) = super::run::contextual(kube_ctx) else {
+                    return stripped;
+                };
                 patch.args([
-                    "--context",
-                    kube_ctx,
                     "-n",
                     ns,
                     "patch",

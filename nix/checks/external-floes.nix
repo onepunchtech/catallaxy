@@ -63,18 +63,9 @@ in
               };
             }
           )
-          (
-            { lib, ... }:
-            {
-              options.bundles = lib.mkOption {
-                type = lib.types.attrsOf lib.types.attrs;
-                default = { };
-              };
-            }
-          )
         ];
       };
-      deployment = result.config.bundles.hello.resources.hello-deployment;
+      deployment = result.config.floes.hello.bundles.hello.resources.hello-deployment;
       replicas = deployment.spec.replicas;
       labelInstance = deployment.metadata.labels."app.kubernetes.io/instance" or "MISSING";
       exportsUrl = result.config.floes.hello.exports.url;
@@ -103,7 +94,7 @@ in
     let
       myFloes = import ../../templates/consumer/floes {
         inherit lib;
-        inherit (pureLib.floe) mkFloe;
+        inherit (pureLib.floe) floeOptions;
       };
       lab = mkLab {
         modules = [ (import ../../templates/consumer/lab.nix { inherit myFloes; }) ];

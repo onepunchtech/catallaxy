@@ -100,6 +100,8 @@
         };
 
         exampleLabDefs = labs.discoverExampleLabs;
+        fixtureLabDefs = labs.discoverFixtureLabs;
+        digestedLabDefs = exampleLabDefs // fixtureLabDefs;
 
         e2eLabs = lib.mapAttrs (_: lab: lab.config.lab.out.selfContained) exampleLabDefs;
 
@@ -115,7 +117,8 @@
           inherit (packages') tools;
           inherit e2eLabs;
           labs = lib.mapAttrs (_: lab: lab.config.lab.out.cliConfig) exampleLabDefs;
-          labPackages = lib.mapAttrs (_: lab: lab.config.lab.out.package) exampleLabDefs;
+          labPackages = lib.mapAttrs (_: lab: lab.config.lab.out.package) digestedLabDefs;
+          digestLabs = lib.attrNames digestedLabDefs;
           charts = cataCharts;
         };
 
@@ -124,6 +127,8 @@
           cata = packages'.cataWrapped;
           cata-unwrapped = packages'.cata;
           e2e = packages'.e2e;
+          e2e-all = packages'.e2e-all;
+          refresh-digests = packages'.refresh-digests;
           option-docs = packages'.optionDocs;
           docs = packages'.docs;
         };
@@ -132,6 +137,8 @@
           default = labApp "${packages'.cataWrapped}/bin/cata";
           cata = labApp "${packages'.cataWrapped}/bin/cata";
           e2e = labApp "${packages'.e2e}/bin/cata-e2e";
+          e2e-all = labApp "${packages'.e2e-all}/bin/cata-e2e-all";
+          refresh-digests = labApp "${packages'.refresh-digests}/bin/cata-refresh-digests";
           generate-k8s-types = labApp (
             let
               configFile = pkgs.writeText "k8s-typegen-config.json" (builtins.toJSON labs.k8sTypegenConfig);
@@ -172,8 +179,10 @@
             exampleLabDefs
             e2eLabs
             ;
+          fixtureLabs = fixtureLabDefs;
+          inherit (labs) k8sTypegenConfig;
           packages = packages';
-          inherit (labs) mkLab;
+          inherit (labs) mkLab labRefusal labForce;
           inherit (labChecks) mkLabChecks;
         };
       }

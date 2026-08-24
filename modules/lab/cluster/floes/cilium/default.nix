@@ -5,28 +5,42 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  contracts,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.cilium;
 in
-(mkFloe {
-  name = "cilium";
-  version = "1.16.3";
-  imports = [ ./options.nix ];
-  module =
-    {
-      config,
-      lib,
-      k8sSpecs,
-      cfg,
-      peers,
-      ...
-    }:
+{
+  imports = [
+    (floeOptions {
+      name = "cilium";
+      version = "1.16.3";
+    })
+    ./options.nix
+  ];
+
+  options.floes.cilium.exports = {
+    routing = (import ../../../../../lib/contracts/routing.nix { inherit lib; }).routingOption;
+
+    internalEnabled = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Whether an internal-tier Gateway is on. Always false: cilium's
+        Gateway API support has no second tier, and a consumer asking gets
+        a straight no rather than an error about a field that is missing.
+      '';
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
+        optional
         optionalAttrs
         optionals
         optionalString
@@ -111,7 +125,8 @@ in
       assertions = [
         {
           assertion =
-            !(cfg.gatewayAPI.enable && cfg.gatewayAPI.tls.enable) || (peers.cert-manager.issuance != null);
+            !(cfg.gatewayAPI.enable && cfg.gatewayAPI.tls.enable)
+            || (config.floes.cert-manager.exports.issuance != null);
           message = "cilium gatewayAPI.tls.enable requires floes.cert-manager to be enabled (reconciles the Certificate CR).";
         }
       ];
@@ -184,17 +199,71 @@ in
 
       };
 
-      bundles.gateway-api-crds.yamls =
-        if cfg.gatewayAPI.enable then [ k8sSpecs.standaloneCrds.gateway-api ] else [ ];
+      cluster.prerequisites = optionalAttrs cfg.gatewayAPI.enable {
+        gateway-api-crds = {
+          yamls = [ k8sSpecs.standaloneCrds.gateway-api ];
+          provides = [ "gateway-api/crds/established" ] ++ contracts.gateway-api.crdKinds;
+        };
+      };
 
-      bundles.cilium.helmCharts.cilium = {
+      floes.cilium.bundles.cilium.helmCharts.cilium = {
         chart = chartRef;
         releaseName = "cilium";
         namespace = "kube-system";
         values = ciliumValues;
       };
-      bundles.cilium.provides = [ "cilium/cni/ready" ];
-      bundles.cilium.readyProbe = {
+      floes.cilium.capabilities.provides = {
+        cni = { };
+      }
+      // optionalAttrs cfg.gatewayAPI.enable {
+        api-gateway = contracts.api-gateway.apiGateway.claim {
+          routing = {
+            publicReady = "cilium/gateway/public/ready";
+            controllerReady = "cilium/cni/ready";
+          };
+        };
+      }
+      // optionalAttrs cfg.ingressController.enable { ingress = { }; }
+      // optionalAttrs cfg.lbIPAM.enable { loadbalancer-addresses = { }; };
+
+      # One bundle carries every name cilium claims, because they all arrive
+      # with the same chart and go away with the same setting.
+      floes.cilium.bundles.cilium.conflicts = [
+        "cni"
+      ]
+      ++ optional cfg.ingressController.enable "ingress"
+      ++ optional cfg.lbIPAM.enable "loadbalancer-addresses";
+      floes.cilium.bundles.cilium.disableWith = "floes.cilium.enable = false";
+
+      floes.cilium.bundles.cilium-gateway.conflicts = optional cfg.gatewayAPI.enable "api-gateway";
+      floes.cilium.bundles.cilium-gateway.disableWith = "floes.cilium.gatewayAPI.enable = false";
+
+      # The chart brings its own CRDs, so eval cannot scan for them.
+      floes.cilium.bundles.cilium.provides = [
+        "cilium/cni/ready"
+        "cni"
+      ]
+      ++ optional cfg.ingressController.enable "ingress"
+      ++ optional cfg.lbIPAM.enable "loadbalancer-addresses"
+      ++ [
+        "kind:cilium.io/CiliumNetworkPolicy"
+        "kind:cilium.io/CiliumClusterwideNetworkPolicy"
+        "kind:cilium.io/CiliumLoadBalancerIPPool"
+        "kind:cilium.io/CiliumL2AnnouncementPolicy"
+        "kind:cilium.io/CiliumBGPClusterConfig"
+        "kind:cilium.io/CiliumBGPPeerConfig"
+        "kind:cilium.io/CiliumBGPAdvertisement"
+        "kind:cilium.io/CiliumBGPNodeConfigOverride"
+        "kind:cilium.io/CiliumBGPPeeringPolicy"
+        "kind:cilium.io/CiliumCIDRGroup"
+        "kind:cilium.io/CiliumEgressGatewayPolicy"
+        "kind:cilium.io/CiliumEnvoyConfig"
+        "kind:cilium.io/CiliumClusterwideEnvoyConfig"
+        "kind:cilium.io/CiliumLocalRedirectPolicy"
+        "kind:cilium.io/CiliumNodeConfig"
+        "kind:cilium.io/CiliumPodIPPool"
+      ];
+      floes.cilium.bundles.cilium.readyProbe = {
         kind = "condition";
         resource = "daemonset/cilium";
         namespace = "kube-system";
@@ -202,7 +271,34 @@ in
         timeout = "10m";
       };
 
-      bundles.cilium-gateway.resources = optionalAttrs cfg.gatewayAPI.enable {
+      floes.cilium.exports.routing = lib.mkIf cfg.gatewayAPI.enable {
+        publicReady = "cilium/gateway/public/ready";
+        controllerReady = "cilium/cni/ready";
+      };
+
+      floes.cilium.bundles.cilium-gateway.requires =
+        lib.optional cfg.gatewayAPI.enable "gateway-api/crds/established";
+
+      floes.cilium.bundles.cilium-gateway.provides = lib.optionals cfg.gatewayAPI.enable (
+        [
+          "cilium/gateway/public/ready"
+          "api-gateway"
+        ]
+        ++ contracts.gateway-api.routeKinds
+      );
+
+      # A token nothing waits for orders the DAG and promises nothing, so the
+      # thing consumers gate on is backed by the same condition the gateway
+      # floe gates its own on.
+      floes.cilium.bundles.cilium-gateway.readyProbe = lib.mkIf cfg.gatewayAPI.enable {
+        kind = "condition";
+        resource = "gateway/default-gateway";
+        namespace = "kube-system";
+        condition = "Programmed";
+        timeout = "10m";
+      };
+
+      floes.cilium.bundles.cilium-gateway.resources = optionalAttrs cfg.gatewayAPI.enable {
         "cilium-gatewayclass" = {
           apiVersion = "gateway.networking.k8s.io/v1";
           kind = "GatewayClass";
@@ -261,7 +357,7 @@ in
         };
       };
 
-      bundles.cilium-gateway-tls.resources =
+      floes.cilium.bundles.cilium-gateway-tls.resources =
         optionalAttrs
           (cfg.gatewayAPI.enable && cfg.gatewayAPI.tls.enable && cfg.gatewayAPI.tls.domain != "")
           {
@@ -286,7 +382,7 @@ in
             };
           };
 
-      bundles.cilium-bgp.resources =
+      floes.cilium.bundles.cilium-bgp.resources =
         let
           poolResources = lib.listToAttrs (
             map (pool: {
@@ -364,16 +460,16 @@ in
         in
         if (cfg.lbIPAM.enable || cfg.bgp.enable) then poolResources // bgpResources else { };
 
-      provisioner.k3d.autoDeployManifests =
-        if config.cluster.provisioner == "k3d" then
-          [
-            {
-              name = "cilium";
-              content = ciliumAutoDeployManifest;
-            }
-          ]
-        else
-          [ ];
-    };
-})
-  __floeModuleArgs
+      # Cilium replaces the CNI, so it has to be present before any node can
+      # become Ready. Declared as a need rather than as a k3d mount, because
+      # writing into the k3d namespace meant every other provisioner got a
+      # cluster with no CNI and no indication why.
+      cluster.bootstrapManifests = [
+        {
+          name = "cilium";
+          content = ciliumAutoDeployManifest;
+        }
+      ];
+    }
+  );
+}

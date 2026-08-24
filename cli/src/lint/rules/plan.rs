@@ -34,7 +34,7 @@ fn check_cluster_refs(plan: &[PlannedStep], known: &HashSet<&str>) -> Vec<Diagno
             if !known.contains(cluster) {
                 diags.push(diag(
                     Severity::Error,
-                    &format!("step[{}]", idx),
+                    &format!("step[{idx}]"),
                     format!(
                         "plan step '{}' {} references unknown cluster '{}'",
                         step_kind(step),

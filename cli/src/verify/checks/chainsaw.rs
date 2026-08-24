@@ -48,6 +48,14 @@ pub fn run(ctx: &VerifyContext<'_>, package: &Path) -> Vec<Diagnostic> {
         }
 
         let Some(context) = ctx.context_for(cluster) else {
+            diags.push(diag(
+                Severity::Error,
+                CHECK,
+                cluster,
+                "kubeconfig",
+                "the lab resolves no kube context for this cluster, so its tests could not run"
+                    .to_string(),
+            ));
             continue;
         };
 

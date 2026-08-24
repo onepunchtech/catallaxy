@@ -96,7 +96,12 @@ fn prepare_volumes(
     Ok((mounts, content_changed))
 }
 
-pub fn start_service(lab_name: &str, svc_name: &str, svc: &HostService) -> Result<()> {
+pub fn start_service(
+    lab_name: &str,
+    svc_name: &str,
+    svc: &HostService,
+    provenance: &crate::domain::provenance::Provenance,
+) -> Result<()> {
     let container = svc.container.as_str();
     let image = svc.image.as_str();
     let description = svc.description.as_str();
@@ -113,17 +118,43 @@ pub fn start_service(lab_name: &str, svc_name: &str, svc: &HostService) -> Resul
     let (mut volume_mounts, content_changed) = prepare_volumes(lab_name, svc_name, &svc.volumes)?;
 
     if io::docker::container_running(container) {
+        let actual_image = io::docker::container_image(container);
+        let actual_ports = io::docker::container_ports(container);
+        let labelled_lab = io::docker::container_label(container, crate::domain::provenance::LAB);
+        let mut drift = service_drift(
+            image,
+            actual_image.as_deref(),
+            &svc.ports,
+            actual_ports.as_deref(),
+            labelled_lab.as_deref(),
+        );
         if content_changed {
-            println!(
-                "{} {} config changed, recreating...",
-                style(">>>").yellow(),
-                description,
-            );
-            io::docker::stop_container(container)?;
-        } else {
+            drift.push("config file contents changed".to_string());
+        }
+
+        // A container docker is restarting is not serving anything, whatever
+        // its configuration says. Recreating it is what picks up a repair made
+        // outside it -- a certificate this run just made readable is mounted
+        // into the old container, not the process that failed to open it --
+        // and if the cause is still there the fresh start's own check says so.
+        if io::docker::container_restarting(container) {
+            drift.push("docker is restarting it".to_string());
+        }
+
+        if drift.is_empty() {
             println!("{} {} already running", style(">>>").green(), description);
             return Ok(());
         }
+
+        println!(
+            "{} {} no longer matches the lab, recreating:",
+            style(">>>").yellow(),
+            description,
+        );
+        for line in &drift {
+            println!("      - {line}");
+        }
+        io::docker::stop_container(container)?;
     }
 
     let ports: Vec<&str> = svc.ports.iter().map(String::as_str).collect();
@@ -145,40 +176,47 @@ pub fn start_service(lab_name: &str, svc_name: &str, svc: &HostService) -> Resul
 
     println!("{} Starting {}...", style(">>>").cyan(), description);
 
-    if link.is_some()
-        || !networks.is_empty()
-        || !dns_ips.is_empty()
-        || network_mode.is_some()
-        || !cap_add.is_empty()
-    {
-        io::docker::run_container_extended(io::docker::RunContainer {
-            name: container,
-            image,
-            ports: &ports,
-            volume_mounts: &mount_refs,
-            link,
-            networks: &networks.iter().map(String::as_str).collect::<Vec<_>>(),
-            dns_ips: &dns_ips,
-            command: &command.iter().map(String::as_str).collect::<Vec<_>>(),
-            network_mode,
-            cap_add: &cap_add.iter().map(String::as_str).collect::<Vec<_>>(),
-            network_ips: &network_ips,
-        })?;
-    } else {
-        io::docker::run_container(
-            container,
-            image,
-            &ports,
-            &mount_refs,
-            &command.iter().map(String::as_str).collect::<Vec<_>>(),
-        )?;
-    }
+    io::docker::run_container_extended(io::docker::RunContainer {
+        name: container,
+        image,
+        ports: &ports,
+        volume_mounts: &mount_refs,
+        link,
+        networks: &networks.iter().map(String::as_str).collect::<Vec<_>>(),
+        dns_ips: &dns_ips,
+        command: &command.iter().map(String::as_str).collect::<Vec<_>>(),
+        network_mode,
+        cap_add: &cap_add.iter().map(String::as_str).collect::<Vec<_>>(),
+        network_ips: &network_ips,
+        labels: &provenance.labels(svc_name),
+    })?;
 
     wait_for_service_ready(svc, description)?;
+    refuse_a_crash_loop(container, description)?;
 
     println!("{} {} started", style(">>>").green(), description);
 
     Ok(())
+}
+
+/// A container docker has already had to restart did not start.
+///
+/// `container_running` is true between a crash-looper's attempts, and a
+/// service with no `readyProbe` is otherwise never asked anything, so a
+/// misconfigured one reads as started and the failure only surfaces much later
+/// as every endpoint that routes through it timing out.
+fn refuse_a_crash_loop(container: &str, description: &str) -> Result<()> {
+    let Some(restarts) = io::docker::container_restart_count(container) else {
+        return Ok(());
+    };
+    if restarts == 0 {
+        return Ok(());
+    }
+    let logs = io::docker::container_logs(container, 20)
+        .unwrap_or_else(|| "docker had no output for it".to_string());
+    bail!(
+        "{description} has restarted {restarts} time(s) since it was started, so it is not running its own configuration:\n\n{logs}"
+    );
 }
 
 fn add_extra_mounts(lab_name: &str, svc: &HostService, volume_mounts: &mut Vec<(String, String)>) {
@@ -203,13 +241,19 @@ fn network_ips(svc: &HostService) -> HashMap<String, String> {
     out
 }
 
+/// Resolvers a service should use, named by container.
+///
+/// `first_network_ip`, not `get_container_ip`: the latter reads
+/// `.NetworkSettings.IPAddress`, which is only set for the default bridge and
+/// is empty for anything on a lab's own network. This path had never been
+/// used, so it had never been noticed that it always yielded nothing.
 fn dns_container_ips(svc: &HostService) -> Vec<String> {
     svc.dns_containers
         .as_array()
         .map(|arr| {
             arr.iter()
                 .filter_map(|v| v.as_str())
-                .filter_map(io::docker::get_container_ip)
+                .filter_map(io::docker::first_network_ip)
                 .collect()
         })
         .unwrap_or_default()
@@ -418,5 +462,172 @@ mod tests {
             .collect();
         assert_eq!(nameservers, ["172.19.0.5", "1.1.1.1", "8.8.8.8"]);
         assert!(conf.contains("options timeout:1 attempts:1"), "{conf}");
+    }
+}
+
+/// What no longer matches between a declared service and the container that
+/// is running for it.
+///
+/// A running container used to be compared only against the content of its
+/// config files, so bumping the image tag in Nix printed "already running" in
+/// green and kept serving the old image. These are recreated rather than
+/// refused: they are containers on the operator's workstation, not cluster
+/// state, so recreating one is cheap and is already what a config change did.
+pub fn service_drift(
+    declared_image: &str,
+    actual_image: Option<&str>,
+    declared_ports: &[String],
+    actual_ports: Option<&[String]>,
+    labelled_lab: Option<&str>,
+) -> Vec<String> {
+    let mut drift = Vec::new();
+
+    if labelled_lab.is_none() {
+        drift.push(
+            "it was created before catallaxy recorded which lab owns a container, \
+             so nothing can attribute or clean it up"
+                .to_string(),
+        );
+    }
+
+    match actual_image {
+        Some(actual) if actual != declared_image => drift.push(format!(
+            "image: declared {declared_image}, running {actual}"
+        )),
+        _ => {}
+    }
+
+    if let Some(actual) = actual_ports {
+        let mut declared: Vec<String> = declared_ports
+            .iter()
+            .map(|p| p.trim_end_matches("/tcp").to_string())
+            .collect();
+        declared.sort();
+        if declared != actual {
+            drift.push(format!(
+                "ports: declared [{}], publishing [{}]",
+                declared.join(", "),
+                actual.join(", ")
+            ));
+        }
+    }
+
+    drift
+}
+
+#[cfg(test)]
+mod drift_tests {
+
+    /// The ingress publishes the same container port twice, on loopback and
+    /// on the lab's gateway. Comparing without the address made both sides
+    /// read as `80:80`, the declaration never matched, and every `lab up`
+    /// rebuilt the container while claiming to be idempotent.
+    #[test]
+    fn a_port_published_on_two_addresses_is_not_drift() {
+        let declared = vec![
+            "127.0.0.1:8082:80".to_string(),
+            "172.22.0.1:80:80".to_string(),
+        ];
+        let actual = vec![
+            "127.0.0.1:8082:80".to_string(),
+            "172.22.0.1:80:80".to_string(),
+        ];
+        let d = service_drift("img", Some("img"), &declared, Some(&actual), Some("lab"));
+        assert!(d.is_empty(), "{d:?}");
+    }
+    use super::*;
+
+    fn drift(
+        image: &str,
+        actual: Option<&str>,
+        ports: &[String],
+        actual_ports: Option<&[String]>,
+    ) -> Vec<String> {
+        service_drift(image, actual, ports, actual_ports, Some("a-lab"))
+    }
+
+    #[test]
+    fn a_matching_container_has_no_drift() {
+        assert!(
+            drift(
+                "traefik:v3.3.6",
+                Some("traefik:v3.3.6"),
+                &["8080:80".to_string()],
+                Some(&["8080:80".to_string()])
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_container_from_before_labels_is_drift_so_the_next_up_relabels_it() {
+        let d = service_drift("img", Some("img"), &[], Some(&[]), None);
+        assert_eq!(d.len(), 1);
+        assert!(d[0].contains("which lab owns"), "{d:?}");
+    }
+
+    // The reported bug: bumping the tag in Nix left the old image serving and
+    // printed "already running" in green.
+    #[test]
+    fn a_bumped_image_tag_is_drift() {
+        let drift = drift("traefik:v3.4.0", Some("traefik:v3.3.6"), &[], Some(&[]));
+        assert_eq!(drift.len(), 1);
+        assert!(drift[0].contains("v3.4.0"), "{drift:?}");
+        assert!(drift[0].contains("v3.3.6"), "{drift:?}");
+    }
+
+    #[test]
+    fn a_changed_port_is_drift() {
+        let drift = drift(
+            "img",
+            Some("img"),
+            &["9090:80".to_string()],
+            Some(&["8080:80".to_string()]),
+        );
+        assert_eq!(drift.len(), 1);
+        assert!(drift[0].starts_with("ports:"), "{drift:?}");
+    }
+
+    #[test]
+    fn the_order_docker_lists_ports_in_is_not_a_change() {
+        assert!(
+            drift(
+                "img",
+                Some("img"),
+                &["9090:90".to_string(), "8080:80".to_string()],
+                Some(&["8080:80".to_string(), "9090:90".to_string()])
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_tcp_suffix_on_one_side_only_is_not_a_change() {
+        assert!(
+            drift(
+                "img",
+                Some("img"),
+                &["8080:80/tcp".to_string()],
+                Some(&["8080:80".to_string()])
+            )
+            .is_empty()
+        );
+    }
+
+    // A container we cannot inspect is not a container that matches.
+    #[test]
+    fn an_unreadable_container_reports_nothing_rather_than_a_false_match() {
+        assert!(drift("img", None, &["8080:80".to_string()], None).is_empty());
+    }
+
+    #[test]
+    fn several_changes_are_all_reported() {
+        let drift = drift(
+            "new",
+            Some("old"),
+            &["9090:80".to_string()],
+            Some(&["8080:80".to_string()]),
+        );
+        assert_eq!(drift.len(), 2);
     }
 }

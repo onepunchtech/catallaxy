@@ -63,3 +63,19 @@ path = "src/bin/cata.rs"
 [[bin]]
 name = "cata-build"
 path = "src/bin/cata-build.rs"
+
+# Lints beyond clippy's default, chosen because each one found something.
+# `#[allow]` is forbidden anywhere in cli/ by `cli-no-lint-suppressions`, so a
+# lint listed here has to be worth fixing everywhere, every time.
+#
+# Deliberately absent: `use_self` and `must_use_candidate`, which between them
+# flag 550 sites, found no defect, and would rewrite most of the crate's `git
+# blame`. `format_push_string` too: its suggested rewrite swallows a Result to
+# save an allocation that is not on any hot path.
+[lints.clippy]
+# Async that never awaits colours every caller. 45 of these existed, and the
+# step dispatcher already handled sync and async arms side by side, so the
+# uniformity they looked like was not one.
+unused_async = "deny"
+uninlined_format_args = "deny"
+redundant_closure = "deny"

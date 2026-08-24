@@ -93,7 +93,8 @@ let
       elif [ "$CODE" = "404" ]; then
         log "creating org '$ORG'"
         curl -sf -X POST "''${AUTH[@]}" \
-          -d "$(jq -n --arg u "$ORG" '{ username: $u, visibility: "private" }')" \
+          -d "$(jq -n --arg u "$ORG" --arg v "$ORG_VISIBILITY" \
+                '{ username: $u, visibility: $v }')" \
           "$FORGEJO_URL/api/v1/orgs" >/dev/null
       else
         log "unexpected HTTP $CODE probing org '$ORG'" >&2
@@ -423,6 +424,10 @@ let
             value = orgsJson;
           }
           {
+            name = "ORG_VISIBILITY";
+            value = cfg.orgVisibility;
+          }
+          {
             name = "REPOS_JSON";
             value = reposJson;
           }
@@ -501,8 +506,27 @@ in
       default = [ ];
       description = ''
         Orgs to ensure exist. Idempotent, created only if missing.
-        Visibility hardcoded to `private`; make it an option if a
-        consumer needs public orgs later.
+        `orgVisibility` decides what they are created as.
+      '';
+    };
+
+    orgVisibility = mkOption {
+      type = types.enum [
+        "private"
+        "public"
+        "limited"
+      ];
+      default = "private";
+      description = ''
+        Visibility every org in `orgs` is created with.
+
+        A repository inside a private org is not readable without a token
+        however the repository itself is marked, so a lab whose second
+        cluster reads the manifests repo anonymously needs the org public
+        as well as the repo.
+
+        Applies at creation only, like everything else here: an org that
+        already exists is left as it is.
       '';
     };
 
@@ -599,7 +623,7 @@ in
   };
 
   config = mkIf (forgejoCfg.enable && cfg.enable) {
-    steps.bootstrap-forgejo = {
+    floes.forgejo.steps.bootstrap-forgejo = {
       kind = "bootstrap-forgejo-repos";
       after = [ (planTokens.needs (planTokens.cluster config.cluster.name).argocdInstalled) ];
       provides = [
@@ -631,7 +655,7 @@ in
       };
     };
 
-    bundles.forgejo-bootstrap = {
+    floes.forgejo.bundles.forgejo-bootstrap = {
       resources = rbac // jobResources;
 
       owner = {

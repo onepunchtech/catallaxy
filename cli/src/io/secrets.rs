@@ -11,6 +11,12 @@ use crate::domain::secrets::{
     Backend, EnvVarBinding, SecretsSpec, StoreValues, describe_store_problems, validate_store,
 };
 
+/// # Errors
+///
+/// If a sops store's encrypted file is missing, if it cannot be decrypted, or
+/// if the store's backend is one nothing here reads. An env-backed store whose
+/// variables are unset is not an error; the values are simply absent, and
+/// [`validate_store`] is what reports that.
 pub fn load_store(
     ctx: &CataContext,
     lab_name: &str,
@@ -76,6 +82,13 @@ pub fn store_file_path(ctx: &CataContext, lab_name: &str, store_name: &str) -> P
     primary
 }
 
+/// Read every store this machine can read, once, for the length of a command.
+///
+/// # Errors
+///
+/// If any readable store fails to load. A lab whose stores are all unreadable
+/// here is `Ok(None)` rather than an error, because that is the normal case on
+/// a machine without the keys.
 pub fn load_secrets_cache(
     ctx: &CataContext,
     lab_name: &str,

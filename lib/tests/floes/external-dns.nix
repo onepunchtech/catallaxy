@@ -16,11 +16,9 @@ let
   stubClusterName =
     { lib, ... }:
     {
-      options.cluster = lib.mkOption {
-        type = lib.types.attrs;
-        default = {
-          name = "isolation-test";
-        };
+      options.cluster.name = lib.mkOption {
+        type = lib.types.str;
+        default = "isolation-test";
       };
     };
 

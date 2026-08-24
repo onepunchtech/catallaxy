@@ -28,6 +28,10 @@
     cluster.security.networkPolicies.enable = true;
 
     floes.crossplane.enable = true;
+    # capi-operator wants a cert-manager on its own cluster; the one this lab
+    # runs is on idm.
+    floes.cert-manager.enable = true;
+
     # A cluster-api floe that is not the management cluster renders nothing
     # at all, so enabling it without this would claim its images are complete
     # while checking an empty directory.
@@ -62,5 +66,8 @@
     cluster.security.networkPolicies.enable = true;
 
     floes.cilium.enable = true;
+    # Kept on here, against the default, so cilium's Gateway API path stays
+    # rendered and checked by something.
+    floes.cilium.gatewayAPI.enable = true;
   };
 }

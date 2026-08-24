@@ -55,10 +55,32 @@ let
       if [ ! -s "$out" ]; then touch $out; fi
     '';
 
+  extractTemplatedCrds =
+    name: chart:
+    pkgs.runCommand "${name}-crds.yaml"
+      {
+        nativeBuildInputs = [
+          pkgs.kubernetes-helm
+          pkgs.yq-go
+        ];
+      }
+      ''
+        export HELM_CACHE_HOME=$PWD/.helm HELM_CONFIG_HOME=$PWD/.helm HELM_DATA_HOME=$PWD/.helm
+        helm template ${name} ${chart} \
+          | yq 'select(.kind == "CustomResourceDefinition")' - > $out
+        if [ ! -s "$out" ]; then
+          echo "${name} declares its CRDs as templates but rendering produced none," >&2
+          echo "so either the chart moved them or the values now gate them off." >&2
+          exit 1
+        fi
+      '';
+
   buildCrds =
     name: chartDrv: crdDef:
     if crdDef == null then
       null
+    else if crdDef.type == "templated" then
+      extractTemplatedCrds name chartDrv
     else if crdDef.type == "url" then
       pkgs.fetchurl {
         inherit (crdDef) url hash;
@@ -94,6 +116,9 @@ let
       chart = "trust-manager";
       version = "0.22.1";
       chartHash = "sha256-No3nepftJ5d9+5eXkgDCR4iAKun46a3rbI+uz4FxGSw=";
+      crd = {
+        type = "templated";
+      };
     };
 
     reloader = {

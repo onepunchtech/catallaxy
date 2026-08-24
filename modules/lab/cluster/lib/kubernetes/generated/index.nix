@@ -24,9 +24,12 @@ let
       crossplane = import ./crds/crossplane.nix { inherit lib k8sTypes; };
       external_dns = import ./crds/external_dns.nix { inherit lib k8sTypes; };
       external_secrets = import ./crds/external_secrets.nix { inherit lib k8sTypes; };
+      gateway_api = import ./crds/gateway_api.nix { inherit lib k8sTypes; };
       kaniop = import ./crds/kaniop.nix { inherit lib k8sTypes; };
+      netbird_operator = import ./crds/netbird_operator.nix { inherit lib k8sTypes; };
       prometheus = import ./crds/prometheus.nix { inherit lib k8sTypes; };
       redis_operator = import ./crds/redis_operator.nix { inherit lib k8sTypes; };
+      trust_manager = import ./crds/trust_manager.nix { inherit lib k8sTypes; };
       velero = import ./crds/velero.nix { inherit lib k8sTypes; };
     };
 
@@ -74,6 +77,60 @@ let
     in
     k8sFlat // crdFlat;
 
+  typesByKind =
+    versionedTypes:
+    let
+      inherit (builtins)
+        isAttrs
+        attrNames
+        foldl'
+        elem
+        ;
+      inherit (lib) filterAttrs;
+      groups = filterAttrs (n: v: isAttrs v && !(elem n reservedAttrs)) versionedTypes;
+      addKinds =
+        acc: kinds: foldl' (a: k: a // { ${k} = (a.${k} or [ ]) ++ [ kinds.${k} ]; }) acc (attrNames kinds);
+      addGroup = acc: group: foldl' (a: av: addKinds a group.${av}) acc (attrNames group);
+      k8sByKind = foldl' (acc: gn: addGroup acc groups.${gn}) { } (attrNames groups);
+    in
+    if versionedTypes ? crds then
+      foldl' (acc: cn: addKinds acc versionedTypes.crds.${cn}) k8sByKind (attrNames versionedTypes.crds)
+    else
+      k8sByKind;
+
+  # Kinds the API server ships, as a set. Everything else needs something to
+  # install its CRD first, which is what makes this the dividing line for a
+  # derived `kind:` requirement. `crds` is excluded on purpose: a vendor CRD
+  # being in the generated schemas says catallaxy can type-check it, not that
+  # any cluster has it.
+  coreKinds =
+    versionedTypes:
+    let
+      inherit (builtins)
+        isAttrs
+        attrNames
+        foldl'
+        elem
+        ;
+      inherit (lib) filterAttrs;
+      groups = filterAttrs (n: v: isAttrs v && !(elem n reservedAttrs)) versionedTypes;
+      addGroup =
+        acc: group:
+        foldl' (a: av: a // lib.genAttrs (attrNames group.${av}) (_: true)) acc (attrNames group);
+    in
+    foldl' (acc: gn: addGroup acc groups.${gn}) { } (attrNames groups);
+
+  apiVersionOfType = type: (type.getSubOptions [ ]).apiVersion.default or null;
+
+  apiVersionsForKind = byKind: kind: map apiVersionOfType (byKind.${kind} or [ ]);
+
+  resolveResourceType =
+    byKind: apiVersion: kind:
+    let
+      matching = builtins.filter (t: apiVersionOfType t == apiVersion) (byKind.${kind} or [ ]);
+    in
+    if matching == [ ] then null else builtins.head matching;
+
 in
 {
   inherit
@@ -81,6 +138,12 @@ in
     loadCrds
     forVersion
     flattenTypes
+    ;
+  inherit
+    typesByKind
+    apiVersionsForKind
+    resolveResourceType
+    coreKinds
     ;
 
   default = forVersion "1.31";

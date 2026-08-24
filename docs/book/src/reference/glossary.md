@@ -21,20 +21,21 @@ explanation is maintained.
 | **Token**  | A short string meaning "this is ready", such as `cert-manager/webhook/ready`. Arbitrary: only the matching matters. | [How It Works](../understanding/how-it-works.md) |
 | **Anchor** | "Order me against that", where "that" is a set of nodes an expression selects: a token, a kind, or a bundle name.   | [Anchors and Tokens](./anchors.md)               |
 
-## The overloaded words
+## Which level a word belongs to
 
-Three words mean one thing on a bundle and another on a floe.
-[How It Works](../understanding/how-it-works.md) draws the distinction and
-is the page to correct if it drifts.
+Ordering is said on bundles; interface is said on floes. Nothing is said at
+both levels. [How It Works](../understanding/how-it-works.md) draws the
+distinction and is the page to correct if it drifts.
 
-| Term         | On a bundle                     | On a floe                                      |
-| ------------ | ------------------------------- | ---------------------------------------------- |
-| **provides** | readiness tokens it publishes   | not used                                       |
-| **requires** | tokens that must be ready first | names of other floes that must also be enabled |
-| **exports**  | not used                        | the typed values other floes can read          |
+| Term         | On a bundle                     | On a floe                             |
+| ------------ | ------------------------------- | ------------------------------------- |
+| **provides** | readiness tokens it publishes   | not used                              |
+| **requires** | tokens that must be ready first | not used                              |
+| **exports**  | not used                        | the typed values other floes can read |
 
-The bundle forms create ordering edges. The floe form of `requires` produces
-an error message, not an edge.
+A floe has no dependency list. What it needs is said on its bundles, as
+names rather than floe names, because naming a floe would name an
+implementation where the question is which job.
 
 ## Building and running
 

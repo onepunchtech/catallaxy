@@ -5,7 +5,7 @@ use crate::domain::plan::DnsSetupParams;
 use crate::host::dns;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &DnsSetupParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &DnsSetupParams) -> Result<()> {
     let DnsSetupParams { host, port, zone } = p;
 
     if sctx.dry_run {
@@ -18,5 +18,5 @@ pub async fn run(sctx: &StepContext<'_>, p: &DnsSetupParams) -> Result<()> {
         );
         return Ok(());
     }
-    dns::dns_setup(host, *port, zone).await
+    dns::dns_setup(host, *port, zone)
 }

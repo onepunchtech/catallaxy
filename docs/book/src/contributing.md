@@ -50,15 +50,23 @@ did not intend to touch is the check doing its job.
 than long imperative bodies. Functions are `In → Out` mappings over
 well-defined types.
 
-**One purpose per file, under about 1000 lines.** Every source file opens
-with a header of at most five lines saying what it is for. If the header
-would be a list, the module is not cohesive. A file reduced below the limit
-may not grow back past it.
+**One purpose per file, under about 1000 lines.** If you cannot say what a
+file is for in one sentence, it is not cohesive. A file reduced below the
+limit may not grow back past it.
+`modules/lab/cluster/floes/netbird/default.nix` is the one file well past
+it, and splitting it is outstanding work rather than a precedent.
 
-**Comments explain why, never what.** Identifiers say what. A comment earns
-its place by recording a non-obvious invariant, a constraint, or a
-workaround, and for a workaround, recording the symptom and the date of the
-incident that motivated it is house style, not clutter.
+**Say it in the option, not in a comment.** A floe's options and types are
+the surface a user reads, and `description` is rendered into the generated
+reference, so rationale belongs there where there is an option to hang it
+on. `modules/lab/cluster/floe-options.nix` and `lib/infra/types.nix` are
+what this looks like.
+
+**Comments explain why, never what.** Identifiers say what, and a file's
+path says what it is for, so neither needs restating. A comment earns its
+place by recording a non-obvious invariant, a constraint, or a workaround,
+and for a workaround, recording the symptom and the date of the incident
+that motivated it is house style, not clutter.
 
 **Types live beside the module that owns them.** A type consumed from more
 than one place does not belong in a `let`.
@@ -114,19 +122,30 @@ and the reason for each one it cannot.
 `gitops.local` takes about two minutes and wants `sudo` once, because
 `publish-manifests` pushes to a git remote only the lab's DNS knows about.
 
-Two labs can be up at once, but only if they do not want the same host
-ports. Container names are derived from the lab name, so those never clash;
+Labs can be up at once, and every example now has its own host ports so they
+can be. Container names are derived from the lab name, so those never clash;
 the ports are `lab.proxy.httpPort`, `lab.proxy.httpsPort`,
-`lab.dns.hostPort` and `lab.registry.port`, and every example takes the
-defaults. `cata lab up` checks the ports and the docker subnet before it
-starts anything and says which to change.
+`lab.dns.hostPort` and `lab.registry.port`, and the `lab-host-ports` check
+refuses a set that overlaps another lab's. `cata lab up` checks the ports
+and the docker subnet before it starts anything and says which to change.
 
-The e2e script still refuses to run beside another lab, because it asserts
-that nothing survives teardown and cannot tell your containers from its own.
+Each lab writes its own kubeconfig, under its state directory rather than
+into `~/.kube/config`, so two labs coming up together cannot lose each
+other's clusters. `eval "$(cata lab env <lab>)"` points your shell at one.
 
-Which labs CI runs is a hand-written list in the matrix at the top of
-`e2e.yml`: `minimal.local` and `homelab.local`, on every trigger. Add a lab
-to the list to have it tested.
+`cata-e2e` runs one lab and asserts nothing of _that lab_ survives its
+teardown, so it can run beside another. `cata-e2e-all` runs every eligible
+lab, `--jobs N` at a time, and prints the log of any that failed.
+
+Which labs CI runs is derived from `lab.out.selfContained.eligible` rather
+than hand-written, so a lab that grows a cloud cluster or a sops store
+leaves the matrix on its own.
+
+Three of the eligible labs set `lab.dns.configureHost`, which writes a
+resolver drop-in under `/etc/systemd/resolved.conf.d` and so wants `sudo`.
+CI runners give it without a password; a workstation usually does not, so
+those labs fail non-interactively on `sudo` rather than on anything about
+the lab.
 
 Whether a lab _can_ run on a runner at all is still derived:
 
@@ -197,15 +216,24 @@ there is no table to update.
 obligations for one that lives here:
 
 **Register it.** There is no auto-discovery, so add the directory to
-`modules/lab/cluster/floes/default.nix`. In-tree floes use the
-trailing-application idiom, because `mkFloe` returns a module _function_ and
-the floe needs its own captured module arguments:
+`modules/lab/cluster/floes/default.nix`. An in-tree floe is an ordinary
+module, and reaches the shared option set through the same barrel it takes
+`refs` from:
 
 ```nix
-{ config, lib, pkgs, cataCharts, k8sSpecs, k8sHelpers, ... }@__floeModuleArgs:
-let inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe; in
-(mkFloe { name = "<name>"; imports = [ ./options.nix ]; module = { cfg, ... }: { }; })
-  __floeModuleArgs
+{ config, lib, pkgs, cataCharts, k8sSpecs, k8sHelpers, ... }:
+let
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.<name>;
+in
+{
+  imports = [
+    (floeOptions { name = "<name>"; })
+    ./options.nix
+  ];
+
+  config = lib.mkIf cfg.enable { };
+}
 ```
 
 **Pin the chart** in `lib/charts.nix` rather than taking one from elsewhere.
@@ -221,10 +249,15 @@ gate on them being established.
 something about itself that is true only when it works. Every lab enabling
 the floe inherits it, so this is where e2e coverage comes from. See
 [Verifying a Running Lab](./reference/verify.md), and note that `expect`
-means "at least one": use `reject` for "all of them". If the floe declares
-typed `exports`, add it to `lib/tests/floes/exports-defaults.nix` too,
-because an export without a default breaks option-doc generation, a long way
-from where you would look.
+means "at least one": use `reject` for "all of them".
+
+**Give every export a default.** `checks.every-floe-export-has-a-default`
+reads every floe's exports with nothing enabled and names any floe that
+cannot answer, so this needs no per-floe registration. Where there is no
+value until the floe runs, the default is `null` and the type `nullOr`.
+`lib/tests/floes/exports-defaults.nix` is the separate, hand-written check
+that pins what particular defaults _are_, and is worth extending when a
+default is load-bearing.
 
 **Regenerate types** with `nix run .#generate-k8s-types` if the CRDs
 changed, and commit the result.

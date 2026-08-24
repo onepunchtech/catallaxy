@@ -9,6 +9,7 @@
 let
   inherit (lib) mkOption mkEnableOption types;
   inherit (import ../../../../../lib/floe { inherit lib; }) refs;
+  contracts = import ../../../../../lib/contracts { inherit lib; };
 in
 {
   options.floes.otel-collector = {
@@ -84,23 +85,8 @@ in
           description = "Hostname the gateway accepts OTLP on from outside the cluster. Null keeps it internal.";
         };
         tls = {
-          issuerRef = mkOption {
-            type = types.nullOr (
-              types.submodule {
-                options = {
-                  name = mkOption {
-                    type = types.str;
-                    description = "Name of the issuer.";
-                  };
-                  kind = mkOption {
-                    type = types.str;
-                    default = "ClusterIssuer";
-                    description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
-                  };
-                };
-              }
-            );
-            default = null;
+          issuerRef = contracts.tls.issuerRefOption {
+            default = contracts.tls.defaultIssuer config;
             description = "Issuer that signs the gateway's serving certificate. Null mints none.";
           };
           secretName = mkOption {

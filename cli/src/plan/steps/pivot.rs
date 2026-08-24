@@ -8,7 +8,7 @@ use crate::domain::plan::PivotParams;
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &PivotParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &PivotParams) -> Result<()> {
     let PivotParams {
         cluster,
         bootstrap_context: bootstrap_ctx,
@@ -25,7 +25,7 @@ pub async fn run(sctx: &StepContext<'_>, p: &PivotParams) -> Result<()> {
             cluster
         );
         if Path::new(&cluster_manifests).exists() {
-            apply_stage1_to_target(sctx, cluster, &cluster_manifests, target_ctx).await?;
+            apply_stage1_to_target(sctx, cluster, &cluster_manifests, target_ctx)?;
         }
         cleanup_leftover_bootstrap(sctx, cluster, bootstrap_ctx)?;
         return Ok(());
@@ -51,7 +51,7 @@ pub async fn run(sctx: &StepContext<'_>, p: &PivotParams) -> Result<()> {
             style(">>>").cyan(),
             cluster
         );
-        apply_stage1_to_target(sctx, cluster, &cluster_manifests, target_ctx).await?;
+        apply_stage1_to_target(sctx, cluster, &cluster_manifests, target_ctx)?;
     }
 
     if sctx.dry_run {
@@ -81,7 +81,7 @@ pub async fn run(sctx: &StepContext<'_>, p: &PivotParams) -> Result<()> {
     Ok(())
 }
 
-async fn apply_stage1_to_target(
+fn apply_stage1_to_target(
     sctx: &StepContext<'_>,
     cluster: &str,
     cluster_manifests: &str,
@@ -121,7 +121,6 @@ async fn apply_stage1_to_target(
             ..crate::apply::ApplyRequest::for_cluster(cluster)
         },
     )
-    .await
 }
 
 fn migrate_provisioner_state(

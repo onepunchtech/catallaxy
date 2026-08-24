@@ -7,54 +7,66 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.openebs;
 in
-(mkFloe {
-  name = "openebs";
-  version = "4.1.1";
-  imports = [ ./options.nix ];
-  module =
-    { cfg, ... }:
-    {
-      floes.openebs.network = {
-        declared = true;
-      };
+{
+  imports = [
+    (floeOptions {
+      name = "openebs";
+      version = "4.1.1";
+    })
+    ./options.nix
+  ];
 
-      floes.openebs.imagesComplete = true;
+  config = lib.mkIf cfg.enable {
+    floes.openebs.network = {
+      declared = true;
+    };
 
-      floes.openebs.images.localPathProvisioner = {
-        repository = "rancher/local-path-provisioner";
-        tag = "v0.0.28";
-      };
+    floes.openebs.imagesComplete = true;
 
-      bundles.openebs = {
-        includeInBootstrap = false;
-        helmCharts.openebs = {
-          chart = cfg.chart;
-          releaseName = "local-path-provisioner";
-          namespace = cfg.namespace;
-          createNamespace = true;
-          values = {
-            storageClass = {
-              name = "local-path";
-              defaultClass = true;
-            };
+    floes.openebs.images.localPathProvisioner = {
+      repository = "rancher/local-path-provisioner";
+      tag = "v0.0.28";
+    };
+
+    floes.openebs.capabilities.provides.default-storage-class = { };
+
+    floes.openebs.bundles.openebs = {
+      includeInBootstrap = false;
+
+      conflicts = [ "default-storage-class" ];
+      disableWith = "floes.openebs.enable = false";
+
+      helmCharts.openebs = {
+        chart = cfg.chart;
+        releaseName = "local-path-provisioner";
+        namespace = cfg.namespace;
+        createNamespace = true;
+        values = {
+          storageClass = {
+            name = "local-path";
+            defaultClass = true;
           };
         };
-        createNamespaces = [ cfg.namespace ];
+      };
+      createNamespaces = [ cfg.namespace ];
 
-        provides = [ "openebs/storage/ready" ];
-        readyProbe = {
-          kind = "condition";
-          resource = "daemonset/openebs-localpv-provisioner";
-          namespace = cfg.namespace;
-          condition = "Available";
-          timeout = "5m";
-        };
+      provides = [
+        "openebs/storage/ready"
+        "default-storage-class"
+      ];
+      readyProbe = {
+        kind = "condition";
+        resource = "daemonset/openebs-localpv-provisioner";
+        namespace = cfg.namespace;
+        condition = "Available";
+        timeout = "5m";
       };
     };
-})
-  __floeModuleArgs
+  };
+}

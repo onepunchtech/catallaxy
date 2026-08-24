@@ -4,11 +4,10 @@
 [004] ensure-secrets name=ensure-secrets params.stores=["bootstrap","trust"]
 [005] trust-bundle name=trust-bundle
 [006] setup-services name=setup-services
-[007] dns-setup name=dns-setup params.host=127.0.0.1 params.port=5354 params.zone=mesh.test
-[008] registry-setup name=registry-setup params.port=5050 params.upstreams=["codeberg.org","registry.k8s.io","ghcr.io","quay.io","docker.io"] params.zone=mesh.test
-[009] warm-cache name=warm-cache
-[010] create-cluster name=create-cluster-apps params.name=apps params.provisioner=k3d
-[011] create-cluster name=create-cluster-mgmt params.name=mgmt params.provisioner=k3d
-[012] deploy-manifests name=deploy-manifests-apps params.kubeContext=k3d-mesh-local-apps params.target=apps
-[013] deploy-manifests name=deploy-manifests-mgmt params.kubeContext=k3d-mesh-local-mgmt params.target=mgmt
-[014] run-script name=mgmt-netbird-mesh-join policy.interactive=true params.bin=/nix/store/HASH-login/bin/login
+[007] registry-setup name=registry-setup params.port=5052 params.upstreams=["codeberg.org","registry.k8s.io","ghcr.io","quay.io","docker.io","public.ecr.aws","oci.external-secrets.io"] params.zone=mesh.test
+[008] warm-cache name=warm-cache
+[009] create-cluster name=create-cluster-apps params.name=apps params.provisioner=k3d
+[010] create-cluster name=create-cluster-mgmt params.name=mgmt params.provisioner=k3d
+[011] deploy-manifests name=deploy-manifests-apps params.kubeContext=k3d-mesh-local-apps params.target=apps
+[012] deploy-manifests name=deploy-manifests-mgmt params.kubeContext=k3d-mesh-local-mgmt params.target=mgmt
+[013] run-script name=mgmt-netbird-mesh-join policy.interactive=true params.bin=/nix/store/HASH-login/bin/login

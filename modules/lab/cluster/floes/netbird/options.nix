@@ -306,24 +306,8 @@ in
     };
 
     tls = {
-      issuerRef = mkOption {
-        type = types.nullOr (
-          types.submodule {
-            options = {
-              name = mkOption {
-                type = types.str;
-                description = "Name of the issuer.";
-              };
-              kind = mkOption {
-                type = types.str;
-                default = "ClusterIssuer";
-                description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
-              };
-            };
-          }
-        );
-
-        default = config.floes.cert-manager.exports.defaultIssuerRef or null;
+      issuerRef = contracts.tls.issuerRefOption {
+        default = contracts.tls.defaultIssuer config;
         description = "Issuer that signs the serving certificate. Null mints none.";
       };
       secretName = mkOption {
@@ -545,7 +529,7 @@ in
           management validates tokens against. Null disables OIDC
           entirely: a setup-key-only lab needs no identity provider.
 
-          Wiring against kanidm: `peers.kanidm.oauth2Clients.<id>` for a
+          Wiring against kanidm: `config.floes.kanidm.exports.oauth2Clients.<id>` for a
           client declared `public = true`.
         '';
       };

@@ -17,6 +17,10 @@ let
   prefixUtil = import ./prefix.nix { inherit lib pkgs; };
   imageUtil = import ./images.nix { inherit lib pkgs; };
 
+  deliveryBundle = {
+    argocd = "argocd-root";
+  };
+
 in
 {
   inherit
@@ -24,6 +28,7 @@ in
     dirBuilder
     prefixUtil
     imageUtil
+    deliveryBundle
     ;
 
   chainsaw = import ./chainsaw.nix { inherit lib pkgs; };
@@ -47,6 +52,7 @@ in
       prefixUtil
       imageUtil
       ;
+    deliveryBundle = deliveryBundle.argocd;
   };
   fleet = import ./fleet.nix {
     inherit

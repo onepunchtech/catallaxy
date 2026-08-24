@@ -1,0 +1,28 @@
+# Kinds applied with no schema checking them.
+#
+# A per-lab check fails on anything not listed here; a union check fails on
+# any line here that no lab skips any more. So this file can only shrink.
+#
+# Every entry belongs to Cluster API or a Crossplane provider. Their CRDs are
+# installed at runtime by an operator rather than shipped with the chart, so
+# they were never inputs to `nix run .#generate-k8s-types`. Closing these
+# means adding `crd` definitions to lib/charts.nix and regenerating, which is
+# tracked separately from the pass that created this file.
+#
+# The list was empty before examples/labs/tests/cloud-resources.nix existed.
+# That read as full coverage and was really absence: no lab declared a single
+# cloud resource, so nothing rendered these kinds for kubeconform to skip.
+
+bootstrap.cluster.x-k8s.io/v1alpha3/TalosConfigTemplate
+cluster.x-k8s.io/v1beta2/Cluster
+cluster.x-k8s.io/v1beta2/MachineDeployment
+controlplane.cluster.x-k8s.io/v1alpha3/TalosControlPlane
+digitalocean.crossplane.io/v1beta1/ProviderConfig
+droplet.digitalocean.crossplane.io/v1alpha1/Droplet
+infrastructure.cluster.x-k8s.io/v1beta1/DockerCluster
+infrastructure.cluster.x-k8s.io/v1beta1/DockerMachineTemplate
+kubernetes.digitalocean.crossplane.io/v1alpha1/Cluster
+networking.digitalocean.crossplane.io/v1alpha1/Loadbalancer
+record.upjet-cloudflare.m.upbound.io/v1alpha1/Record
+upjet-cloudflare.upbound.io/v1beta1/ProviderConfig
+zone.upjet-cloudflare.m.upbound.io/v1alpha1/Zone

@@ -7,71 +7,62 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.prometheus;
 in
-(mkFloe {
-  name = "prometheus";
-  version = "65.1.0";
-  imports = [ ./options.nix ];
-
-  requires = [
-    "gateway"
-    "cert-manager"
+{
+  imports = [
+    (floeOptions {
+      name = "prometheus";
+      version = "65.1.0";
+    })
+    ./options.nix
   ];
 
-  exports =
-    { lib, ... }:
-    {
-      metrics = lib.mkOption {
-        type = refs.mkCapability {
-          scrapeReady = refs.tokenOption ''"Prometheus is scraping and accepting remote-write."'';
-          crdsEstablished = refs.tokenOption ''"The monitoring.coreos.com CRDs are established." Needed before emitting a ServiceMonitor or PrometheusRule.'';
-        };
-        default = null;
-        description = ''
-          Metrics collection, or null when this floe is off. Consumers
-          that export metrics or emit a ServiceMonitor assert on this
-          rather than on `floes.prometheus.enable`.
-        '';
+  options.floes.prometheus.exports = {
+    metrics = lib.mkOption {
+      type = refs.mkCapability {
+        scrapeReady = refs.tokenOption ''"Prometheus is scraping and accepting remote-write."'';
+        crdsEstablished = refs.tokenOption ''"The monitoring.coreos.com CRDs are established." Needed before emitting a ServiceMonitor or PrometheusRule.'';
       };
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local";
-        description = "In-cluster Prometheus service DNS name.";
-      };
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "prometheus";
-        description = "Namespace Prometheus runs in.";
-      };
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = 9090;
-        description = "Prometheus HTTP API port.";
-      };
-      url = lib.mkOption {
-        type = lib.types.str;
-        default = "http://prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local:9090";
-        description = "Prometheus base URL (http://host:port).";
-      };
-      remoteWriteUrl = lib.mkOption {
-        type = lib.types.str;
-        default = "http://prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local:9090/api/v1/write";
-        description = "Prometheus remote-write endpoint (/api/v1/write).";
-      };
+      default = null;
+      description = ''
+        Metrics collection, or null when this floe is off. Consumers
+        that export metrics or emit a ServiceMonitor assert on this
+        rather than on `floes.prometheus.enable`.
+      '';
     };
-  module =
-    {
-      config,
-      lib,
-      cfg,
-      peers,
-      cataCharts,
-      ...
-    }:
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local";
+      description = "In-cluster Prometheus service DNS name.";
+    };
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "prometheus";
+      description = "Namespace Prometheus runs in.";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 9090;
+      description = "Prometheus HTTP API port.";
+    };
+    url = lib.mkOption {
+      type = lib.types.str;
+      default = "http://prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local:9090";
+      description = "Prometheus base URL (http://host:port).";
+    };
+    remoteWriteUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://prometheus-kube-prometheus-prometheus.prometheus.svc.cluster.local:9090/api/v1/write";
+      description = "Prometheus remote-write endpoint (/api/v1/write).";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib) optionalAttrs;
 
@@ -187,10 +178,10 @@ in
 
       };
 
-      bundles.prometheus-crds.yamls = [ cataCharts.prometheus.crds ];
-      bundles.prometheus-crds.provides = [ "prometheus/crds/established" ];
+      floes.prometheus.bundles.prometheus-crds.yamls = [ cataCharts.prometheus.crds ];
+      floes.prometheus.bundles.prometheus-crds.provides = [ "prometheus/crds/established" ];
 
-      bundles.prometheus = {
+      floes.prometheus.bundles.prometheus = {
         helmCharts.prometheus = {
           chart = cfg.chart;
           releaseName = "prometheus";
@@ -268,9 +259,14 @@ in
         requires = [
           "prometheus/crds/established"
         ]
-        ++ refs.needs peers.cert-manager.issuance "webhookReady"
-        ++ refs.needs peers.gateway.routing "publicReady";
-        provides = [ "prometheus/scrape/ready" ];
+        ++ [
+          "certificate-issuance/webhook/ready"
+          "certificate-issuance/issuer/ready"
+        ];
+        provides = [
+          "prometheus/scrape/ready"
+          "metrics/scrape/ready"
+        ];
         readyProbe = {
           kind = "condition";
           resource = "statefulset/prometheus-prometheus-kube-prometheus-prometheus";
@@ -279,6 +275,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

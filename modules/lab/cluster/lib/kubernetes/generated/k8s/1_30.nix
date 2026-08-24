@@ -71,6 +71,8 @@ in
 {
   version = "1.30";
 
+  inherit mkTypedSubmodule mkResource;
+
   admissionregistration_k8s_io = {
     v1 = {
       MutatingWebhookConfiguration = mkResource {

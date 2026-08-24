@@ -8,34 +8,23 @@
   contracts,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
+  cfg = config.floes.forgejo;
 in
-(mkFloe {
-  name = "forgejo";
-  version = "11.0.14";
+{
   imports = [
+    (floeOptions {
+      name = "forgejo";
+      version = "11.0.14";
+    })
     ./options.nix
     ./bootstrap.nix
   ];
 
-  requires = [
-    "cert-manager"
-    "gateway"
-    "reloader"
-  ];
-  module =
-    {
-      config,
-      lib,
-      cfg,
-      peers,
-      contracts,
-      k8sHelpers,
-      ...
-    }:
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         optionalAttrs
@@ -58,7 +47,7 @@ in
         labels."app.kubernetes.io/managed-by" = "catallaxy";
       };
 
-      caBundle = peers.cert-manager.caBundle;
+      caBundle = config.floes.cert-manager.exports.caBundle;
       hasCaBundle = caBundle != null;
 
       oidcConfig = optionalAttrs cfg.oidc.enable {
@@ -184,7 +173,7 @@ in
 
       };
 
-      bundles.forgejo = {
+      floes.forgejo.bundles.forgejo = {
 
         owner = {
           bootstrap = "install-target";
@@ -360,17 +349,16 @@ in
           };
         };
 
-        requires =
-          refs.needs peers.cert-manager.issuance "webhookReady"
-          ++ refs.needs peers.gateway.routing "publicReady"
-          ++ refs.needs peers.reloader.watching "ready"
+        requires = [
+          "config-reload/ready"
+        ]
 
-          ++ optional (cfg.oidc.enable && hasCaBundle && caBundle.readyToken != null) caBundle.readyToken;
+        ++ optional (cfg.oidc.enable && hasCaBundle && caBundle.readyToken != null) caBundle.readyToken;
 
-        after =
-          refs.orderAfter peers.cnpg.operator "ready"
-
-          ++ optionals cfg.oidc.enable (refs.orderAfter peers.kanidm.identity "provisioningReady");
+        after = [
+          "optional:postgres-operator/ready"
+        ]
+        ++ optional cfg.oidc.enable "identity/provisioning/ready";
         provides = [ "forgejo/git/ready" ];
         readyProbe = {
           kind = "condition";
@@ -381,6 +369,6 @@ in
           timeout = "10m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

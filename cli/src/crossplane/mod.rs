@@ -145,8 +145,7 @@ pub fn reconcile_managed_resource(
         name: resource_name.to_string(),
         discovery_bin: discovery_bin.map(String::from),
     };
-    reconcile_context(kube_ctx, std::slice::from_ref(&target));
-    Ok(())
+    reconcile_context(kube_ctx, std::slice::from_ref(&target))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -241,14 +240,14 @@ fn try_discover_and_annotate(kube_ctx: &str, kind: &str, name: &str, bin: &str) 
     }
 }
 
-fn reconcile_context(ctx: &str, targets: &[Target]) {
+fn reconcile_context(ctx: &str, targets: &[Target]) -> Result<()> {
     if !io::kubectl::api_reachable(ctx) {
         println!(
             "{} Reconcile: context '{}' unreachable, leaving CRs to the plan's preflight",
             style(">>>").yellow(),
             ctx
         );
-        return;
+        return Ok(());
     }
     for t in targets {
         let Target {
@@ -286,9 +285,21 @@ fn reconcile_context(ctx: &str, targets: &[Target]) {
             if has_xp_finalizer { "ok" } else { "missing" },
         );
         let resource = format!("{kind}/{name}");
-        let _ = io::kubectl::annotate(ctx, &resource, "crossplane.io/paused=true", true);
+        if io::kubectl::annotate(ctx, &resource, "crossplane.io/paused=true", true).is_err() {
+            continue;
+        }
         std::thread::sleep(std::time::Duration::from_secs(3));
-        let _ = io::kubectl::annotate(ctx, &resource, "crossplane.io/paused-", false);
+        io::kubectl::annotate(ctx, &resource, "crossplane.io/paused-", false).with_context(
+            || {
+                format!(
+                    "{resource} on '{ctx}' was paused to force a reconcile and could not be \
+                     unpaused. Crossplane will not reconcile it again until it is, and \
+                     nothing else clears the annotation. Run:\n    \
+                     kubectl --context {ctx} annotate {resource} crossplane.io/paused-"
+                )
+            },
+        )?;
         let _ = io::kubectl::wait_managed_ready(ctx, 60);
     }
+    Ok(())
 }

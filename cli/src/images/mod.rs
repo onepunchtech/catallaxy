@@ -303,7 +303,7 @@ async fn warm_one_image(
                 style(">>>").cyan(),
                 style("skip").dim()
             );
-            return WarmOutcome::Skipped;
+            return WarmOutcome::LabPublished;
         }
         WarmRoute::NoUpstream(registry) => {
             println!(
@@ -311,7 +311,7 @@ async fn warm_one_image(
                 style(">>>").cyan(),
                 style("skip").dim(),
             );
-            return WarmOutcome::Skipped;
+            return WarmOutcome::NotMirrored(image.to_string());
         }
         WarmRoute::Fetch(r) => r,
     };
@@ -401,10 +401,15 @@ async fn report_warm_results(
 ) -> Result<()> {
     let mut failed = 0usize;
     let mut skipped = 0usize;
+    let mut not_mirrored: Vec<String> = Vec::new();
     while let Some(res) = tasks.join_next().await {
         match res {
             Ok(WarmOutcome::Ok) => {}
-            Ok(WarmOutcome::Skipped) => skipped += 1,
+            Ok(WarmOutcome::LabPublished) => skipped += 1,
+            Ok(WarmOutcome::NotMirrored(image)) => {
+                skipped += 1;
+                not_mirrored.push(image);
+            }
             Ok(WarmOutcome::Failed) => failed += 1,
             Err(join_err) => {
                 failed += 1;
@@ -418,6 +423,26 @@ async fn report_warm_results(
     }
 
     println!();
+    if !not_mirrored.is_empty() {
+        not_mirrored.sort();
+        println!(
+            "{} {} image(s) are not in the lab's cache because no upstream is \
+             configured for their registry:",
+            style("Warning:").yellow(),
+            not_mirrored.len(),
+        );
+        for image in &not_mirrored {
+            println!("      {image}");
+        }
+        println!(
+            "      The cluster pulls these from the public internet when it \
+             deploys. If that registry is unreachable, the workload will sit in \
+             ImagePullBackOff and surface as a readyProbe timeout rather than as \
+             a pull failure. Add the registry to `lab.registry.upstreams` to \
+             mirror it."
+        );
+    }
+
     let processed = total - failed - skipped;
     if failed == 0 {
         println!(
@@ -471,7 +496,12 @@ pub fn load_image_list(ctx: &CataContext, name: Option<&str>) -> Result<Vec<Stri
 
 pub enum WarmOutcome {
     Ok,
-    Skipped,
+    /// The lab publishes this image itself, so there is nothing to mirror.
+    LabPublished,
+    /// No upstream is configured for this image's registry, so the cluster
+    /// pulls it from the public internet at deploy time rather than from the
+    /// lab's cache. Not a failure, but not the same as cached either.
+    NotMirrored(String),
     Failed,
 }
 

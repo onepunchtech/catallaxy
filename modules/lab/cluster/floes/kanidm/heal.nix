@@ -271,13 +271,13 @@ in
       tag = "1.32.4";
     };
 
-    bundles.kanidm-admin-heal = {
+    floes.kanidm.bundles.kanidm-admin-heal = {
       resources = rbac // bootstrapJobResource // cronJobResource;
 
       requires = [
         "kanidm/instance/ready"
-      ]
-      ++ refs.needs (config.floes.kaniop.exports.operator or null) "ready";
+        "optional:identity-operator/ready"
+      ];
     };
   };
 }

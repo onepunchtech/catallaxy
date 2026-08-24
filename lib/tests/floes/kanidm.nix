@@ -23,11 +23,9 @@ let
           policy.exposure.defaultTier = "public";
         };
       };
-      options.cluster = lib.mkOption {
-        type = lib.types.attrs;
-        default = {
-          ref.kubeContext = "stub-ctx";
-        };
+      options.cluster.ref.kubeContext = lib.mkOption {
+        type = lib.types.str;
+        default = "stub-ctx";
       };
       options.floes.cert-manager.enable = lib.mkOption {
         type = lib.types.bool;
@@ -143,8 +141,7 @@ let
   };
 
   clientsOf = r: r.config.floes.kanidm.exports.oauth2Clients;
-  selectorOf =
-    r: r.config.bundles.kanidm.resources.kanidm-cr.spec.oauth2ClientNamespaceSelector or "<unset>";
+  selectorOf = r: r.config.bundles.kanidm.resources.kanidm-cr.spec.oauth2ClientNamespaceSelector;
   failed = r: map (a: a.message) (builtins.filter (a: !a.assertion) r.config.assertions);
 in
 lib.runTests {
@@ -189,14 +186,26 @@ lib.runTests {
     expected = "jsonpath";
   };
 
-  testCrossNamespaceClientDerivesSelector = {
-    expr = selectorOf crossNamespace;
-    expected = { };
+  testCrossNamespaceClientDerivesASelectorThatConstrainsNothing = {
+    expr =
+      let
+        s = selectorOf crossNamespace;
+      in
+      [
+        (s != null)
+        s.matchLabels
+        s.matchExpressions
+      ];
+    expected = [
+      true
+      null
+      null
+    ];
   };
 
   testLocalOnlyClientsLeaveSelectorUnset = {
     expr = selectorOf localOnly;
-    expected = "<unset>";
+    expected = null;
   };
 
   testLabelSelectorWithCrossNamespaceClientAsserts = {

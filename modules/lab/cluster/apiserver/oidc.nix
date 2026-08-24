@@ -152,7 +152,10 @@ in
 
     (mkIf (cfg.enable && cfg.rbac != { }) {
 
-      bundles.oidc.resources = rbacResources;
+      bundles.oidc = {
+        declaredBy = "cluster";
+        resources = rbacResources;
+      };
     })
   ];
 }

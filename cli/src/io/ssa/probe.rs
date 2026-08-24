@@ -71,6 +71,7 @@ pub(super) fn run_ready_probe(
     fallback_timeout: &str,
     dry_run: bool,
 ) -> Result<()> {
+    let kube_context = crate::io::kube_context::require_named(kube_context)?;
     match probe {
         ReadyProbe::Condition { .. } => {
             probe_condition(kube_context, bundle_key, probe, fallback_timeout, dry_run)

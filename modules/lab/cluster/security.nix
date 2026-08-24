@@ -10,6 +10,7 @@ let
   cfg = config.cluster.security.networkPolicies;
 
   netpol = import ../../../lib/util/netpol.nix { inherit lib; };
+  k8sFields = import ../../../lib/util/k8s-fields.nix { inherit lib; };
 
   policyBundle = "default-network-policies";
 
@@ -33,7 +34,7 @@ let
     floeName:
     lib.unique (
       lib.concatMap (b: b.createNamespaces or [ ]) (
-        lib.attrValues (lib.filterAttrs (_: b: (b.floe or null) == floeName) config.bundles)
+        lib.attrValues (lib.filterAttrs (_: b: (b.declaredBy or null) == floeName) config.bundles)
       )
     );
 
@@ -57,6 +58,7 @@ let
     {
       inherit ref target label;
       from = fromFloe;
+      exists = config.floes ? ${target};
       known = enabledFloes ? ${target};
       wellFormed = label != null;
       serves = label != null && served ? ${label};
@@ -66,6 +68,18 @@ let
   allParsed = lib.concatMap (
     floeName: map (parseReach floeName) ((networkOf floeName).reaches or [ ])
   ) (lib.attrNames enabledFloes);
+
+  unknownReaches = lib.filter (r: !r.exists) allParsed;
+
+  strayOverrides =
+    what: overrides:
+    map (ns: { inherit what ns; }) (
+      lib.filter (ns: !(builtins.elem ns allNamespaces)) (lib.attrNames overrides)
+    );
+
+  overrideTypos =
+    strayOverrides "cluster.security.networkPolicies.namespaceOverrides" cfg.namespaceOverrides
+    ++ strayOverrides "cluster.security.podSecurity.namespaceOverrides" config.cluster.security.podSecurity.namespaceOverrides;
 
   badReaches = lib.filter (r: r.known && !r.serves) allParsed;
 
@@ -132,13 +146,15 @@ let
       route:
       let
         ns = route.metadata.namespace or null;
-        refs = lib.concatMap (rule: rule.backendRefs or [ ]) (route.spec.rules or [ ]);
+        refs = lib.concatMap (k8sFields.listOrEmpty [ "backendRefs" ]) (
+          k8sFields.listOrEmpty [ "spec" "rules" ] route
+        );
       in
       lib.optionals (ns != null) (
         map (ref: {
-          namespace = ref.namespace or ns;
-          port = ref.port or null;
-        }) (lib.filter (ref: (ref.port or null) != null) refs)
+          namespace = k8sFields.valueOr [ "namespace" ] ns ref;
+          port = k8sFields.valueAt [ "port" ] ref;
+        }) (lib.filter (ref: k8sFields.valueAt [ "port" ] ref != null) refs)
       )
     ) routes;
 
@@ -268,33 +284,77 @@ in
 
   config = lib.mkMerge [
     {
-      assertions = lib.optional (badReaches != [ ]) {
-        assertion = false;
-        message = ''
-          On cluster ${config.cluster.name}, a floe reaches something no floe
-          serves:
+      assertions =
+        lib.optional (overrideTypos != [ ]) {
+          assertion = false;
+          message = ''
+            On cluster ${config.cluster.name}, a per-namespace override names a
+            namespace this cluster does not create:
 
-          ${lib.concatMapStringsSep "\n" (
-            r:
-            "  ${r.from} -> ${r.ref}"
-            + (
-              if !r.wellFormed then
-                " (not of the form <floe>/<label>)"
+            ${lib.concatMapStringsSep "\n" (o: "  ${o.what}.${o.ns}") overrideTypos}
+
+            The namespaces it creates are:
+
+            ${
+              if allNamespaces == [ ] then
+                "none"
               else
-                " (${r.target} publishes: ${
-                   let
-                     served = lib.attrNames ((networkOf r.target).serves or { });
-                   in
-                   if served == [ ] then "nothing" else lib.concatStringsSep ", " served
-                 })"
-            )
-          ) badReaches}
+                lib.concatStringsSep ", " (lib.sort (a: b: a < b) allNamespaces)
+            }
 
-          A `reaches` entry names a label the other floe published in
-          `serves`. Rendering nothing for one that does not exist is how a
-          rule silently fails to apply.
-        '';
-      };
+            Both overrides are read only while rendering the namespaces the
+            cluster creates, so a key outside that set is applied to nothing.
+            It reads as a policy decision and is not one.
+          '';
+        }
+        ++ lib.optional (unknownReaches != [ ]) {
+          assertion = false;
+          message = ''
+            On cluster ${config.cluster.name}, a floe reaches something that is
+            not a floe:
+
+            ${lib.concatMapStringsSep "\n" (r: "  ${r.from} -> ${r.ref}") unknownReaches}
+
+            A `reaches` entry names `<floe>/<label>`. The floes this repo
+            defines are:
+
+            ${lib.concatStringsSep ", " (lib.attrNames config.floes)}
+
+            A name that is not one of those is a typo, and a typo is silent in
+            both directions: no egress rule is written for the floe that
+            declared it, no ingress rule for the floe it meant, and the default
+            deny still applies. The pod ends up refused the traffic it asked
+            for. Naming a floe that exists but is off on this cluster is fine
+            and stays quiet.
+          '';
+        }
+        ++ lib.optional (badReaches != [ ]) {
+          assertion = false;
+          message = ''
+            On cluster ${config.cluster.name}, a floe reaches something no floe
+            serves:
+
+            ${lib.concatMapStringsSep "\n" (
+              r:
+              "  ${r.from} -> ${r.ref}"
+              + (
+                if !r.wellFormed then
+                  " (not of the form <floe>/<label>)"
+                else
+                  " (${r.target} publishes: ${
+                     let
+                       served = lib.attrNames ((networkOf r.target).serves or { });
+                     in
+                     if served == [ ] then "nothing" else lib.concatStringsSep ", " served
+                   })"
+              )
+            ) badReaches}
+
+            A `reaches` entry names a label the other floe published in
+            `serves`. Rendering nothing for one that does not exist is how a
+            rule silently fails to apply.
+          '';
+        };
 
       cluster.out.networkDeclarations = {
         enabled = cfg.enable;
@@ -308,7 +368,10 @@ in
     }
 
     (mkIf cfg.enable {
-      bundles.${policyBundle}.resources = defaultDenyResources // floePolicies;
+      bundles.${policyBundle} = {
+        declaredBy = "cluster";
+        resources = defaultDenyResources // floePolicies;
+      };
     })
   ];
 }

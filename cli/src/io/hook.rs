@@ -4,6 +4,10 @@ use anyhow::Result;
 
 use crate::io::process::run_status;
 
+/// # Errors
+///
+/// Only if `bin` cannot be spawned. A hook that runs and fails is a non-zero
+/// `ExitStatus`, which is what lets a caller treat a hook as advisory.
 pub fn run(
     bin: &str,
     env: &[(String, String)],

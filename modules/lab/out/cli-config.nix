@@ -42,6 +42,9 @@ in
         // lib.optionalAttrs config.lab.proxy.enable {
           proxy = config.lab.proxy.out.service;
         }
+        // lib.optionalAttrs config.lab.egress.enable {
+          egress = config.lab.egress.out.service;
+        }
         // lib.optionalAttrs config.lab.bgpRouter.enable {
           bgpRouter = config.lab.bgpRouter.out.service;
         };
@@ -80,11 +83,37 @@ in
         }
       ) config.lab.out.allClusters;
 
+      # What each stack publishes once it has applied, flattened so the
+      # executor does not have to walk resources to find it.
+      #
+      # Read from the routed stacks rather than from `lab.infra.resources`,
+      # because a resource's own `stack` is null until routing has decided.
+      infraPublications = lib.concatLists (
+        lib.mapAttrsToList (
+          stackName: stack:
+          lib.concatLists (
+            lib.mapAttrsToList (
+              resourceName: resource:
+              lib.mapAttrsToList (output: target: {
+                stack = stackName;
+                inherit output;
+                inherit (target) store key;
+                outputName = "${resourceName}_${output}";
+              }) resource.publish
+            ) stack.resources
+          )
+        ) config.lab.infra.out.stacks
+      );
+
       secrets = {
         inherit (config.lab.secrets) envFile;
 
         stores = lib.mapAttrs (name: store: {
-          inherit (store) backend;
+          inherit (store) backend direction;
+          writerCommand = store.writer.command;
+          vault = {
+            inherit (store.vault) server path version;
+          };
         }) config.lab.secrets.stores;
 
         managed = lib.mapAttrs (name: sec: {

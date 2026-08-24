@@ -25,11 +25,9 @@ let
         type = lib.types.attrsOf lib.types.attrs;
         default = { };
       };
-      options.cluster = lib.mkOption {
-        type = lib.types.attrs;
-        default = {
-          ref.kubeContext = "stub-ctx";
-        };
+      options.cluster.ref.kubeContext = lib.mkOption {
+        type = lib.types.str;
+        default = "stub-ctx";
       };
 
       options.floes.gateway.enable = lib.mkOption {

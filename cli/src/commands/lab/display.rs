@@ -5,35 +5,197 @@ use crate::config::Context as CataContext;
 use crate::domain::LabSpec;
 use crate::io;
 
-pub async fn list(ctx: &CataContext) -> Result<()> {
-    println!("{} Defined labs", style("catallaxy").cyan().bold());
-    println!();
+#[derive(serde::Serialize)]
+struct ListJson {
+    defined: Vec<String>,
+    running: Vec<RunningJson>,
+    orphans: Vec<String>,
+    docker_reachable: bool,
+}
 
-    let labs = crate::io::nix::list_labs_with_cluster_counts(ctx)?;
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunningJson {
+    name: String,
+    containers: Vec<String>,
+    k3d_clusters: Vec<String>,
+    flake: Option<String>,
+    defined_here: bool,
+}
 
-    if labs.is_empty() {
-        println!("  (no labs defined)");
+pub fn list(ctx: &CataContext, json: bool) -> Result<()> {
+    // Non-fatal on purpose: a lab whose flake no longer evaluates is one of
+    // the ways a lab gets orphaned, and it must not hide its own leftovers.
+    let defined = crate::io::nix::list_labs_with_cluster_counts(ctx);
+    let inventory = crate::domain::inventory::correlate(&io::host_inventory::gather());
+
+    if json {
+        let defined_names: Vec<String> = defined
+            .as_ref()
+            .map(|labs| labs.iter().map(|(n, _)| n.clone()).collect())
+            .unwrap_or_default();
+        let out = ListJson {
+            running: inventory
+                .labs
+                .iter()
+                .map(|lab| RunningJson {
+                    name: lab.name.clone(),
+                    containers: lab.containers.clone(),
+                    k3d_clusters: lab.k3d_clusters.clone(),
+                    flake: match &lab.origin {
+                        crate::domain::inventory::Origin::One(f) => Some(f.clone()),
+                        _ => None,
+                    },
+                    defined_here: defined_names.contains(&lab.name),
+                })
+                .collect(),
+            orphans: inventory.orphans.iter().map(describe_orphan).collect(),
+            docker_reachable: inventory.docker_reachable,
+            defined: defined_names,
+        };
+        println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
     }
 
-    for (name, summary) in &labs {
-        let unit = if summary.clusters == 1 {
-            "cluster"
-        } else {
-            "clusters"
-        };
-        println!("  {} ({} {})", style(name).green(), summary.clusters, unit);
-        if !summary.eligible {
-            for reason in &summary.reasons {
-                println!("      {} {}", style("needs").yellow(), reason);
+    print_defined(&defined);
+
+    print_running(&inventory, &defined)
+}
+
+fn print_defined(defined: &Result<Vec<(String, crate::io::nix::LabSummary)>>) {
+    println!("{} Defined labs", style("catallaxy").cyan().bold());
+    println!();
+    match defined {
+        Err(e) => println!(
+            "  {} this flake could not be evaluated: {e}",
+            style("note:").yellow()
+        ),
+        Ok(labs) if labs.is_empty() => println!("  (no labs defined)"),
+        Ok(labs) => {
+            for (name, summary) in labs {
+                let unit = if summary.clusters == 1 {
+                    "cluster"
+                } else {
+                    "clusters"
+                };
+                println!("  {} ({} {})", style(name).green(), summary.clusters, unit);
+                if !summary.eligible {
+                    for reason in &summary.reasons {
+                        println!("      {} {}", style("needs").yellow(), reason);
+                    }
+                }
             }
         }
+    }
+}
+
+fn print_running(
+    inventory: &crate::domain::inventory::Inventory,
+    defined: &Result<Vec<(String, crate::io::nix::LabSummary)>>,
+) -> Result<()> {
+    println!();
+    println!("{}", style("Running on this host").bold());
+    println!();
+
+    if !inventory.docker_reachable {
+        println!(
+            "  {} docker is not reachable, so nothing is known about what is running",
+            style("note:").yellow()
+        );
+        return Ok(());
+    }
+
+    if inventory.labs.is_empty() && inventory.orphans.is_empty() {
+        println!("  (nothing)");
+        return Ok(());
+    }
+
+    let defined_names: Vec<&str> = defined
+        .as_ref()
+        .map(|labs| labs.iter().map(|(n, _)| n.as_str()).collect())
+        .unwrap_or_default();
+
+    for lab in &inventory.labs {
+        let here = if defined_names.contains(&lab.name.as_str()) {
+            style("(defined here)").dim().to_string()
+        } else {
+            style("(not in this flake)").yellow().to_string()
+        };
+        println!("  {} {}", style(&lab.name).green(), here);
+
+        if !lab.containers.is_empty() {
+            println!("      services: {}", lab.containers.join(", "));
+        }
+        if !lab.k3d_clusters.is_empty() {
+            println!("      clusters: {}", lab.k3d_clusters.join(", "));
+        }
+        match &lab.origin {
+            crate::domain::inventory::Origin::One(flake) => {
+                println!("      flake:    {}", style(flake).dim());
+            }
+            crate::domain::inventory::Origin::Conflicting(all) => {
+                println!(
+                    "      {} run from more than one checkout: {}",
+                    style("flake:").yellow(),
+                    all.join(", ")
+                );
+            }
+            crate::domain::inventory::Origin::Unknown => {}
+        }
+        if !lab.has_record {
+            println!(
+                "      {} no record of what it put here; cleanup works from what is visible",
+                style("note:").dim()
+            );
+        }
+        println!(
+            "      remove:   cata lab cleanup {}",
+            style(&lab.name).dim()
+        );
+    }
+
+    if !inventory.orphans.is_empty() {
+        println!();
+        println!("{}", style("Claimed by no lab").bold());
+        println!();
+        for orphan in &inventory.orphans {
+            println!("  {}", describe_orphan(orphan));
+        }
+        println!();
+        println!("      remove:   cata lab cleanup --orphans");
     }
 
     Ok(())
 }
 
-pub async fn topology_cmd(
+fn describe_orphan(orphan: &crate::domain::inventory::Orphan) -> String {
+    use crate::domain::inventory::Orphan;
+    match orphan {
+        Orphan::UnattributedContainer { name, published } => {
+            let ports = if published.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " holding port(s) {}",
+                    published
+                        .iter()
+                        .map(u16::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            format!("container {name}{ports}, created before catallaxy labelled containers")
+        }
+        Orphan::UnknownK3dCluster { name } => {
+            format!("k3d cluster {name}, which no lab record claims")
+        }
+        Orphan::StaleRecordOnly { lab } => {
+            format!("a record for lab '{lab}', but nothing of it is running")
+        }
+    }
+}
+
+pub fn topology_cmd(
     ctx: &CataContext,
     name: &str,
     format: crate::topology::TopologyFormat,
@@ -62,6 +224,15 @@ struct ClusterState {
     name: String,
     context: String,
     reachable: bool,
+    /// Why the context could not be resolved, when it could not.
+    ///
+    /// `reachable` stays a plain bool so existing consumers keep working, but
+    /// false used to mean two different things: the cluster did not answer, or
+    /// the lab never told us which cluster to ask. The second used to read as
+    /// reachable, because an empty context makes kubectl fall back to whatever
+    /// the operator is pointed at.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context_error: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -71,7 +242,7 @@ struct LabState {
     clusters: Vec<ClusterState>,
 }
 
-pub async fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
+pub fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
     let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
     let services = lab
@@ -90,13 +261,19 @@ pub async fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
     let clusters = lab
         .cluster_names
         .iter()
-        .map(|cluster| {
-            let context = lab.kube_context(cluster).unwrap_or_default().to_string();
-            ClusterState {
+        .map(|cluster| match lab.kube_context(cluster) {
+            Ok(context) => ClusterState {
                 name: cluster.clone(),
-                reachable: io::kubectl::api_reachable(&context),
-                context,
-            }
+                reachable: io::kubectl::api_reachable(context),
+                context: context.to_string(),
+                context_error: None,
+            },
+            Err(e) => ClusterState {
+                name: cluster.clone(),
+                reachable: false,
+                context: String::new(),
+                context_error: Some(e.to_string()),
+            },
         })
         .collect::<Vec<_>>();
 
@@ -111,9 +288,9 @@ pub async fn status_json(ctx: &CataContext, name: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
+pub fn status(ctx: &CataContext, name: &str, json: bool) -> Result<()> {
     if json {
-        return status_json(ctx, name).await;
+        return status_json(ctx, name);
     }
 
     println!(
@@ -197,9 +374,25 @@ fn print_cluster_status(lab: &LabSpec) -> Result<()> {
     let cluster_names = &lab.cluster_names;
 
     println!("{}", style("Clusters:").bold());
+    let mut reachable_count = 0;
     for cluster_name in cluster_names {
-        let context_name = lab.kube_context(cluster_name).unwrap_or_default();
-        let reachable = io::kubectl::api_reachable(context_name);
+        let context = match lab.kube_context(cluster_name) {
+            Ok(context) => context,
+            Err(e) => {
+                println!(
+                    "  {} [{}] {}",
+                    style(cluster_name).green(),
+                    style("context unresolved").red(),
+                    style(e).dim(),
+                );
+                continue;
+            }
+        };
+
+        let reachable = io::kubectl::api_reachable(context);
+        if reachable {
+            reachable_count += 1;
+        }
 
         let status_str = if reachable {
             style("ready").green()
@@ -211,16 +404,12 @@ fn print_cluster_status(lab: &LabSpec) -> Result<()> {
             "  {} [{}] (context: {})",
             style(cluster_name).green(),
             status_str,
-            style(context_name).dim(),
+            style(context).dim(),
         );
     }
     println!();
 
     let total = cluster_names.len();
-    let reachable_count = cluster_names
-        .iter()
-        .filter(|name| io::kubectl::api_reachable(lab.kube_context(name).unwrap_or_default()))
-        .count();
 
     println!(
         "{} {}/{} clusters reachable",

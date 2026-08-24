@@ -3,54 +3,75 @@ use console::style;
 
 use crate::config::Context as CataContext;
 
-fn resolve_publish_auth(lab: &serde_json::Value) -> Option<(String, String)> {
-    let cred = lab.pointer("/cd/git/credentialFromKubeSecret")?;
+/// `Ok(None)` means the lab configured no credential. Every other failure is
+/// an error: a lab that asked for one and did not get it must not fall back to
+/// an anonymous push, which fails later as an unexplained git error.
+fn resolve_publish_auth(lab: &serde_json::Value) -> Result<Option<(String, String)>> {
+    let Some(cred) = lab.pointer("/cd/git/credentialFromKubeSecret") else {
+        return Ok(None);
+    };
     if cred.is_null() {
-        return None;
+        return Ok(None);
     }
-    let context = cred.get("context")?.as_str()?;
-    let namespace = cred.get("namespace")?.as_str()?;
-    let name = cred.get("name")?.as_str()?;
+
+    let field = |k: &str| -> Result<String> {
+        cred.get(k)
+            .and_then(|v| v.as_str())
+            .map(String::from)
+            .with_context(|| {
+                format!("cd.git.credentialFromKubeSecret is set but has no string `{k}`")
+            })
+    };
+
+    let context = field("context")?;
+    let namespace = field("namespace")?;
+    let name = field("name")?;
+    let username = field("username")?;
     let key = cred.get("key").and_then(|v| v.as_str()).unwrap_or("token");
-    let username = cred.get("username")?.as_str()?.to_string();
 
     let jsonpath = format!("jsonpath={{.data.{key}}}");
     let out = crate::io::kubectl::output(
-        context,
-        &["-n", namespace, "get", "secret", name, "-o", &jsonpath],
+        &context,
+        &["-n", &namespace, "get", "secret", &name, "-o", &jsonpath],
     )
-    .ok()?;
+    .with_context(|| format!("reading credential Secret {namespace}/{name} on '{context}'"))?;
+
     if !out.status.success() {
-        eprintln!(
-            "{} could not read credential Secret {namespace}/{name} on '{context}': {}",
-            style("Warning:").yellow(),
+        bail!(
+            "could not read credential Secret {namespace}/{name} on '{context}': {}",
             String::from_utf8_lossy(&out.stderr).trim()
         );
-        return None;
     }
-    let b64 = String::from_utf8(out.stdout).ok()?;
+
+    let b64 = String::from_utf8(out.stdout)
+        .context("the credential Secret's value is not valid UTF-8")?;
     let b64 = b64.trim();
     if b64.is_empty() {
-        return None;
+        bail!("credential Secret {namespace}/{name} has no key `{key}`");
     }
+
     use base64::Engine as _;
-    let decoded = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
-    let token = String::from_utf8(decoded).ok()?;
-    Some((username, token))
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .with_context(|| format!("key `{key}` of {namespace}/{name} is not base64"))?;
+    let token = String::from_utf8(decoded)
+        .with_context(|| format!("key `{key}` of {namespace}/{name} is not valid UTF-8"))?;
+
+    Ok(Some((username, token)))
 }
 
-fn maybe_embed_publish_auth(repo: &str, lab: &serde_json::Value) -> String {
+fn maybe_embed_publish_auth(repo: &str, lab: &serde_json::Value) -> Result<String> {
     if !repo.starts_with("https://") {
-        return repo.to_string();
+        return Ok(repo.to_string());
     }
-    match resolve_publish_auth(lab) {
+    match resolve_publish_auth(lab)? {
         Some((user, token)) => {
             let rest = &repo["https://".len()..];
             let token_esc = token.replace('@', "%40").replace(':', "%3A");
             let user_esc = user.replace('@', "%40").replace(':', "%3A");
-            format!("https://{user_esc}:{token_esc}@{rest}")
+            Ok(format!("https://{user_esc}:{token_esc}@{rest}"))
         }
-        None => repo.to_string(),
+        None => Ok(repo.to_string()),
     }
 }
 
@@ -76,7 +97,7 @@ pub async fn publish(
         .and_then(|g| g["provider"].as_str())
         .unwrap_or("github");
 
-    let effective_repo = maybe_embed_publish_auth(repo, &lab);
+    let effective_repo = maybe_embed_publish_auth(repo, &lab)?;
     let pr_enabled = pr
         || git_cfg
             .and_then(|g| g["prEnabled"].as_bool())
@@ -93,22 +114,22 @@ pub async fn publish(
     println!("{} Building lab manifests...", style(">>>").cyan());
     let package_path = crate::io::nix::build_lab_package(ctx, name)?;
 
-    let manifests_src = format!("{}/manifests", package_path);
+    let manifests_src = format!("{package_path}/manifests");
     if !std::path::Path::new(&manifests_src).exists() {
-        bail!("No manifests found at {}", manifests_src);
+        bail!("No manifests found at {manifests_src}");
     }
 
     if dry_run {
         println!("{} Dry run: would publish to:", style(">>>").yellow());
-        println!("  Repo: {}", repo);
-        println!("  Branch: {}", branch);
+        println!("  Repo: {repo}");
+        println!("  Branch: {branch}");
         println!(
             "  Path: {}",
             if repo_path.is_empty() { "/" } else { repo_path }
         );
-        println!("  PR: {}", pr_enabled);
+        println!("  PR: {pr_enabled}");
         println!();
-        println!("  Manifests: {}", manifests_src);
+        println!("  Manifests: {manifests_src}");
 
         crate::io::fs::list_yaml_files(&manifests_src);
         return Ok(());
@@ -133,6 +154,13 @@ pub async fn publish(
     copy_manifests(&manifests_src, &package_path, &target_dir)?;
 
     if !commit_manifests(&clone_dir, message, name)? {
+        if pr_enabled {
+            println!(
+                "{} No pull request opened: the rendered manifests already match \
+                 {repo} on '{branch}', so there is nothing to propose.",
+                style(">>>").green(),
+            );
+        }
         return Ok(());
     }
 
@@ -167,7 +195,7 @@ fn clone_repo(
             crate::io::git::clone(effective_repo, clone_dir).context("Failed to clone git repo")?;
 
         if !status.success() {
-            bail!("Failed to clone {}", repo);
+            bail!("Failed to clone {repo}");
         }
     }
     Ok(())
@@ -177,7 +205,7 @@ fn checkout_work_branch(clone_dir: &std::path::Path, name: &str) -> Result<Strin
     let branch_name = format!("catallaxy/{name}/{}", chrono_simple_timestamp());
     let status = crate::io::git::create_branch(clone_dir, &branch_name)?;
     if !status.success() {
-        bail!("Failed to create branch {}", branch_name);
+        bail!("Failed to create branch {branch_name}");
     }
     Ok(branch_name)
 }
@@ -313,5 +341,5 @@ fn chrono_simple_timestamp() -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    format!("{}", secs)
+    format!("{secs}")
 }

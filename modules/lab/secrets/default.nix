@@ -99,6 +99,36 @@ let
           '';
         };
 
+        writer = {
+          command = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            example = [
+              "vault-put"
+              "--mount"
+              "lab"
+            ];
+            description = ''
+              Command the host runs to write one value into this store, as
+              argv.
+
+              It receives `CATA_SECRET_KEY` in the environment and the value
+              on stdin, and is expected to exit non-zero if the write did not
+              happen. Nothing is passed on the command line, so a value never
+              reaches a process listing.
+
+              This is what makes the set of stores open. A `vault` store is
+              written to over its own API and needs nothing here; anything
+              else is a command, so a store catallaxy has never heard of works
+              without catallaxy learning about it.
+
+              Required on an `external` store that anything publishes to,
+              because `external` otherwise says only that the store is managed
+              elsewhere, which is not something to write through.
+            '';
+          };
+        };
+
         vault = {
           server = mkOption {
             type = types.nullOr types.str;

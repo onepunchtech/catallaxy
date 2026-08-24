@@ -114,7 +114,7 @@ lib.runTests {
             (cluster {
               floes = { inherit gateway; };
               bundles."projection/secrets" = {
-                floe = "gateway";
+                declaredBy = "gateway";
               };
             })
           ];
@@ -135,7 +135,7 @@ lib.runTests {
               floes = { inherit gateway; };
               bundles = {
                 namespaces = { };
-                elsewhere.floe = "notrunning";
+                elsewhere.declaredBy = "notrunning";
               };
             })
           ];
@@ -152,8 +152,8 @@ lib.runTests {
       (cluster {
         floes = { inherit gateway; };
         bundles = {
-          applications.floe = "gateway";
-          ordinary.floe = "gateway";
+          applications.declaredBy = "gateway";
+          ordinary.declaredBy = "gateway";
         };
       })
     ];
@@ -164,7 +164,7 @@ lib.runTests {
     expr = sbom.collisionsOf [
       (cluster {
         floes = { inherit gateway; };
-        bundles.gateway.floe = "gateway";
+        bundles.gateway.declaredBy = "gateway";
       })
     ];
     expected = [ ];
@@ -179,7 +179,7 @@ lib.runTests {
             (cluster {
               floes = { inherit gateway; };
               bundles.gateway = {
-                floe = "gateway";
+                declaredBy = "gateway";
                 helmCharts.traefik.chart = "/store/traefik";
               };
             })

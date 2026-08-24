@@ -6,6 +6,10 @@ let
       eligible = true;
       mentions = [ ];
     };
+    "infra.local" = {
+      eligible = true;
+      mentions = [ ];
+    };
     "gitops.local" = {
       eligible = true;
       mentions = [ ];
@@ -15,6 +19,10 @@ let
       mentions = [ ];
     };
     "homelab.gitops-local" = {
+      eligible = true;
+      mentions = [ ];
+    };
+    "minimal.talos" = {
       eligible = true;
       mentions = [ ];
     };

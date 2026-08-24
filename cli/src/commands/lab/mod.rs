@@ -7,6 +7,7 @@ use crate::config::Context as CataContext;
 use crate::domain::Direction;
 
 pub mod apply;
+pub mod cleanup;
 pub mod destroy;
 mod display;
 pub mod dns;
@@ -31,7 +32,41 @@ const FORCE_APPLY_HELP: &str = "Apply directly even when the cluster's deploy st
 #[derive(Subcommand)]
 pub enum LabCommands {
     #[command(about = "List every lab this flake defines, with cluster counts")]
-    List,
+    #[command(
+        about = "Remove what a lab left on this machine. Needs no flake",
+        long_about = "Remove what a lab left on this machine, from local evidence alone.\n\n\
+                      `lab destroy` is how a lab is taken down: it runs the lab's teardown \
+                      plan, releases cloud resources and honours its rescue hints, and it \
+                      needs the flake because that is where the plan lives.\n\n\
+                      Use this when the flake cannot answer: the lab was deleted from it, \
+                      renamed, built from another checkout, or `lab up` died partway. It \
+                      never evaluates a flake and never touches cloud resources."
+    )]
+    Cleanup {
+        #[arg(help = "Lab to remove, as it appears in `lab list`")]
+        name: Option<String>,
+
+        #[arg(long, help = "Every lab found on this machine")]
+        all: bool,
+
+        #[arg(long, help = "Only leftovers no lab claims")]
+        orphans: bool,
+
+        #[arg(long, help = "Print what would be removed and stop")]
+        dry_run: bool,
+
+        #[arg(long, help = "Do not ask before removing")]
+        yes: bool,
+
+        #[arg(long, help = "Leave the lab's state directory, including its CA")]
+        keep_state: bool,
+    },
+
+    #[command(about = "Labs this flake defines, and labs running on this machine")]
+    List {
+        #[arg(long, help = "Print as JSON")]
+        json: bool,
+    },
 
     #[command(about = "Show the current state of clusters and host services")]
     Status {
@@ -55,6 +90,21 @@ pub enum LabCommands {
             help = "Stop after the last step of this kind"
         )]
         up_to: Option<String>,
+
+        #[arg(
+            long,
+            value_name = "CLUSTER",
+            help = "Destroy and rebuild this cluster if its shape no longer matches the lab. \
+                    Repeat for several, or pass '*' for all. Everything on it is lost"
+        )]
+        recreate: Vec<String>,
+
+        #[arg(
+            long,
+            help = "Run steps that create or destroy real infrastructure. \
+                    Without it they are skipped and named"
+        )]
+        infra: bool,
     },
 
     #[command(about = "Stop clusters, preserving state. Restartable with 'lab up'")]
@@ -77,6 +127,13 @@ pub enum LabCommands {
             help = "Stop after the last step of this kind"
         )]
         up_to: Option<String>,
+
+        #[arg(
+            long,
+            help = "Run steps that create or destroy real infrastructure. \
+                    Without it they are skipped and named"
+        )]
+        infra: bool,
     },
 
     #[command(about = "Show the ordered deploy plan")]
@@ -249,21 +306,48 @@ pub enum LabCommands {
     },
 }
 
+fn cleanup_request(command: LabCommands) -> cleanup::CleanupRequest {
+    let LabCommands::Cleanup {
+        name,
+        all,
+        orphans,
+        dry_run,
+        yes,
+        keep_state,
+    } = command
+    else {
+        unreachable!("only the Cleanup arm builds a cleanup request")
+    };
+    cleanup::CleanupRequest {
+        lab: name,
+        all,
+        orphans,
+        dry_run,
+        yes,
+        keep_state,
+    }
+}
+
 pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
     match command {
-        LabCommands::List => display::list(ctx).await,
+        LabCommands::Cleanup { .. } => cleanup::run(cleanup_request(command)),
+        LabCommands::List { json } => display::list(ctx, json),
         LabCommands::Status { name, json } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            display::status(ctx, &name, json).await
+            display::status(ctx, &name, json)
         }
         LabCommands::Verify { name, check, json } => verify::run(ctx, name, check, json).await,
         LabCommands::Up {
             name,
             dry_run,
             up_to,
+            recreate,
+            infra,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            up::run(ctx, &name, dry_run, up_to).await
+            let mut ctx = ctx.clone();
+            ctx.recreate = recreate.clone();
+            up::run(&ctx, &name, dry_run, up_to, infra).await
         }
         LabCommands::Apply {
             name,
@@ -273,7 +357,7 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
             force,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            apply::run(ctx, &name, bundle, cluster, dry_run, force).await
+            apply::run(ctx, &name, bundle, cluster, dry_run, force)
         }
         LabCommands::Diff {
             name,
@@ -281,7 +365,7 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
             cluster,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            apply::diff(ctx, &name, bundle, cluster).await
+            apply::diff(ctx, &name, bundle, cluster)
         }
         LabCommands::Plan {
             name,
@@ -303,7 +387,6 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
                 from_file,
                 diff,
             )
-            .await
         }
         LabCommands::PlanManifests {
             name,
@@ -325,19 +408,19 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
                 from_file,
                 diff,
             )
-            .await
         }
         LabCommands::Down { name } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            down::run(ctx, &name).await
+            down::run(ctx, &name)
         }
         LabCommands::Destroy {
             name,
             dry_run,
             up_to,
+            infra,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            destroy::run(ctx, &name, dry_run, up_to.as_deref()).await
+            destroy::run(ctx, &name, dry_run, up_to.as_deref(), infra).await
         }
         other => run_tooling(ctx, other).await,
     }
@@ -345,7 +428,7 @@ pub async fn run(ctx: &CataContext, command: LabCommands) -> Result<()> {
 
 async fn run_tooling(ctx: &CataContext, command: LabCommands) -> Result<()> {
     match command {
-        LabCommands::Lint { name, path, skip } => lint_cmd::run(ctx, name, path, skip).await,
+        LabCommands::Lint { name, path, skip } => lint_cmd::run(ctx, name, path, skip),
         LabCommands::Publish {
             name,
             pr,
@@ -357,7 +440,7 @@ async fn run_tooling(ctx: &CataContext, command: LabCommands) -> Result<()> {
         }
         LabCommands::Ops { name, args } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            ops::ops(ctx, &name, &args).await
+            ops::ops(ctx, &name, &args)
         }
         LabCommands::Env { name, shell, unset } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
@@ -369,11 +452,11 @@ async fn run_tooling(ctx: &CataContext, command: LabCommands) -> Result<()> {
             teardown,
         } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            dns::dns(ctx, &name, dns::DnsAction::of(setup, teardown)?).await
+            dns::dns(ctx, &name, dns::DnsAction::of(setup, teardown)?)
         }
         LabCommands::Topology { name, format, live } => {
             let name = ctx.resolve_lab_name(name.as_deref())?;
-            display::topology_cmd(ctx, &name, format, live).await
+            display::topology_cmd(ctx, &name, format, live)
         }
         _ => unreachable!("lifecycle commands are handled by run"),
     }

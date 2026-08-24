@@ -32,9 +32,7 @@ fn active() -> &'static RwLock<Option<Active>> {
     ACTIVE.get_or_init(|| RwLock::new(None))
 }
 
-pub fn lab_ca_path(lab_name: &str) -> PathBuf {
-    service_state_dir(lab_name, "proxy").join("ca.crt")
-}
+pub use crate::host::state::lab_ca_path;
 
 pub fn bundle_path(lab_name: &str) -> PathBuf {
     service_state_dir(lab_name, "trust").join("bundle.crt")
@@ -102,6 +100,14 @@ fn merge(roots: &str, lab_ca: &str) -> Vec<String> {
     out
 }
 
+/// Build the lab's merged CA bundle if it is not already current.
+///
+/// # Errors
+///
+/// If the lab CA or a system root file exists but cannot be read, or the
+/// bundle cannot be written. A lab with no CA, and a machine whose system
+/// roots cannot be found, are both an `Outcome` rather than an error: neither
+/// is a reason to fail a command that may not need TLS at all.
 pub fn ensure_bundle(lab_name: &str) -> Result<Outcome> {
     let ca_path = lab_ca_path(lab_name);
     if !ca_path.is_file() {
@@ -146,6 +152,15 @@ pub fn ensure_bundle(lab_name: &str) -> Result<Outcome> {
     Ok(Outcome::Ready(bundle))
 }
 
+/// Build the bundle and point every later subprocess at it.
+///
+/// # Errors
+///
+/// Whatever [`ensure_bundle`] returns.
+///
+/// # Panics
+///
+/// If the process-wide lock holding the active bundle is poisoned.
 pub fn activate(lab_name: &str) -> Result<Outcome> {
     let outcome = ensure_bundle(lab_name)?;
     if let Outcome::Ready(bundle) = &outcome {

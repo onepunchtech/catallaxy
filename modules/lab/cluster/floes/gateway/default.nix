@@ -5,132 +5,118 @@
   cataCharts,
   k8sSpecs,
   k8sHelpers,
+  contracts,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
   verifyTypes = import ../../../verify-types.nix { inherit lib; };
+  cfg = config.floes.gateway;
 in
-(mkFloe {
-  name = "gateway";
-  imports = [ ./options.nix ];
-  exports =
-    { lib, ... }:
-    {
-      routing = lib.mkOption {
-        type = refs.mkCapability {
-          publicReady = refs.tokenOption ''
-            "The public Gateway is programmed and accepting routes."
-            Anything emitting an HTTPRoute/GRPCRoute against it gates on
-            this.
-          '';
-          controllerReady = refs.tokenOption ''
-            "The Gateway API controller is running." Weaker than
-            `publicReady`; enough to apply a Gateway, not enough for a
-            route to serve traffic.
-          '';
-        };
-        default = null;
-        description = ''
-          Gateway API routing, or null when this floe is off. Consumers
-          assert on this rather than on `floes.gateway.enable`: the
-          question is "will my HTTPRoute have a parent", which is ours.
-        '';
-      };
+{
+  imports = [
+    (floeOptions {
+      name = "gateway";
+    })
+    ./options.nix
+  ];
 
-      className = lib.mkOption {
-        type = lib.types.str;
-        default = "traefik";
-        description = "GatewayClass name.";
-      };
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "kube-system";
-        description = "Gateway namespace.";
-      };
-      gatewayName = lib.mkOption {
-        type = lib.types.str;
-        default = "default-gateway";
-        description = "Public Gateway resource name.";
-      };
-      passthroughEnabled = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = "Whether the TLS passthrough listener is enabled.";
-      };
-      terminatingListenerName = lib.mkOption {
-        type = lib.types.str;
-        default = "https";
-        description = ''
-          Listener a plain (non-passthrough) HTTPRoute should name in
-          `parentRefs.sectionName`. `https` when TLS terminates here,
-          `http` when it does not: a lab with `tls.enable = false`
-          has no `https` listener, so a route pinned to it attaches to
-          nothing (`NoMatchingParent`) and the gateway 404s.
-        '';
-      };
-      passthroughPort = lib.mkOption {
-        type = lib.types.port;
-        default = 8444;
-        description = "Passthrough entryPoint port on Traefik.";
-      };
-      internalEnabled = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = "Whether the internal-tier Gateway is on.";
-      };
-      internalGatewayName = lib.mkOption {
-        type = lib.types.str;
-        default = "default-gateway";
-        description = ''
-          Name of the Gateway resource internal-tier HTTPRoutes
-          attach to. Falls back to the public gateway when the
-          internal tier is disabled, so misconfigurations degrade
-          gracefully.
-        '';
-      };
-      internalExposureMode = lib.mkOption {
-        type = lib.types.str;
-        default = "haproxy-local";
-        description = "How the internal Gateway is reachable (haproxy-local | netbird | none).";
-      };
-      internalGatewayClusterIP = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        description = "Pinned ClusterIP for the traefik-internal Service (netbird mode).";
-      };
-      internalHostnames = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [ ];
-        description = "Registered internal-tier hostnames (deduped + sorted).";
-      };
-      internalDomain = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        description = ''
-          DNS zone the internal tier is named under, or "" when there
-          is no internal tier.
+  options.floes.gateway.exports = {
+    routing = (import ../../../../../lib/contracts/routing.nix { inherit lib; }).routingOption;
 
-          Whatever resolves the internal tier claims this zone, so
-          consumers read it here rather than deriving their own: netbird
-          pushes exactly this to mesh peers, and CoreDNS answers it.
-        '';
-      };
+    className = lib.mkOption {
+      type = lib.types.str;
+      default = "traefik";
+      description = "GatewayClass name.";
     };
-  module =
-    {
-      config,
-      lib,
-      cfg,
-      k8sSpecs,
-      peers,
-      ...
-    }:
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "kube-system";
+      description = "Gateway namespace.";
+    };
+    gatewayName = lib.mkOption {
+      type = lib.types.str;
+      default = "default-gateway";
+      description = "Public Gateway resource name.";
+    };
+    passthroughEnabled = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether the TLS passthrough listener is enabled.";
+    };
+    terminatingListenerName = lib.mkOption {
+      type = lib.types.str;
+      default = "https";
+      description = ''
+        Listener a plain (non-passthrough) HTTPRoute should name in
+        `parentRefs.sectionName`. `https` when TLS terminates here,
+        `http` when it does not: a lab with `tls.enable = false`
+        has no `https` listener, so a route pinned to it attaches to
+        nothing (`NoMatchingParent`) and the gateway 404s.
+      '';
+    };
+    passthroughPort = lib.mkOption {
+      type = lib.types.port;
+      default = 8444;
+      description = "Passthrough entryPoint port on Traefik.";
+    };
+    internalEnabled = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether the internal-tier Gateway is on.";
+    };
+    internalGatewayName = lib.mkOption {
+      type = lib.types.str;
+      default = "default-gateway";
+      description = ''
+        Name of the Gateway resource internal-tier HTTPRoutes
+        attach to. Falls back to the public gateway when the
+        internal tier is disabled, so misconfigurations degrade
+        gracefully.
+      '';
+    };
+    internalExposureMode = lib.mkOption {
+      type = lib.types.str;
+      default = "haproxy-local";
+      description = "How the internal Gateway is reachable (haproxy-local | netbird | none).";
+    };
+    internalGatewayClusterIP = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Pinned ClusterIP for the traefik-internal Service (netbird mode).";
+    };
+    internalHostnames = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Registered internal-tier hostnames (deduped + sorted).";
+    };
+    internalDomain = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = ''
+        DNS zone the internal tier is named under, or "" when there
+        is no internal tier.
+
+        Whatever resolves the internal tier claims this zone, so
+        consumers read it here rather than deriving their own: netbird
+        pushes exactly this to mesh peers, and CoreDNS answers it.
+      '';
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib) optionals optionalAttrs;
       cidrLib = import ../../../../../lib/util/network.nix { inherit lib; };
+
+      # k3s's ServiceLB binds 80 and 443 on the node, so a LoadBalancer
+      # Service is reachable at the node's name. Nothing else does, and a
+      # LoadBalancer there stays Pending forever with port 80 of the node
+      # answering nothing.
+      reachedByNodePort =
+        cfg.controller == "traefik" && !config.cluster.provisionerOut.publishesGatewayPorts;
 
       httpPort = if cfg.controller == "traefik" then 8000 else 80;
       httpsPort = if cfg.controller == "traefik" then 8443 else 443;
@@ -296,13 +282,20 @@ in
             ];
           }
 
+          // optionalAttrs reachedByNodePort {
+            service.type = "NodePort";
+            ports.web.nodePort = cfg.nodePorts.http;
+            ports.websecure.nodePort = cfg.nodePorts.https;
+          }
+
           // optionalAttrs cfg.tls.passthrough.enable {
             ports.passthrough = {
               port = cfg.tls.passthrough.port;
               expose.default = true;
               exposedPort = cfg.tls.passthrough.port;
               protocol = "TCP";
-            };
+            }
+            // optionalAttrs reachedByNodePort { nodePort = cfg.nodePorts.passthrough; };
           };
         };
       };
@@ -430,7 +423,8 @@ in
       assertions = [
 
         {
-          assertion = !(cfg.tls.enable && cfg.tls.domain != "") || (peers.cert-manager.issuance != null);
+          assertion =
+            !(cfg.tls.enable && cfg.tls.domain != "") || (config.floes.cert-manager.exports.issuance != null);
           message = "gateway tls.enable requires floes.cert-manager to be enabled (reconciles the wildcard Certificate CR).";
         }
         {
@@ -494,29 +488,51 @@ in
 
       };
 
-      bundles.gateway-api-crds = {
-        owner = {
-          bootstrap = "install-target";
-          steady = "argocd";
+      # http and https keep the cluster's defaults when the provisioner
+      # publishes them, but the passthrough listener has no such convention:
+      # its port is whatever the lab set, so it is answered here either way
+      # rather than left to a default that is only right by coincidence.
+      cluster.ingress =
+        if reachedByNodePort then
+          {
+            httpPort = cfg.nodePorts.http;
+            httpsPort = cfg.nodePorts.https;
+            passthroughPort = cfg.nodePorts.passthrough;
+          }
+        else
+          {
+            inherit passthroughPort;
+          };
+
+      floes.gateway.capabilities.provides.api-gateway = contracts.api-gateway.apiGateway.claim {
+        routing = {
+          publicReady = "gateway/public/ready";
+          controllerReady = "gateway/controller/ready";
         };
+        internalEnabled = cfg.internal.enable;
+      };
+      floes.gateway.bundles.gateway.conflicts = [ "api-gateway" ];
+      floes.gateway.bundles.gateway.disableWith = "floes.gateway.enable = false";
+
+      cluster.prerequisites.gateway-api-crds = {
         yamls = [ k8sSpecs.standaloneCrds.gateway-api ];
-        provides = [ "gateway-api/crds/established" ];
+        provides = [ "gateway-api/crds/established" ] ++ contracts.gateway-api.crdKinds;
       };
 
-      bundles.gateway-controller.owner = {
+      floes.gateway.bundles.gateway-controller.owner = {
         bootstrap = "install-target";
         steady = "argocd";
       };
-      bundles.gateway-controller.helmCharts = traefikHelm;
-      bundles.gateway-controller.resources = externalGatewayClass;
+      floes.gateway.bundles.gateway-controller.helmCharts = traefikHelm;
+      floes.gateway.bundles.gateway-controller.resources = externalGatewayClass;
 
-      bundles.gateway-controller.requires = [
+      floes.gateway.bundles.gateway-controller.requires = [
         "gateway-api/crds/established"
       ];
-      bundles.gateway-controller.provides = [
+      floes.gateway.bundles.gateway-controller.provides = [
         "gateway/controller/ready"
       ];
-      bundles.gateway-controller.readyProbe = {
+      floes.gateway.bundles.gateway-controller.readyProbe = {
         kind = "condition";
         resource = "deployment/traefik";
         namespace = cfg.namespace;
@@ -524,47 +540,65 @@ in
         timeout = "5m";
       };
 
-      bundles.gateway.owner = {
+      floes.gateway.bundles.gateway.owner = {
         bootstrap = "install-target";
         steady = "argocd";
       };
-      bundles.gateway.resources = publicGateway // internalGateway // internalService;
-      bundles.gateway.requires = [
+      floes.gateway.bundles.gateway.resources = publicGateway // internalGateway // internalService;
+      floes.gateway.bundles.gateway.requires = [
         "gateway/controller/ready"
       ];
-      bundles.gateway.provides = [
+      floes.gateway.bundles.gateway.provides = [
         "gateway/public/ready"
-      ];
+        "api-gateway"
+      ]
+      ++ contracts.gateway-api.routeKinds;
 
-      bundles.gateway.readyProbe = {
-        kind = "jsonpath";
-        resource = "gateway/${cfg.gatewayName}";
-        namespace = cfg.namespace;
-        jsonpath = "{.status.addresses[0].value}";
+      # An address is the right thing to wait for when something assigns one:
+      # it is the difference between a Gateway the controller has accepted and
+      # one traffic can actually arrive at. A Gateway fronted by a NodePort
+      # never gets one, because there is no address to assign, so waiting for
+      # it waits out the timeout on a gateway that has been serving the whole
+      # time. `Programmed` is what remains true in both cases.
+      floes.gateway.bundles.gateway.readyProbe =
+        if reachedByNodePort then
+          {
+            kind = "condition";
+            resource = "gateway/${cfg.gatewayName}";
+            namespace = cfg.namespace;
+            condition = "Programmed";
+            timeout = "10m";
+          }
+        else
+          {
+            kind = "jsonpath";
+            resource = "gateway/${cfg.gatewayName}";
+            namespace = cfg.namespace;
+            jsonpath = "{.status.addresses[0].value}";
 
-        timeout = "10m";
-      };
+            timeout = "10m";
+          };
 
-      bundles.gateway-tls.owner = {
+      floes.gateway.bundles.gateway-tls.owner = {
         bootstrap = "install-target";
         steady = "argocd";
       };
-      bundles.gateway-tls.resources = tlsResources;
+      floes.gateway.bundles.gateway-tls.resources = tlsResources;
 
-      bundles.gateway-tls.requires = [
+      floes.gateway.bundles.gateway-tls.requires = [
         "gateway/public/ready"
       ];
-      bundles.gateway-tls.provides = [
+      floes.gateway.bundles.gateway-tls.provides = [
         "gateway/tls/ready"
       ];
 
-      bundles.gateway-tls.readyProbe = {
+      floes.gateway.bundles.gateway-tls.readyProbe = {
         kind = "condition";
         resource = "certificate/gateway-tls";
         namespace = cfg.namespace;
         condition = "Ready";
         timeout = "15m";
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

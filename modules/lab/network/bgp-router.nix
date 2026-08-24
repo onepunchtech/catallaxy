@@ -33,7 +33,7 @@ let
   frrConf = ''
     frr version 10
     frr defaults traditional
-    hostname catallaxy-router
+    hostname catallaxy-${config.lab.name}-router
     log stdout informational
 
     router bgp ${toString cfg.asn}
@@ -84,8 +84,19 @@ in
 
     containerName = mkOption {
       type = types.str;
-      default = "catallaxy-router";
-      description = "Docker container name for the BGP router";
+      default = "catallaxy-${config.lab.name}-router";
+      description = ''
+        Docker container name for the BGP router.
+
+        The lab name is in it so the container can be attributed to a lab.
+        It used to be a bare `catallaxy-router`, which no lab claimed: `lab
+        list` could not say whose it was and `lab cleanup` could not remove
+        it as part of a lab.
+
+        This does not let two labs run a BGP router at once. The router is
+        host-networked and binds BGP/179 on the host, so they still collide;
+        what the name buys is knowing which lab a running one belongs to.
+      '';
     };
 
     out = {

@@ -24,7 +24,7 @@ impl DnsAction {
     }
 }
 
-pub async fn dns(ctx: &CataContext, name: &str, action: DnsAction) -> Result<()> {
+pub fn dns(ctx: &CataContext, name: &str, action: DnsAction) -> Result<()> {
     let lab = crate::io::nix::get_lab_spec(ctx, name)?;
 
     let Some(dns_info) = lab.dns_info.as_ref() else {
@@ -39,17 +39,17 @@ pub async fn dns(ctx: &CataContext, name: &str, action: DnsAction) -> Result<()>
     let zone = dns_info.zone.as_str();
 
     match action {
-        DnsAction::Teardown => return host::dns::dns_teardown(zone).await,
-        DnsAction::Setup => return host::dns::dns_setup(host, port, zone).await,
+        DnsAction::Teardown => return host::dns::dns_teardown(zone),
+        DnsAction::Setup => return host::dns::dns_setup(host, port, zone),
         DnsAction::Show => {}
     }
 
     println!("{} Lab DNS Configuration", style("catallaxy").cyan().bold());
     println!();
-    println!("DNS Server: {}:{}", host, port);
-    println!("Zone: {}", zone);
+    println!("DNS Server: {host}:{port}");
+    println!("Zone: {zone}");
     println!();
-    println!("To resolve *.{} from your terminal:", zone);
+    println!("To resolve *.{zone} from your terminal:");
     println!();
 
     let resolver = host::dns::macos_resolver_file(host, port, zone);
@@ -69,7 +69,7 @@ pub async fn dns(ctx: &CataContext, name: &str, action: DnsAction) -> Result<()>
     println!("  sudo mkdir -p {}", host::dns::RESOLVED_CONF_DIR);
     println!("  cat <<EOF | sudo tee {}", drop_in.path);
     println!("  [Resolve]");
-    println!("  DNS={}:{}", host, port);
+    println!("  DNS={host}:{port}");
     println!("  Domains=~{}", drop_in.domains);
     println!("  EOF");
     println!("  sudo systemctl restart systemd-resolved");
@@ -90,11 +90,11 @@ pub async fn dns(ctx: &CataContext, name: &str, action: DnsAction) -> Result<()>
 
     println!("{}", style("Linux (dnsmasq):").bold());
     println!("  Add to /etc/dnsmasq.conf:");
-    println!("  server=/{}/{}#{}", zone, host, port);
+    println!("  server=/{zone}/{host}#{port}");
     println!();
 
     println!("{}", style("Test:").bold());
-    println!("  dig @{} -p {} git.{}", host, port, zone);
+    println!("  dig @{host} -p {port} git.{zone}");
     println!();
 
     println!("{}", style("Auto-configure:").bold());

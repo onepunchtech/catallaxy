@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use crate::config::Context as CataContext;
 
-pub async fn run(
+pub fn run(
     ctx: &CataContext,
     name: Option<&str>,
     cluster: Option<&str>,
@@ -23,7 +23,7 @@ pub async fn run(
         let text = format_stable(&waves);
         if let Some(baseline) = diff {
             if !run_diff(&text, &baseline)? {
-                std::process::exit(1);
+                return Err(crate::domain::ExitWith(1).into());
             }
             return Ok(());
         }
@@ -100,7 +100,7 @@ fn extract_waves(v: &Value, cluster: Option<&str>) -> Result<Vec<Vec<Value>>> {
         let waves = cluster_val
             .get("manifestWaves")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| anyhow::anyhow!("cluster '{}' has no manifestWaves", target))?;
+            .ok_or_else(|| anyhow::anyhow!("cluster '{target}' has no manifestWaves"))?;
         return Ok(waves
             .iter()
             .map(|inner| inner.as_array().cloned().unwrap_or_default())
@@ -122,7 +122,7 @@ fn extract_waves(v: &Value, cluster: Option<&str>) -> Result<Vec<Vec<Value>>> {
     let waves = only_val
         .get("manifestWaves")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| anyhow::anyhow!("cluster '{}' has no manifestWaves", only_name))?;
+        .ok_or_else(|| anyhow::anyhow!("cluster '{only_name}' has no manifestWaves"))?;
     Ok(waves
         .iter()
         .map(|inner| inner.as_array().cloned().unwrap_or_default())
@@ -254,7 +254,8 @@ fn run_diff(actual: &str, baseline_path: &Path) -> Result<bool> {
     let mut tmp = tempfile::NamedTempFile::new().context("creating temp file for diff")?;
     tmp.write_all(actual.as_bytes())
         .context("writing actual waves to temp file")?;
-    tmp.flush().ok();
+    tmp.flush()
+        .context("flushing the temp file the diff is read from")?;
 
     let status = crate::io::diff::unified(baseline_path, tmp.path());
     if let Err(e) = status {

@@ -253,18 +253,53 @@ let
     script = renderScript;
   };
 
+  requiredBy = {
+    condition = [
+      "resource"
+      "condition"
+    ];
+    jsonpath = [
+      "resource"
+      "jsonpath"
+    ];
+    exists = [ "resource" ];
+    http = [ "url" ];
+    tcp = [
+      "host"
+      "port"
+    ];
+    dns = [ "hostname" ];
+    script = [ "script" ];
+  };
+
+  missingFields =
+    probe: builtins.filter (f: (probe.${f} or null) == null) (requiredBy.${probe.kind} or [ ]);
+
   renderProbe =
     probe:
+    let
+      missing = missingFields probe;
+    in
     if !(probe ? kind) then
       throw "wait.nix: probe missing 'kind' field (attrs: ${toString (builtins.attrNames probe)})"
     else if !(hasAttr probe.kind renderers) then
       throw "wait.nix: unknown probe kind '${probe.kind}' (valid: ${concatStringsSep ", " (builtins.attrNames renderers)})"
+    else if missing != [ ] then
+      throw ''
+        wait.nix: a '${probe.kind}' probe needs ${concatStringsSep " and " missing}, and has ${
+          if builtins.length missing == 1 then "none" else "neither"
+        }.
+
+        The command would render with an empty argument, which does not fail:
+        it waits on a resource whose name is the empty string until the
+        timeout, and reports the bundle as never becoming ready.
+      ''
     else
       renderers.${probe.kind} probe;
 
 in
 {
-  inherit renderProbe caBundleVolumeName;
+  inherit renderProbe caBundleVolumeName missingFields;
 
   mkWaitInitContainer =
     {

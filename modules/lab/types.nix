@@ -45,6 +45,11 @@ let
         };
         _module.args.contracts = contracts;
         _module.args.lab = {
+          floes = lib.mapAttrs (_: floe: {
+            inherit (floe) enable;
+            exports = floe.exports or { };
+          }) (outerConfig.lab.floes or { });
+
           name = outerConfig.lab.name;
           environment = outerConfig.lab.environment;
           contextPrefix = outerConfig.lab.contextPrefix;

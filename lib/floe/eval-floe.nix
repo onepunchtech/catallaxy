@@ -3,6 +3,8 @@
 let
   inherit (lib) evalModules mapAttrs;
 
+  k8sLib = import ../../modules/lab/cluster/lib/kubernetes/types.nix { inherit lib; };
+
   defaultArgs = {
 
     cataCharts = { };
@@ -44,29 +46,66 @@ in
       floe,
       cluster ? { },
       providers ? { },
+      # Capabilities each stubbed provider stands in for, as
+      # `<floe> = [ "api-gateway" ]`. Needed because a consumer addressing a
+      # capability rather than a floe finds its provider through what that
+      # provider claims, and a stub claims nothing unless it says so. Named
+      # here rather than mapped from the floe's name, which would be the
+      # central registry the real thing deliberately does without.
+      providerCapabilities ? { },
       args ? { },
     }:
     let
       mergedArgs = defaultArgs // args;
 
       providerModules = mapAttrs (upstreamName: exportsValue: {
-        options.floes.${upstreamName}.exports = lib.mkOption {
-          type = lib.types.attrs;
-          default = { };
+        options.floes.${upstreamName} = {
+          exports = lib.mkOption {
+            type = lib.types.attrs;
+            default = { };
+          };
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+          };
+          capabilities = lib.mkOption {
+            type = lib.types.attrs;
+            default = { };
+          };
         };
-        config.floes.${upstreamName}.exports = exportsValue;
+        config.floes.${upstreamName} = {
+          exports = exportsValue;
+          capabilities.provides = lib.genAttrs (providerCapabilities.${upstreamName} or [ ]) (_: { });
+        };
       }) providers;
 
       result = evalModules {
         modules = [
           floe
 
+          ../../modules/lab/cluster/prerequisites.nix
+
+          # Capability resolution is a module, not something a constructor
+          # computes and hands in, so a harness that wants it has to import it
+          # the same way a cluster does.
+          ../../modules/lab/cluster/capabilities.nix
+
           {
             options.bundles = lib.mkOption {
-              type = lib.types.attrsOf (lib.types.submodule { freeformType = lib.types.attrs; });
+              type = lib.types.attrsOf k8sLib.bundleType;
               default = { };
             };
+
           }
+
+          # The cluster lifts each floe's bundles into `bundles`; a harness
+          # that wants to look at what a floe declared has to do the same.
+          (
+            { config, ... }:
+            {
+              bundles = lib.mkMerge (lib.mapAttrsToList (_: floe: floe.bundles or { }) (config.floes or { }));
+            }
+          )
 
           {
             options.assertions = lib.mkOption {
@@ -115,22 +154,6 @@ in
               type = lib.types.attrsOf lib.types.attrs;
               default = { };
             };
-            options.compose = lib.mkOption {
-              type = lib.types.attrsOf lib.types.attrs;
-              default = { };
-            };
-            options.databases.postgres = lib.mkOption {
-              type = lib.types.attrsOf lib.types.attrs;
-              default = { };
-            };
-            options.databases.redis = lib.mkOption {
-              type = lib.types.attrsOf lib.types.attrs;
-              default = { };
-            };
-            options.storage.s3Buckets = lib.mkOption {
-              type = lib.types.attrsOf lib.types.attrs;
-              default = { };
-            };
           }
 
         ]
@@ -150,7 +173,7 @@ in
     in
     {
       manifests = cfg.bundles or { };
-      exports = if soleFloe != null then soleFloeCfg.exports else { };
+      exports = if soleFloe != null then soleFloeCfg.exports or { } else { };
       config = cfg;
     };
 }

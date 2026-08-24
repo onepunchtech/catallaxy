@@ -9,6 +9,254 @@ The format is based on
 
 ### Added
 
+- **A floe can declare infrastructure, and the lab applies it.** `infra` is
+  the plan/apply camp beside `bundles`, which is the reconcile camp:
+  terraform, OpenTofu, Pulumi and CloudFormation all share one shape, where
+  a stack is a unit of state and the unit of an apply, resources inside it
+  are ordered by the tool, and outputs are known only after apply.
+  Crossplane stays where it is; it is a controller reconciling a CR, which
+  bundles already model.
+
+  A stack becomes three steps in the same plan as everything else, so
+  ordering against clusters and manifests is the anchor grammar. Apply runs
+  before manifests by default. A bundle waits on a stack with
+  `step:infra/<stack>/applied`.
+
+  `cata lab up` shows the diff and does not apply without `--infra`. Same
+  for `cata lab destroy`.
+
+  Providers are nix packages. A resource says `provider = "aws"` and the
+  registry address and version are read from the package the lab carries, so
+  the rendered file records what actually ran. Nothing is downloaded, so
+  there is no lock file to drift and `init` needs no network.
+
+  A resource says _when_ it is needed with `phase`, and a phase is a stack,
+  which is one state file and one apply: `before-clusters` then
+  create-cluster then `after-clusters` then deploy-manifests. A boundary
+  exists only where something terraform cannot do happens in between;
+  splitting for any other reason costs parallelism, since terraform already
+  orders and parallelises within a stack while the plan runs steps serially.
+  A lab that says nothing gets one stack.
+
+  One `lab.infra.backend` declaration covers every stack, with `<stack>`
+  standing in for the name, and two stacks resolving to one state file is
+  refused. Provider configuration is per instance
+  (`lab.infra.providers.aws.eu`), so one stack can hold two regions.
+
+  A reference may cross a stack, becoming a read of the producing stack's
+  state, and that is what orders the two: a stack reading another's output
+  applies after it and is destroyed before it, with nothing declared. This
+  is how a change that needs several terraform passes is expressed.
+
+  Outputs are published through an interface: a `vault` store over its API,
+  or any other store as a command that receives the key in the environment
+  and the value on stdin. Only a `runtime` store can be published to, which
+  the existing `direction` field already answers.
+
+  State lives outside the lab's state directory, and `cata lab cleanup`
+  refuses while a stack still holds resources.
+
+### Changed
+
+- **`mkFloe` and `mkLabFloe` are gone. A floe is an ordinary NixOS module.**
+  Everything that made a floe a floe already lived in a shared options
+  module; the constructors had shrunk to forwarding three arguments and
+  re-applying module arguments the module system had already supplied.
+
+  A floe now imports `floeOptions` (or `labFloeOptions`) and is otherwise
+  plain module syntax. This is a breaking change for out-of-tree floes.
+  `catallaxy.lib.floe` exports
+  `{ floeOptions, labFloeOptions, evalFloe, gatewayOptions, refs }`.
+
+  To migrate, per floe:
+  1. `mkFloe` becomes `floeOptions` where you inherit it
+  2. drop the `}@__floeModuleArgs` capture and the trailing
+     `}) __floeModuleArgs`, and add to the file's formals whatever the
+     `module` body named and the file did not
+  3. bind `cfg = config.floes.<name>;` in the `let`
+  4. `name`, `version` and `drift` move into a `floeOptions { ... }` entry
+     in `imports`, beside whatever `imports` already held
+  5. `exports = { ... }` becomes `options.floes.<name>.exports = { ... }`
+  6. `module = args: BODY` becomes `config = lib.mkIf cfg.enable BODY`
+
+  ```nix
+  { config, lib, ... }:
+  let
+    inherit (catallaxy.lib.floe) floeOptions;
+    cfg = config.floes.hello;
+  in
+  {
+    imports = [
+      (floeOptions {
+        name = "hello";
+        version = "1.0.0";
+      })
+      ./options.nix
+    ];
+
+    options.floes.hello.exports.url = lib.mkOption { type = lib.types.str; };
+
+    config = lib.mkIf cfg.enable { };
+  }
+  ```
+
+  `exports` is no longer a single submodule-typed option built from an
+  `exports` argument. A floe declares the fields it offers as ordinary
+  nested options, so a type error names the field. Anything reading a floe's
+  whole `exports` should write `floe.exports or { }`, since a floe that
+  offers nothing no longer has the attribute.
+
+  One thing this fixes rather than moves: `mkFloe` required a floe to name
+  `lab` in its formals, and a floe that did not silently got image
+  retargeting that did nothing. `floeOptions` reads `lab` itself, so
+  retargeting no longer depends on what the floe file happens to name.
+
+  The `cata floe new` scaffold also wrote a flat `bundles.<name>`, which has
+  been an eval error since `declaredBy` became required. It now writes
+  `floes.<name>.bundles.<name>`.
+
+### Removed
+
+- **`cata new floe` is gone.** Scaffolding a floe from a template the CLI
+  carried was a second copy of what `nix flake init -t` already does, and it
+  kept a third copy of the floe skeleton in `cli/src/commands/templates/`
+  that nothing evaluated. That copy had already drifted: the registry line
+  it wrote passed `mkFloe`, which its own template stopped taking when the
+  constructor was deleted, so a scaffolded floe failed evaluation on an
+  undefined variable.
+
+  The consumer template is the one copy now, and it is a real lab that
+  `nix flake check` builds, so it cannot rot the same way:
+
+  ```bash
+  nix flake init -t github:onepunchtech/catallaxy#consumer
+  ```
+
+  Adding a second floe to a lab you already have is copying
+  `floes/hello-world` and adding a line to `floes/default.nix`, which is
+  what the command did.
+
+### Fixed
+
+- **An export without a default is refused for every floe, not just the
+  listed ones.** `checks.every-floe-export-has-a-default` reads every floe's
+  exports with nothing enabled and names any floe that cannot answer. The
+  rule was documented as enforced, but the check behind it spot-checked
+  particular fields on five floes, so a new floe could ship an unreadable
+  export and break a lab that never enabled it.
+
+- **The BGP router container now carries its lab's name.** It defaulted to a
+  bare `catallaxy-router`, which no lab claimed: `lab list` could not say
+  whose a running one was, and `lab cleanup` could not remove it as part of
+  a lab. This does not make two BGP labs co-runnable — the router is
+  host-networked and binds BGP/179 either way — but a running one can now be
+  attributed. `lab up` refuses to start beside a surviving
+  `catallaxy-router` rather than leaving two FRR daemons contending for the
+  port, and names `cata lab cleanup --orphans`.
+
+- **The port-conflict refusal names the lab holding the port.** It named
+  only the container, and never said the conflict could be resolved by
+  removing the other lab. It now reads the owner off the container's label,
+  falls back to the name shape for containers created before labels, and
+  gives both remedies: clean the other lab up, or give this one its own
+  ports.
+
+- **The image cache reported "skipped" for two different things.** An image
+  the lab publishes itself needs no mirroring; an image whose registry has
+  no configured upstream is pulled from the public internet when the cluster
+  deploys. Both counted as "skipped" and neither was named. When such a
+  registry is unreachable the workload sits in ImagePullBackOff and surfaces
+  minutes later as a readyProbe timeout against the deployment, which points
+  at the wrong thing entirely. The unmirrored images are now listed, with
+  what it means and the option that fixes it.
+
+- **`lab up` refused to start a lab that uses port 80.** The preflight
+  tested a port by binding it, and read any bind failure as "something else
+  holds this". A port below 1024 refuses a non-root bind with
+  `PermissionDenied` whether or not anything holds it, and docker publishes
+  those ports as root regardless — so the check reported a conflict that did
+  not exist and refused to run a lab that would have worked. Only
+  `AddrInUse` is a conflict now; anything else is "cannot tell", which is
+  not a reason to stop.
+
+### Changed
+
+- **`cata lab up` converges cluster shape, or says exactly why it cannot.**
+  It used to compare two of roughly twelve declared fields — worker count
+  and the k3s image tag — so changing a port, a volume, an apiserver arg, a
+  subnet, a CNI flag or the control-plane count produced a green run and an
+  unchanged cluster, while the executor and the docs both promised
+  idempotent convergence.
+
+  Running `lab up` twice with an unchanged declaration is still a no-op.
+  What changed is what happens when the declaration moved:
+  - **Adding workers is done in place.** k3d grows a cluster without
+    disturbing what is on the other nodes. Removing them is not, because k3d
+    deletes a node without draining it.
+  - **Everything else needs the cluster rebuilt**, since it is baked into
+    the node containers at creation. `lab up` reports which options drifted
+    and stops; `lab up --recreate <cluster>` destroys and rebuilds it.
+    Naming the cluster is deliberate — everything on it is lost.
+
+  Most of those fields cannot be read back off a live k3d cluster without
+  parsing k3d's own internals, so the shape a cluster was built from is
+  recorded when it is built and compared against the declaration on the next
+  run. A cluster predating the record is adopted when the fields a running
+  cluster _can_ answer for agree, and says plainly that it is asserting the
+  rest rather than verifying them.
+
+- **Host service containers are recreated when they no longer match.** The
+  proxy, DNS and registry containers were compared only against the content
+  of their config files, never against their image or published ports, so
+  bumping an image tag in Nix printed "already running" in green and kept
+  serving the old image. They are recreated rather than refused, since they
+  are containers on the operator's workstation rather than cluster state,
+  and the drifted fields are printed so the recreation is visible.
+
+- **`cata lab destroy` now exits non-zero when it could not confirm a
+  release.** A cluster that was in kubeconfig but did not answer was read as
+  "assuming already gone" and recorded no failure, so teardown exited 0
+  while the LoadBalancer Services and PersistentVolumes that step exists to
+  delete were left paid-for. It is now a recorded failure, like the case
+  where the cluster is missing from kubeconfig already was. CI that treats
+  `lab destroy` as infallible will start seeing that failure, which is the
+  point: the resources were leaking before, silently.
+
+- **A kube context that does not resolve is an error, not the operator's
+  current cluster.** kubectl reads an empty `--context` as unset and falls
+  back to `current-context`, so a lab missing a `runtimeContexts` entry ran
+  against whatever cluster you were pointed at. `lab status` reported such a
+  lab as reachable. Every path that builds a `--context` is now checked.
+
+- **`cata lab diff` refuses a GitOps lab** unless `--force`, the way
+  `lab apply` already did, instead of failing with a message about the
+  manifest tree being rendered by an older catallaxy.
+
+- **A generated secret with `length: 0` is refused** rather than minting an
+  empty credential, and a length above 4096 is refused rather than
+  attempting the allocation.
+
+### Added
+
+- **`cata lab cleanup`, and `cata lab list` now shows what is running
+  here.** A lab left behind by a failed `lab up`, or one this flake no
+  longer defines, used to be both invisible and unremovable: `lab list` only
+  evaluated the flake, and `lab destroy` reads its teardown plan out of the
+  flake, so it can only take down what the flake still describes. Meanwhile
+  the leftovers hold the fixed container names and ports that make the next
+  `lab up` of any lab refuse.
+
+  Containers now carry `catallaxy.io/lab` and `catallaxy.io/flake`, and each
+  lab writes `labs/<lab>/lab.json` before its first step runs, recording its
+  network, subnet, services and the k3d cluster names. `lab list` correlates
+  those with docker and k3d to answer "what is running here", including labs
+  this flake does not define. `lab cleanup <lab>` removes them from that
+  evidence alone, never evaluating a flake. It does not touch cloud
+  resources, and says so: releasing those is part of the teardown plan.
+
+  `lab destroy` remains how a lab is taken down. `lab cleanup` is for when
+  the flake cannot answer.
+
 - **A CycloneDX 1.6 bill of materials, at `sbom.json` in every lab
   package.** Built from the rendered manifests rather than from what floes
   declare, so an image a chart pins in its own values is counted like any

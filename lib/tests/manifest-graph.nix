@@ -8,10 +8,11 @@ let
     attrs:
     {
       kinds = [ ];
-      floe = null;
+      declaredBy = "cluster";
       after = [ ];
       requires = [ ];
       provides = [ ];
+      conflicts = [ ];
     }
     // attrs;
 
@@ -152,64 +153,49 @@ lib.concatLists [
     ]
   )
 
-  (assertEq "kind:X anchor matches any bundle of that kind"
+  # `kind:` names admissibility, not containment. It used to mean "any bundle
+  # holding a resource of this kind", which answers the opposite question:
+  # every emitter of a Certificate rather than the one thing that admits one.
+  (assertEq "kind:X matches whoever provides that kind, not who emits it"
     (orderOf {
-      workload = b {
-        kinds = [ "Deployment" ];
-        after = [ "kind:Namespace" ];
-      };
-      ns-app = b { kinds = [ "Namespace" ]; };
-      ns-lib = b { kinds = [ "Namespace" ]; };
+      consumer = b { requires = [ "kind:cert-manager.io/Certificate" ]; };
+      installer = b { provides = [ "kind:cert-manager.io/Certificate" ]; };
     })
-
     [
-      "ns-app"
-      "ns-lib"
-      "workload"
+      "installer"
+      "consumer"
     ]
   )
 
-  # A bundle holds resources of many kinds, which is why this is a list and
-  # not the scalar it started as: the scalar could only ever describe a bundle
-  # holding one thing.
-  (assertEq "kind:X matches a bundle that holds that kind among others"
-    (orderOf {
-      mixed = b {
-        kinds = [
-          "ConfigMap"
-          "CustomResourceDefinition"
-          "Deployment"
-        ];
-      };
-      user = b { after = [ "optional:kind:CustomResourceDefinition" ]; };
+  (assertThrows "a kind nobody installs is refused" (
+    force (orderOf {
+      consumer = b { requires = [ "kind:cert-manager.io/Certificate" ]; };
     })
+  ))
 
-    [
-      "mixed"
-      "user"
-    ]
-  )
-
-  (assertEq "a bundle declaring no kinds answers no kind: anchor"
-    (orderOf {
-      chartOnly = b { kinds = [ ]; };
-      user = b { after = [ "optional:kind:Deployment" ]; };
+  (assertEq "the group qualifies the kind, so two Clusters are two names"
+    (wavesOf {
+      cnpg = b { provides = [ "kind:postgresql.cnpg.io/Cluster" ]; };
+      capi = b { provides = [ "kind:cluster.x-k8s.io/Cluster" ]; };
+      db = b { requires = [ "kind:postgresql.cnpg.io/Cluster" ]; };
     })
-
     [
-      "chartOnly"
-      "user"
+      [
+        "capi"
+        "cnpg"
+      ]
+      [ "db" ]
     ]
   )
 
   (assertEq "floe:X anchor matches any bundle from that floe"
     (orderOf {
       user = b {
-        floe = "consumer";
+        declaredBy = "consumer";
         after = [ "floe:cert-manager" ];
       };
-      issuer = b { floe = "cert-manager"; };
-      webhook = b { floe = "cert-manager"; };
+      issuer = b { declaredBy = "cert-manager"; };
+      webhook = b { declaredBy = "cert-manager"; };
     })
     [
       "issuer"
@@ -283,7 +269,7 @@ lib.concatLists [
 
   (assertThrows "hard kind: anchor miss fails eval" (
     force (orderOf {
-      user = b { after = [ "kind:no-such-kind" ]; };
+      user = b { after = [ "kind:example.com/NoSuchKind" ]; };
     })
   ))
 
@@ -330,7 +316,7 @@ lib.concatLists [
       bundles = {
         only = b {
           kinds = [ "custom-kind" ];
-          floe = "myfloe";
+          declaredBy = "myfloe";
           provides = [ "here" ];
         };
       };
@@ -339,7 +325,8 @@ lib.concatLists [
       [
         {
           after = [ ];
-          floe = "myfloe";
+          conflicts = [ ];
+          declaredBy = "myfloe";
           kinds = [ "custom-kind" ];
           name = "only";
           provides = [ "here" ];
@@ -444,10 +431,166 @@ lib.concatLists [
     ]
   )
 
-  (assertEq "unknown root is silently skipped" (graph.closurePredecessors {
+  (assertThrows "unknown root fails eval" (
+    graph.closurePredecessors {
+      bundles = {
+        real = b { };
+      };
+      roots = [ "typo-no-such-bundle" ];
+    }
+  ))
+
+  (assertEq "a known root still resolves alongside the check" (graph.closurePredecessors {
     bundles = {
       real = b { };
     };
-    roots = [ "typo-no-such-bundle" ];
+    roots = [ "real" ];
+  }) [ "real" ])
+
+  (assertEq "requires reaches a bundle by name, the way after does"
+    (orderOf {
+      consumer = b { requires = [ "producer" ]; };
+      producer = b { };
+    })
+    [
+      "producer"
+      "consumer"
+    ]
+  )
+
+  (assertEq "after reaches a token, the way requires does"
+    (orderOf {
+      consumer = b { after = [ "cert-manager/webhook/ready" ]; };
+      producer = b { provides = [ "cert-manager/webhook/ready" ]; };
+    })
+    [
+      "producer"
+      "consumer"
+    ]
+  )
+
+  (assertEq "a bundle of that name wins over a token of that name"
+    (orderOf {
+      consumer = b { requires = [ "shared" ]; };
+      shared = b { };
+      impostor = b { provides = [ "shared" ]; };
+    })
+    [
+      "impostor"
+      "shared"
+      "consumer"
+    ]
+  )
+
+  (assertThrows "a name nothing provides is refused in requires" (
+    force (orderOf {
+      consumer = b { requires = [ "nobody/provides/this" ]; };
+    })
+  ))
+
+  (assertThrows "a name nothing provides is refused in after" (
+    force (orderOf {
+      consumer = b { after = [ "nobody/provides/this" ]; };
+    })
+  ))
+
+  (assertEq "optional: silences an unmatched name in requires too" (orderOf {
+    consumer = b { requires = [ "optional:nobody/provides/this" ]; };
+  }) [ "consumer" ])
+
+  (assertEq "one provider of a name it conflicts with is not a conflict" (orderOf {
+    gateway = b {
+      provides = [ "api-gateway" ];
+      conflicts = [ "api-gateway" ];
+    };
+  }) [ "gateway" ])
+
+  (assertThrows "two providers of a conflicted name is refused" (
+    force (orderOf {
+      gateway = b {
+        provides = [ "api-gateway" ];
+        conflicts = [ "api-gateway" ];
+      };
+      cilium = b {
+        provides = [ "api-gateway" ];
+        conflicts = [ "api-gateway" ];
+      };
+    })
+  ))
+
+  (assertEq "two providers that do not conflict are additive"
+    (lib.sort (a: b: a < b) (orderOf {
+      zot = b { provides = [ "oci-registry" ]; };
+      harbor = b { provides = [ "oci-registry" ]; };
+    }))
+    [
+      "harbor"
+      "zot"
+    ]
+  )
+
+  (assertThrows "a one-sided conflict is refused whichever way the names sort" (
+    force (orderOf {
+      aaa = b { provides = [ "storage" ]; };
+      zzz = b { conflicts = [ "storage" ]; };
+    })
+  ))
+
+  (assertThrows "and refused when the conflicting side sorts first" (
+    force (orderOf {
+      aaa = b { conflicts = [ "storage" ]; };
+      zzz = b { provides = [ "storage" ]; };
+    })
+  ))
+
+  (assertThrows "conflicting with a name another bundle provides is refused" (
+    force (orderOf {
+      openebs = b { conflicts = [ "default-storage-class" ]; };
+      k3s = b { provides = [ "default-storage-class" ]; };
+    })
+  ))
+
+  (assertEq "a step: name is not refused for having no bundle behind it" (orderOf {
+    consumer = b { requires = [ "step:lab/secrets" ]; };
+  }) [ "consumer" ])
+
+  (assertEq "and adds no edge, because the step is not on this cluster"
+    (orderOf {
+      aaa = b { after = [ "step:lab/secrets" ]; };
+      zzz = b { };
+    })
+    [
+      "aaa"
+      "zzz"
+    ]
+  )
+
+  (assertEq "a step: name is collected with the bundle and verb that named it"
+    (graph.stepAnchors {
+      consumer = b {
+        requires = [ "step:lab/secrets" ];
+        after = [ "optional:step:lab/registry-config" ];
+      };
+      unrelated = b { };
+    })
+    [
+      {
+        bundle = "consumer";
+        field = "after";
+        hard = false;
+        token = "lab/registry-config";
+      }
+      {
+        bundle = "consumer";
+        field = "requires";
+        hard = true;
+        token = "lab/secrets";
+      }
+    ]
+  )
+
+  (assertEq "a bundle naming no step collects nothing" (graph.stepAnchors {
+    plain = b { requires = [ "tok" ]; };
+    p = b { provides = [ "tok" ]; };
   }) [ ])
 ]

@@ -24,6 +24,8 @@ let
   pure = {
     coredns-internal = testsDir + "/coredns-internal.nix";
     k8s-helpers = testsDir + "/k8s-helpers.nix";
+    k8s-fields = testsDir + "/k8s-fields.nix";
+    k3d-volumes = testsDir + "/k3d-volumes.nix";
     idempotent-job = testsDir + "/util-idempotent-job.nix";
     wait-helpers = testsDir + "/util-wait.nix";
     hcl = testsDir + "/util-hcl.nix";
@@ -37,14 +39,16 @@ let
     manifest-projections = testsDir + "/manifest-projections.nix";
     secret-sharing = testsDir + "/secret-sharing.nix";
     secret-stores = testsDir + "/secret-stores.nix";
-    bundle-provenance = testsDir + "/floe/bundle-provenance.nix";
+    eval-floe = testsDir + "/floe/eval-floe.nix";
     cluster-lint = testsDir + "/cluster-lint.nix";
   };
 
   withPkgs = {
     secret-generate = testsDir + "/secret-generate.nix";
     manifest-waves = testsDir + "/manifest-waves.nix";
-    mk-floe = testsDir + "/floe/mk-floe.nix";
+    floe-options = testsDir + "/floe/floe-options.nix";
+    infra-refs = testsDir + "/infra/refs.nix";
+    infra-providers = testsDir + "/infra/providers.nix";
     render-images = testsDir + "/render-images.nix";
   };
 

@@ -12,13 +12,13 @@ pub enum KubeconfigCommands {
     Show,
 }
 
-pub async fn run(ctx: &CataContext, command: KubeconfigCommands) -> Result<()> {
+pub fn run(ctx: &CataContext, command: KubeconfigCommands) -> Result<()> {
     match command {
-        KubeconfigCommands::Show => show(ctx).await,
+        KubeconfigCommands::Show => show(ctx),
     }
 }
 
-async fn show(ctx: &CataContext) -> Result<()> {
+fn show(ctx: &CataContext) -> Result<()> {
     let name = ctx
         .flake_ref
         .fragment

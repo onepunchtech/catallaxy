@@ -20,9 +20,17 @@ let
       clusterName: clusterCfg:
       let
         floes = clusterCfg.floes or { };
-        k3dClusterName = clusterCfg.provisioner.k3d.clusterName or clusterName;
-        upstream = "k3d-${k3dClusterName}-server-0";
-        passthroughPort = clusterCfg.floes.gateway.tls.passthrough.port or 8444;
+        # Answered by the provisioner. This used to derive the k3d node name
+        # here, so a cluster built any other way got a backend that resolves
+        # to nothing and every route through it failed.
+        upstream = clusterCfg.cluster.provisionerOut.ingressBackend or null;
+        passthroughPort = clusterCfg.cluster.ingress.passthroughPort or 8444;
+
+        # Answered by the cluster, because 80 and 443 on the node are k3s's
+        # ServiceLB binding them and nothing more general. A gateway reached
+        # by NodePort answers somewhere else entirely.
+        httpPort = clusterCfg.cluster.ingress.httpPort or 80;
+        httpsPort = clusterCfg.cluster.ingress.httpsPort or 443;
 
         mkEntry = name: gw: domain: {
           inherit
@@ -30,6 +38,8 @@ let
             domain
             upstream
             passthroughPort
+            httpPort
+            httpsPort
             ;
           cluster = clusterName;
           mode = gw.mode or "terminate";
@@ -43,7 +53,7 @@ let
 
         entriesFor =
           name: domain: gw:
-          if (gw.enable or false) && isRealDomain domain && publiclyExposed gw then
+          if upstream != null && (gw.enable or false) && isRealDomain domain && publiclyExposed gw then
             [ (mkEntry name gw domain) ] ++ map (d: mkEntry name gw d) (gw.extraDomains or [ ])
           else
             [ ];
@@ -99,8 +109,13 @@ let
         map (
           upstream:
           let
-            cluster = (builtins.head (filter (s: s.upstream == upstream) terminateServices)).cluster;
-            target = if cfg.tls.enable then "${upstream}:443 ssl verify none" else "${upstream}:80";
+            svc = builtins.head (filter (s: s.upstream == upstream) terminateServices);
+            cluster = svc.cluster;
+            target =
+              if cfg.tls.enable then
+                "${upstream}:${toString svc.httpsPort} ssl verify none"
+              else
+                "${upstream}:${toString svc.httpPort}";
           in
           ''
             backend bk_http_${cluster}
@@ -231,7 +246,17 @@ in
     httpPort = mkOption {
       type = types.port;
       default = 80;
-      description = "Host port for HTTP";
+      description = ''
+        Host port the lab's ingress answers on, bound to loopback.
+
+        The ingress is published twice: here for a human, and on this lab's
+        docker bridge gateway at 80 and 443 for everything inside the lab.
+        The zone's wildcard answers that gateway, because one zone is served
+        to the host and to pods and only that address reaches both, so it has
+        to be a port the ingress is really on. Binding the gateway rather than
+        every interface is what lets each lab keep 80 and 443 there: a lab
+        owns its subnet, so it owns that address.
+      '';
     };
 
     httpsPort = mkOption {
@@ -282,9 +307,21 @@ in
       container = cfg.containerName;
       image = cfg.image;
       ports = [
-        "${toString cfg.httpPort}:80"
+        "127.0.0.1:${toString cfg.httpPort}:80"
+        "${config.lab.dns.server}:80:80"
       ]
-      ++ lib.optional cfg.tls.enable "${toString cfg.httpsPort}:443";
+      ++ lib.optionals cfg.tls.enable [
+        "127.0.0.1:${toString cfg.httpsPort}:443"
+        "${config.lab.dns.server}:443:443"
+      ];
+
+      readyProbe = {
+        kind = "tcp";
+        host = "127.0.0.1";
+        port = cfg.httpPort;
+        timeout = "60s";
+      };
+
       volumes = {
         "/usr/local/etc/haproxy/haproxy.cfg" = {
           content = haproxyConfig;

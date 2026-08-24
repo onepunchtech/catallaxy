@@ -9,6 +9,8 @@
 
 {
   clusterName,
+  labName,
+  declaredBundles ? [ ],
   prefix ? "",
   imageLock ? { },
   imageRegistry ? null,

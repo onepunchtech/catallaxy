@@ -41,6 +41,8 @@ let
 
     exposedHosts = config.cluster.out.exposedHosts or [ ];
 
+    trust = config.cluster.trust;
+
     apiserver = config.cluster.apiserver;
 
     floes = lib.mapAttrs (name: floe: {
@@ -59,12 +61,25 @@ let
         waitTimeout = config.provisioner.docker.waitTimeout or "10m";
         colima = config.provisioner.docker.colima or { };
       };
+      talos = {
+        clusterName = config.provisioner.talos.clusterName or "";
+        image = config.provisioner.talos.image or null;
+        kubernetesVersion = config.provisioner.talos.kubernetesVersion or null;
+        subnet = config.provisioner.talos.subnet or "10.5.0.0/24";
+        exposedPorts = config.provisioner.talos.exposedPorts or [ ];
+        mounts = config.provisioner.talos.mounts or [ ];
+        memory = config.provisioner.talos.memory or "2.0GiB";
+        cpus = config.provisioner.talos.cpus or "2.0";
+        configPatches = config.provisioner.talos.configPatches or [ ];
+        reachableFrom = config.provisioner.talos.reachableFrom or [ ];
+      };
       k3d = {
         clusterName = config.provisioner.k3d.clusterName or "";
         image = config.provisioner.k3d.image or null;
         noTraefik = config.provisioner.k3d.noTraefik or true;
         noServiceLB = config.provisioner.k3d.noServiceLB or false;
         noFlannel = config.provisioner.k3d.noFlannel or true;
+        noLocalStorage = config.provisioner.k3d.noLocalStorage or false;
         network = config.provisioner.k3d.network or null;
         ports = config.provisioner.k3d.ports or [ ];
         extraApiServerArgs = config.provisioner.k3d.extraApiServerArgs or [ ];
@@ -98,15 +113,6 @@ let
       inherit (crd) waitForEstablished crdNames;
       paths = map toString crd.source.paths;
     }) (lib.filterAttrs (_: crd: crd.enable) (config.crds or { }));
-    compose = lib.mapAttrs (name: svc: {
-      inherit (svc)
-        namespace
-        image
-        replicas
-        ;
-      ref = svc.ref;
-    }) (config.compose or { });
-
     projections = lib.mapAttrs (name: proj: {
       inherit (proj) source namespace;
       keys = lib.mapAttrs (kname: key: {
@@ -119,31 +125,6 @@ let
       namespace = sec.namespace or "default";
       backend = sec.backend or "sops";
     }) ((config.secrets or { }).managed or { });
-    databases = {
-      postgres = lib.mapAttrs (name: pg: {
-        inherit (pg)
-          namespace
-          instances
-          database
-          ;
-        ref = pg.ref;
-      }) ((config.databases or { }).postgres or { });
-      redis = lib.mapAttrs (name: redis: {
-        inherit (redis)
-          namespace
-          mode
-          replicas
-          auth
-          ;
-        ref = redis.ref;
-      }) ((config.databases or { }).redis or { });
-    };
-    storage = {
-      s3Buckets = lib.mapAttrs (name: bucket: {
-        inherit (bucket) provider acl;
-        ref = bucket.ref;
-      }) ((config.storage or { }).s3Buckets or { });
-    };
     outputs = config.cluster.out;
     lifecycle =
       let

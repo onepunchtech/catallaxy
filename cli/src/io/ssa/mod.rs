@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use console::style;
@@ -12,6 +12,7 @@ use crate::apply::{
 };
 use crate::config::Context as CataContext;
 use crate::domain::SecretsCache;
+use crate::domain::prune::{PruneInputs, ResourceKey, plan_prune};
 use crate::domain::{ClusterSpec, SecretsSpec};
 use crate::io;
 
@@ -20,7 +21,22 @@ mod probe;
 pub use probe::ReadyProbe;
 use probe::run_ready_probe;
 
-const BUNDLE_APPLY_ATTEMPTS: u32 = 4;
+/// How long to keep re-applying a bundle that will not take yet.
+///
+/// A bundle can contain both an admission webhook and the objects that webhook
+/// validates: kube-prometheus-stack ships its operator, the
+/// `MutatingWebhookConfiguration` pointing at it, and the PrometheusRules it
+/// checks, all in one Helm release. `kubectl apply` sends them together, so the
+/// rules are rejected until the operator has an endpoint, and retrying is the
+/// only thing that can succeed.
+///
+/// This used to be four attempts, which with the backoff below is eighteen
+/// seconds of waiting. That is shorter than a cold image pull, so whether it
+/// worked came down to how much else had already been installed: prometheus
+/// passed only because an unrelated edge happened to place it late. Deleting
+/// that edge, correctly, made it fail. A deadline says what the retry is
+/// actually for, and does not depend on where in the plan the bundle lands.
+const BUNDLE_APPLY_DEADLINE: Duration = Duration::from_secs(180);
 const PHASE_APPLY_BACKOFF: Duration = Duration::from_secs(6);
 
 pub struct ApplyManifests<'a> {
@@ -35,12 +51,23 @@ pub struct ApplyManifests<'a> {
     pub secrets_cache: Option<&'a SecretsCache>,
 }
 
+/// Server-side apply every manifest under `manifest_root`, in phase order,
+/// then wait for the workloads it created.
+///
+/// # Errors
+///
+/// If the kube context is empty, if `manifest_root` does not exist, if a phase
+/// still fails after its retries, or if a workload never becomes ready within
+/// `wait_timeout_seconds`. A missing manifest root is an error rather than an
+/// empty apply, because it means the lab package was not built.
 pub fn apply_manifest_root(ctx: &CataContext, opts: ApplyManifests<'_>) -> Result<()> {
     let ApplyManifests {
         manifest_root,
         wait_timeout_seconds,
         ..
     } = opts;
+    crate::io::kube_context::require_named(opts.kube_context)?;
+
     if !manifest_root.exists() {
         bail!(
             "manifest root not found at {}. Rebuild the lab package.",
@@ -165,6 +192,98 @@ fn apply_wave_ordered(
         "\n{} SSA wave apply complete on '{kube_context}'",
         style(">>>").green(),
     );
+
+    prune_undeclared(opts, &meta, manifest_root)
+}
+
+/// Delete what the declaration stopped naming.
+///
+/// Runs after every wave, not per wave: a resource can move between bundles,
+/// and pruning mid-apply would delete it before the bundle that now owns it
+/// had a chance to apply it.
+fn prune_undeclared(
+    opts: &ApplyManifests<'_>,
+    meta: &WaveMeta,
+    manifest_root: &Path,
+) -> Result<()> {
+    let &ApplyManifests {
+        kube_context,
+        dry_run,
+        lab_name,
+        ..
+    } = opts;
+
+    // No file means a tree rendered before pruning existed. Deleting on that
+    // basis would treat every bundle as undeclared, so say nothing and do
+    // nothing.
+    let Some(declared) = declared_bundles(manifest_root) else {
+        return Ok(());
+    };
+
+    let applied_bundles: BTreeSet<String> = meta
+        .waves
+        .iter()
+        .flat_map(|w| w.bundles.iter().map(|b| b.key.clone()))
+        .collect();
+
+    let kubectl = io::kubectl::seam::Real;
+    let live = io::kubectl::owned::owned_by_lab(&kubectl, kube_context, lab_name)?;
+    let plan = plan_prune(PruneInputs {
+        live: &live,
+        declared_bundles: &declared,
+        applied_bundles: &applied_bundles,
+        applied: &applied_resources(manifest_root),
+    });
+
+    if plan.is_empty() {
+        return Ok(());
+    }
+
+    for key in &plan.delete {
+        if dry_run {
+            println!(
+                "{} Would remove {}, which the lab no longer declares",
+                style(">>>").yellow(),
+                key.describe(),
+            );
+            continue;
+        }
+        println!(
+            "{} Removing {}, which the lab no longer declares",
+            style(">>>").cyan(),
+            key.describe(),
+        );
+        io::kubectl::owned::delete(&kubectl, kube_context, key)?;
+    }
+
+    if !plan.orphaned_storage.is_empty() {
+        println!();
+        println!(
+            "{} The lab no longer declares these, and they hold data, so they \
+             were left alone:",
+            style("note:").yellow(),
+        );
+        for key in &plan.orphaned_storage {
+            println!("      {}", key.describe());
+        }
+        println!(
+            "      A lab that comes back finds its data. Remove them with \
+             `kubectl delete` when you are sure."
+        );
+    }
+
+    if !plan.unattributed.is_empty() {
+        println!();
+        println!(
+            "{} These carry this lab's label but name no bundle, so nothing \
+             can say whether the lab still wants them:",
+            style("note:").yellow(),
+        );
+        for key in &plan.unattributed {
+            println!("      {}", key.describe());
+        }
+    }
+
     Ok(())
 }
 
@@ -183,8 +302,10 @@ fn apply_bundle_with_retry(
         );
         return Ok(());
     }
-    let mut last_err: Option<anyhow::Error> = None;
-    for attempt in 1..=BUNDLE_APPLY_ATTEMPTS {
+    let started = Instant::now();
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
         let status = crate::io::kubectl::command()
             .args([
                 "--context",
@@ -204,24 +325,23 @@ fn apply_bundle_with_retry(
             println!("{} Applied bundle '{bundle_key}'", style(">>>").green(),);
             return Ok(());
         }
-        if attempt == BUNDLE_APPLY_ATTEMPTS {
-            last_err = Some(anyhow::anyhow!(
-                "kubectl apply exited with {status} on bundle '{bundle_key}'"
-            ));
-            break;
+        if started.elapsed() + PHASE_APPLY_BACKOFF >= BUNDLE_APPLY_DEADLINE {
+            bail!(
+                "kubectl apply of bundle '{bundle_key}' failed after {attempt} attempts over \
+                 {elapsed}s: kubectl apply exited with {status}",
+                elapsed = started.elapsed().as_secs(),
+            );
         }
         println!(
-            "{} kubectl apply of bundle '{bundle_key}' failed (attempt {attempt}/{BUNDLE_APPLY_ATTEMPTS}); \
-             sleeping {backoff}s and retrying.",
+            "{} kubectl apply of bundle '{bundle_key}' failed (attempt {attempt}, {elapsed}s of \
+             {deadline}s); sleeping {backoff}s and retrying.",
             style(">>>").yellow(),
+            elapsed = started.elapsed().as_secs(),
+            deadline = BUNDLE_APPLY_DEADLINE.as_secs(),
             backoff = PHASE_APPLY_BACKOFF.as_secs(),
         );
         sleep(PHASE_APPLY_BACKOFF);
     }
-    bail!(
-        "kubectl apply of bundle '{bundle_key}' failed after {BUNDLE_APPLY_ATTEMPTS} attempts: {}",
-        last_err.map(|e| e.to_string()).unwrap_or_default(),
-    );
 }
 
 fn wait_bundle_crds(
@@ -324,6 +444,52 @@ fn yaml_files_under(dir: &Path) -> Vec<PathBuf> {
 
 const AWAIT_ROLLOUT: &str = "catallaxy.io/await-rollout";
 
+/// Every resource the applied tree declares, as the cluster would name it.
+fn applied_resources(manifest_root: &Path) -> BTreeSet<ResourceKey> {
+    let mut out = BTreeSet::new();
+    for path in yaml_files_under(manifest_root) {
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        for doc in serde_yaml::Deserializer::from_str(&content) {
+            let Ok(value) = <serde_yaml::Value as serde::Deserialize>::deserialize(doc) else {
+                continue;
+            };
+            let (Some(kind), Some(metadata)) = (
+                value.get("kind").and_then(|k| k.as_str()),
+                value.get("metadata"),
+            ) else {
+                continue;
+            };
+            let Some(name) = metadata.get("name").and_then(|n| n.as_str()) else {
+                continue;
+            };
+            out.insert(ResourceKey::new(
+                kind,
+                metadata.get("namespace").and_then(|n| n.as_str()),
+                name,
+            ));
+        }
+    }
+    out
+}
+
+/// Bundles the cluster declares, whoever applies them.
+///
+/// Written by the renderer because only the declaration knows it. The applied
+/// tree is a subset -- for an argocd lab, just the install-target set -- so it
+/// cannot tell a bundle that was dropped from one argocd owns.
+fn declared_bundles(manifest_root: &Path) -> Option<BTreeSet<String>> {
+    let raw = fs::read_to_string(manifest_root.join(".declared-bundles")).ok()?;
+    Some(
+        raw.lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect(),
+    )
+}
+
 fn wait_target_in_value(doc: &serde_yaml::Value) -> Option<(String, String, String)> {
     let kind = doc.get("kind")?.as_str()?.to_string();
     if !matches!(
@@ -365,14 +531,49 @@ fn wait_targets_in_file(content: &str) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// What "ready" means for a kind. A Job is never Available; it is complete or
-/// it is not.
-fn condition_for(kind: &str) -> &'static str {
+/// How to ask Kubernetes whether a workload is up.
+///
+/// Only Deployments carry an `Available` condition and only Jobs carry
+/// `complete`; StatefulSets and DaemonSets carry neither, so a condition wait
+/// on those blocks until the timeout however healthy they are.
+enum Readiness {
+    Rollout,
+    Condition(&'static str),
+}
+
+fn readiness_for(kind: &str) -> Readiness {
     match kind {
-        "DaemonSet" => "condition=Ready",
-        "Job" => "condition=complete",
-        _ => "condition=Available",
+        "Job" => Readiness::Condition("condition=complete"),
+        _ => Readiness::Rollout,
     }
+}
+
+/// How many replicas a workload wants, when it can say.
+fn desired_replicas(kube_context: &str, ns: &str, target: &str) -> Option<String> {
+    let out = crate::io::process::run_capture(
+        crate::io::kubectl::command()
+            .args(["--context", kube_context, "-n", ns])
+            .args(["get", target, "-o", "jsonpath={.spec.replicas}"]),
+    )
+    .ok()?;
+    let n = out.trim().to_string();
+    if n.is_empty() { None } else { Some(n) }
+}
+
+/// Whether this workload updates on delete rather than by rolling.
+///
+/// `kubectl rollout status` refuses outright on any strategy but
+/// RollingUpdate, so asking it about one of these reports a healthy workload
+/// as never having rolled out. openbao's StatefulSet is OnDelete, and its pod
+/// was Running and Ready while the deploy failed on it.
+fn updates_on_delete(kube_context: &str, ns: &str, target: &str) -> bool {
+    crate::io::process::run_capture(
+        crate::io::kubectl::command()
+            .args(["--context", kube_context, "-n", ns])
+            .args(["get", target, "-o", "jsonpath={.spec.updateStrategy.type}"]),
+    )
+    .map(|o| o.trim() == "OnDelete")
+    .unwrap_or(false)
 }
 
 fn wait_workloads_ready(kube_context: &str, phase_dir: &Path, timeout: &str) -> Result<()> {
@@ -398,24 +599,48 @@ fn wait_workloads_ready(kube_context: &str, phase_dir: &Path, timeout: &str) -> 
     let mut stalled: Vec<String> = Vec::new();
     for (kind, ns, name) in &targets {
         let target = format!("{}/{name}", kind.to_lowercase());
-        let condition = condition_for(kind);
+        let (args, what): (Vec<String>, String) = match readiness_for(kind) {
+            Readiness::Rollout if updates_on_delete(kube_context, ns, &target) => {
+                let want =
+                    desired_replicas(kube_context, ns, &target).unwrap_or_else(|| "1".into());
+                (
+                    vec![
+                        "wait".to_string(),
+                        format!("--for=jsonpath={{.status.readyReplicas}}={want}"),
+                        target.clone(),
+                        format!("--timeout={timeout}"),
+                    ],
+                    format!("have {want} ready replica(s)"),
+                )
+            }
+            Readiness::Rollout => (
+                vec![
+                    "rollout".to_string(),
+                    "status".to_string(),
+                    target.clone(),
+                    format!("--timeout={timeout}"),
+                ],
+                "finish rolling out".to_string(),
+            ),
+            Readiness::Condition(condition) => (
+                vec![
+                    "wait".to_string(),
+                    format!("--for={condition}"),
+                    target.clone(),
+                    format!("--timeout={timeout}"),
+                ],
+                format!("reach {condition}"),
+            ),
+        };
         let result = crate::io::kubectl::command()
-            .args([
-                "--context",
-                kube_context,
-                "-n",
-                ns,
-                "wait",
-                &format!("--for={condition}"),
-                &target,
-                &format!("--timeout={timeout}"),
-            ])
+            .args(["--context", kube_context, "-n", ns])
+            .args(&args)
             .status();
         match result {
             Ok(s) if s.success() => {}
             _ => {
                 println!(
-                    "{} {ns}/{target} did not reach {condition} within {timeout}",
+                    "{} {ns}/{target} did not {what} within {timeout}",
                     style("ERROR").red(),
                 );
                 stalled.push(format!("{ns}/{target}"));
@@ -435,6 +660,15 @@ fn wait_workloads_ready(kube_context: &str, phase_dir: &Path, timeout: &str) -> 
     Ok(())
 }
 
+/// Drop this field manager's ownership of the fields it applied, so a later
+/// owner takes them without a conflict.
+///
+/// # Errors
+///
+/// Never. A manifest that cannot be read, and a release that fails, are both
+/// skipped: the caller's next step is argocd taking over, and a field still
+/// owned makes that a conflict argocd reports, not a reason to fail here. The
+/// count actually released is printed.
 pub fn relinquish_field_manager(
     kube_context: &str,
     manifest_root: &Path,
@@ -629,19 +863,21 @@ fn await_wave_bundles(
         if !bundle.has_content {
             continue;
         }
-        match &bundle.ready_probe {
-            Some(probe) => {
-                run_ready_probe(ctx, kube_context, &bundle.key, probe, timeout_str, dry_run)?
-            }
-            None => {
-                if !dry_run {
-                    wait_workloads_ready(
-                        kube_context,
-                        &manifest_root.join(&bundle.dir),
-                        timeout_str,
-                    )?;
-                }
-            }
+        // Workloads first, then the probe, and never one instead of the
+        // other. A probe says "this bundle's own thing is working" -- an
+        // Issuer answers, a CR reports Ready -- which is a narrower question
+        // than "every Deployment I shipped is Available". Treating the probe
+        // as a replacement let the next wave start against a bundle whose
+        // pods were still coming up, which is how a webhook-owning bundle
+        // like cert-manager races the resources that need its webhook.
+        //
+        // A bundle with no workloads makes the wait a no-op, so this costs
+        // nothing where the probe was genuinely the only signal available.
+        if !dry_run {
+            wait_workloads_ready(kube_context, &manifest_root.join(&bundle.dir), timeout_str)?;
+        }
+        if let Some(probe) = &bundle.ready_probe {
+            run_ready_probe(ctx, kube_context, &bundle.key, probe, timeout_str, dry_run)?;
         }
     }
     Ok(())
@@ -687,6 +923,28 @@ mod tests {
         assert!(wait_target_in_doc(&doc).is_some());
     }
 
+    // Only Deployments have an Available condition and only Jobs have
+    // complete. Waiting on a condition a kind never reports blocks until the
+    // timeout no matter how healthy the workload is, which is what a
+    // StatefulSet did for ten minutes before failing a deploy.
+    #[test]
+    fn the_controllers_are_asked_about_their_rollout_not_a_condition() {
+        for kind in ["Deployment", "StatefulSet", "DaemonSet"] {
+            assert!(
+                matches!(readiness_for(kind), Readiness::Rollout),
+                "{kind} should be waited on with `rollout status`"
+            );
+        }
+    }
+
+    #[test]
+    fn a_job_is_asked_whether_it_completed() {
+        assert!(matches!(
+            readiness_for("Job"),
+            Readiness::Condition("condition=complete")
+        ));
+    }
+
     #[test]
     fn ignores_kinds_that_have_no_rollout() {
         let doc = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: cm\n  namespace: x\n";
@@ -706,16 +964,6 @@ mod tests {
                 "bootstrap-ab12".to_string()
             )
         );
-    }
-
-    // And it has to be waited on for the right thing. A Job never reports
-    // Available, so asking for that condition would time out on a Job that
-    // completed.
-    #[test]
-    fn a_job_is_waited_on_for_completion_not_availability() {
-        assert_eq!(condition_for("Job"), "condition=complete");
-        assert_eq!(condition_for("Deployment"), "condition=Available");
-        assert_eq!(condition_for("DaemonSet"), "condition=Ready");
     }
 
     #[test]

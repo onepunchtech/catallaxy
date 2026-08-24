@@ -5,7 +5,7 @@ use crate::domain::plan::DnsTeardownParams;
 use crate::host::dns;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &DnsTeardownParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &DnsTeardownParams) -> Result<()> {
     let DnsTeardownParams { zone } = p;
 
     if sctx.dry_run {
@@ -16,5 +16,5 @@ pub async fn run(sctx: &StepContext<'_>, p: &DnsTeardownParams) -> Result<()> {
         );
         return Ok(());
     }
-    dns::dns_teardown(zone).await
+    dns::dns_teardown(zone)
 }

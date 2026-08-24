@@ -10,7 +10,9 @@ let
 
   versionedTypes = generatedTypes.forVersion k8sVersion;
 
-  allResourceTypes = generatedTypes.flattenTypes versionedTypes;
+  typesByKind = generatedTypes.typesByKind versionedTypes;
+
+  coreKinds = generatedTypes.coreKinds versionedTypes;
 
   metadataType = import ./generated/k8s-api.nix;
 
@@ -100,35 +102,123 @@ let
 
   # The generated resource types carry `freeformType = types.attrs`, so this
   # checks the fields Kubernetes knows about and lets unknown ones through. A
-  # kind outside the committed schemas keeps the untyped spec it had before.
+  # pair outside the committed schemas keeps the untyped spec it had before.
+  #
+  # Resolution is on the (apiVersion, kind) pair because `kind` alone does not
+  # identify a schema. `Cluster` is CloudNativePG's, Cluster API's and
+  # Crossplane's; `Backup` is velero's and CloudNativePG's; `Event` and
+  # `HorizontalPodAutoscaler` each exist twice in core Kubernetes.
   specTypeFor =
-    kind:
+    apiVersion: kind:
     let
-      kindType = allResourceTypes.${kind} or null;
-      subOptions = if kindType == null then { } else kindType.getSubOptions [ ];
+      resolved = generatedTypes.resolveResourceType typesByKind apiVersion kind;
     in
-    subOptions.spec.type or (types.nullOr types.attrs);
+    if resolved == null then types.nullOr types.attrs else (resolved.getSubOptions [ ]).spec.type;
 
-  readyProbeType = types.submodule {
-    options.kind = mkOption {
-      type = types.enum [
-        "condition"
-        "jsonpath"
-        "exists"
-        "http"
-        "tcp"
-        "dns"
-        "script"
-        "kubectl-wait"
-      ];
-      description = ''
-        Which probe shape this is. Every kind but `kubectl-wait` is
-        rendered by `lib/util/wait.nix`; `kubectl-wait` passes `args`
-        through to kubectl.
-      '';
-    };
-    freeformType = types.attrs;
+  probeRequires = {
+    condition = [
+      "resource"
+      "condition"
+    ];
+    jsonpath = [
+      "resource"
+      "jsonpath"
+    ];
+    exists = [ "resource" ];
+    http = [ "url" ];
+    tcp = [
+      "host"
+      "port"
+    ];
+    dns = [ "hostname" ];
+    script = [ "script" ];
+    kubectl-wait = [ ];
   };
+
+  readyProbeType =
+    let
+      str = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
+    in
+    types.submodule {
+      options = {
+        kind = mkOption {
+          type = types.enum (lib.attrNames probeRequires);
+          description = ''
+            Which probe shape this is. Every kind but `kubectl-wait` is
+            rendered by `lib/util/wait.nix`, which refuses a probe missing a
+            field its kind needs; `kubectl-wait` passes `args` through.
+          '';
+        };
+
+        resource = str // {
+          description = "`kind/name` to wait on, for the kinds that ask kubectl.";
+        };
+        namespace = str // {
+          description = "Namespace holding `resource`. Cluster-scoped kinds leave it null.";
+        };
+        condition = str // {
+          description = ''
+            Condition that must be True, for `kind = "condition"`.
+
+            Only Deployments carry `Available` and only Jobs carry `complete`.
+            A StatefulSet or DaemonSet waited on for a condition it does not
+            have blocks until the timeout however healthy it is.
+          '';
+        };
+        jsonpath = str // {
+          description = ''JSONPath expression, for `kind = "jsonpath"`.'';
+        };
+        value = mkOption {
+          type = types.nullOr (types.either types.str types.int);
+          default = null;
+          description = "Value `jsonpath` must equal. Null waits for it to exist.";
+        };
+        url = str // {
+          description = ''URL to fetch, for `kind = "http"`.'';
+        };
+        expectedStatus = mkOption {
+          type = types.nullOr types.int;
+          default = null;
+          description = "HTTP status that counts as ready. Defaults to 200.";
+        };
+        caBundleMount = mkOption {
+          type = types.nullOr types.attrs;
+          default = null;
+          description = "CA bundle to trust when fetching `url`.";
+        };
+        host = str // {
+          description = ''Host to connect to, for `kind = "tcp"`.'';
+        };
+        port = mkOption {
+          type = types.nullOr types.port;
+          default = null;
+          description = ''Port to connect to, for `kind = "tcp"`.'';
+        };
+        hostname = str // {
+          description = ''Name that must resolve, for `kind = "dns"`.'';
+        };
+        script = str // {
+          description = ''Shell script that exits 0 when ready, for `kind = "script"`.'';
+        };
+        args = mkOption {
+          type = types.nullOr (types.listOf types.str);
+          default = null;
+          description = ''Arguments passed straight to kubectl, for `kind = "kubectl-wait"`.'';
+        };
+        image = str // {
+          description = "Image the probe runs in. Each kind has a default.";
+        };
+        timeout = str // {
+          description = "How long to keep asking before giving up.";
+        };
+        interval = str // {
+          description = "How long to wait between attempts, for the polling kinds.";
+        };
+      };
+    };
 
   kubernetesResourceType = types.submodule (
     { name, config, ... }:
@@ -136,7 +226,15 @@ let
       options = {
         apiVersion = mkOption {
           type = types.str;
-          description = "Kubernetes API version (e.g., 'v1', 'apps/v1')";
+          default = "";
+          description = ''
+            Kubernetes API version (e.g., 'v1', 'apps/v1'). Together with
+            `kind` it picks the type `spec` is checked against, so it is read
+            while the option tree is built and carries a default for that
+            reason. A resource that leaves it empty is rejected by an
+            assertion rather than by the type. For the same reason it has to
+            be a literal: a value computed from the option tree would recurse.
+          '';
         };
 
         kind = mkOption {
@@ -160,7 +258,7 @@ let
         };
 
         spec = mkOption {
-          type = specTypeFor config.kind;
+          type = specTypeFor config.apiVersion config.kind;
           default = null;
           description = ''
             Resource spec. When the kind is one of the generated Kubernetes
@@ -192,7 +290,7 @@ let
     }
   );
 
-  bundleType = types.submodule (
+  bundleModule =
     { name, ... }:
     {
       options = {
@@ -276,10 +374,16 @@ let
           type = types.listOf types.str;
           default = [ ];
           description = ''
-            `provides`-tokens this bundle needs READY (applied AND its
-            readyProbe has passed) before it starts. Every token must
-            be provided by another bundle in the same cluster; eval
-            fails otherwise with a fingerprint pointing at the culprit.
+            Names this bundle needs READY (applied AND their readyProbe
+            passed) before it starts. Every name must be provided by another
+            bundle in the same cluster; eval fails otherwise with a
+            fingerprint pointing at the culprit.
+
+            `step:<token>` reaches out of the cluster to the lab's plan
+            instead, for something that has to be true before any manifest is
+            applied. It adds no wave ordering, because every bundle here is
+            applied by one step: the lab checks that whatever publishes the
+            token runs before that step, and refuses if it does not.
           '';
         };
 
@@ -301,13 +405,57 @@ let
           '';
         };
 
-        floe = mkOption {
-          internal = true;
+        conflicts = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          description = ''
+            Names this bundle refuses to share a cluster with, in the same
+            namespace `provides` and `requires` use.
+
+            A name only one implementation of can be correct is stated by
+            providing it and conflicting with it at the same time, the way an
+            MTA both provides and conflicts with `mail-transport-agent`. A
+            bundle never conflicts with itself, so one provider is fine and
+            two is an evaluation error naming both.
+
+            Two Gateway API implementations are the motivating case: they claim
+            the same listeners and the same routes, and which one wins depends
+            on reconcile order, so the cluster comes up and then disagrees with
+            itself.
+          '';
+        };
+
+        disableWith = mkOption {
           type = types.nullOr types.str;
           default = null;
+          example = "floes.cilium.gatewayAPI.enable = false";
           description = ''
-            Which floe declared this bundle, for `floe:<name>` anchors.
-            Stamped by `mkFloe`; a bundle a lab declares directly has none.
+            The setting that stops this bundle providing what it provides,
+            written as a lab author would write it.
+
+            Only read when a `conflicts` refusal names this bundle. A refusal
+            that does not say what to change makes the reader go and find out
+            which of two providers is the one they can turn off, and for a
+            provider of several names the answer is rarely `enable = false`.
+          '';
+        };
+
+        declaredBy = mkOption {
+          internal = true;
+          type = types.str;
+          description = ''
+            Which floe declared this bundle, or null when the cluster itself
+            did, for `floe:<name>` anchors.
+
+            Required, and nullable, because those are different answers and
+            only one of them can be assumed. Three things read this and skip a
+            bundle that answers nothing: the allow rules in
+            `cluster.security.networkPolicies`, `imageCompleteness`, and the
+            SBOM. When it defaulted to null a bundle whose floe went unnamed
+            fell out of all three and nothing said so.
+
+            the key it is declared under sets it. A module that declares a bundle by hand says it
+            itself, and is refused until it does.
           '';
         };
 
@@ -348,6 +496,12 @@ let
 
           type = types.nullOr readyProbeType;
           default = null;
+
+          # Every kind gets every field so the shape is checked, and a
+          # condition probe has no business carrying a null `hostname` into a
+          # rendered tree. Dropping them here means nothing downstream, in
+          # Nix or in the CLI, has to know they were ever there.
+          apply = p: if p == null then null else lib.filterAttrs (_: v: v != null) p;
           description = ''
             How to determine this bundle is READY beyond "kubectl apply
             returned 0". Uses the probe DSL from `lib/util/wait.nix`,
@@ -462,8 +616,20 @@ let
           description = "Who owns this bundle's resources at each stage: which tool applies it during bootstrap, and which reconciles it afterwards.";
         };
       };
-    }
-  );
+    };
+
+  bundleType = types.submodule bundleModule;
+
+  # A bundle declared under `floes.<name>.bundles` is that floe's by
+  # construction, so it answers `declaredBy` without anyone stamping it
+  # afterwards. `mkDefault`, so two floes declaring the same bundle key still
+  # collide on who owns it rather than one silently winning.
+  bundleTypeOwnedBy =
+    owner:
+    types.submodule [
+      bundleModule
+      { declaredBy = lib.mkDefault owner; }
+    ];
 
 in
 {
@@ -472,11 +638,12 @@ in
     helmChartType
     kubernetesResourceType
     bundleType
+    bundleTypeOwnedBy
     ;
 
-  inherit generatedTypes;
+  inherit generatedTypes coreKinds;
 
-  inherit allResourceTypes;
+  inherit typesByKind;
 
   k8sTypes = versionedTypes;
 

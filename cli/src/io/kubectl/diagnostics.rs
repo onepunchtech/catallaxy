@@ -5,24 +5,24 @@ use anyhow::{Context, Result, bail};
 use crate::io::process::run_capture;
 
 pub fn api_reachable(context: &str) -> bool {
-    let output = super::run::command()
-        .args(["--context", context, "version", "--request-timeout=2s"])
-        .output();
+    let Ok(mut cmd) = super::run::contextual(context) else {
+        return false;
+    };
+    let output = cmd.args(["version", "--request-timeout=2s"]).output();
 
     matches!(output, Ok(o) if o.status.success())
 }
 
+/// Deployments whose Progressing condition says the deadline was exceeded.
+///
+/// # Errors
+///
+/// If `context` is empty, kubectl cannot be spawned, or it exits non-zero. The
+/// message says nothing below reflects the cluster, because an empty list here
+/// otherwise reads as a healthy one. Output that is not JSON is an empty list.
 pub fn get_stuck_deployments(context: &str) -> Result<Vec<(String, String)>> {
-    let output = super::run::command()
-        .args([
-            "--context",
-            context,
-            "get",
-            "deployments",
-            "-A",
-            "-o",
-            "json",
-        ])
+    let output = super::run::contextual(context)?
+        .args(["get", "deployments", "-A", "-o", "json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -57,11 +57,14 @@ pub fn get_stuck_deployments(context: &str) -> Result<Vec<(String, String)>> {
     Ok(stuck)
 }
 
+/// # Errors
+///
+/// If `context` is empty, kubectl cannot be spawned, or it exits non-zero
+/// because the workload is missing. kubectl's stderr is captured and dropped,
+/// so the message names only the workload.
 pub fn rollout_restart(context: &str, kind: &str, namespace: &str, name: &str) -> Result<()> {
-    let status = super::run::command()
+    let status = super::run::contextual(context)?
         .args([
-            "--context",
-            context,
             "rollout",
             "restart",
             &format!("{kind}/{name}"),
@@ -79,9 +82,15 @@ pub fn rollout_restart(context: &str, kind: &str, namespace: &str, name: &str) -
     Ok(())
 }
 
+/// Pods that are neither Running with every container ready nor finished.
+///
+/// # Errors
+///
+/// If `context` is empty, kubectl cannot be spawned, or it exits non-zero, in
+/// which case the message says the result does not reflect the cluster.
 pub fn get_unhealthy_pods(context: &str) -> Result<Vec<serde_json::Value>> {
-    let output = super::run::command()
-        .args(["--context", context, "get", "pods", "-A", "-o", "json"])
+    let output = super::run::contextual(context)?
+        .args(["get", "pods", "-A", "-o", "json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -122,11 +131,15 @@ pub fn get_unhealthy_pods(context: &str) -> Result<Vec<serde_json::Value>> {
     Ok(unhealthy)
 }
 
+/// Warning events from the last `since_minutes`, oldest first.
+///
+/// # Errors
+///
+/// If `context` is empty, kubectl cannot be spawned, or it exits non-zero. An
+/// event whose timestamp does not parse is kept rather than dropped.
 pub fn get_warning_events(context: &str, since_minutes: u32) -> Result<Vec<serde_json::Value>> {
-    let output = super::run::command()
+    let output = super::run::contextual(context)?
         .args([
-            "--context",
-            context,
             "get",
             "events",
             "-A",
@@ -169,16 +182,19 @@ pub fn get_warning_events(context: &str, since_minutes: u32) -> Result<Vec<serde
     Ok(events)
 }
 
+/// # Errors
+///
+/// If `context` is empty, or kubectl cannot be spawned. A pod with no logs and
+/// a pod that does not exist both give an empty string, because kubectl's exit
+/// status is not checked here.
 pub fn get_pod_logs(
     context: &str,
     namespace: &str,
     pod_name: &str,
     tail_lines: u32,
 ) -> Result<String> {
-    let output = super::run::command()
+    let output = super::run::contextual(context)?
         .args([
-            "--context",
-            context,
             "logs",
             pod_name,
             "-n",
@@ -196,9 +212,12 @@ pub fn get_pod_logs(
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// # Errors
+///
+/// If `context` is empty, kubectl cannot be spawned, or it exits non-zero.
 pub fn get_node_status(context: &str) -> Result<Vec<serde_json::Value>> {
-    let output = super::run::command()
-        .args(["--context", context, "get", "nodes", "-o", "json"])
+    let output = super::run::contextual(context)?
+        .args(["get", "nodes", "-o", "json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -217,6 +236,13 @@ pub fn get_node_status(context: &str) -> Result<Vec<serde_json::Value>> {
     Ok(json["items"].as_array().cloned().unwrap_or_default())
 }
 
+/// The `cata-` apps kapp knows about, as name, description and age.
+///
+/// # Errors
+///
+/// Never. kapp being absent or unhappy is an empty list, because this is one
+/// section of a status report and a missing kapp is not a reason to fail the
+/// rest of it.
 pub fn get_kapp_app_statuses(context: &str) -> Result<Vec<(String, String, String)>> {
     let output = Command::new("kapp")
         .args([
@@ -264,13 +290,15 @@ pub struct Workload {
     pub desired: i64,
 }
 
+/// # Errors
+///
+/// If `context` is empty. A namespace kubectl cannot read is skipped rather
+/// than fatal, so a short list means some namespaces did not answer.
 pub fn get_workload_readiness(context: &str, namespaces: &[String]) -> Result<Vec<Workload>> {
     let mut out = Vec::new();
     for namespace in namespaces {
-        let output = super::run::command()
+        let output = super::run::contextual(context)?
             .args([
-                "--context",
-                context,
                 "-n",
                 namespace,
                 "get",
@@ -318,8 +346,11 @@ pub fn get_workload_readiness(context: &str, namespaces: &[String]) -> Result<Ve
 }
 
 pub fn namespace_exists(context: &str, namespace: &str) -> bool {
-    let output = super::run::command()
-        .args(["--context", context, "get", "namespace", namespace])
+    let Ok(mut cmd) = super::run::contextual(context) else {
+        return false;
+    };
+    let output = cmd
+        .args(["get", "namespace", namespace])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
@@ -327,16 +358,8 @@ pub fn namespace_exists(context: &str, namespace: &str) -> bool {
 }
 
 pub fn namespace_phase(kube_ctx: &str, namespace: &str) -> Option<String> {
-    let mut get = super::run::command();
-    get.args([
-        "--context",
-        kube_ctx,
-        "get",
-        "ns",
-        namespace,
-        "-o",
-        "jsonpath={.status.phase}",
-    ]);
+    let mut get = super::run::contextual(kube_ctx).ok()?;
+    get.args(["get", "ns", namespace, "-o", "jsonpath={.status.phase}"]);
     run_capture(&mut get).ok().map(|s| s.trim().to_string())
 }
 
@@ -346,8 +369,9 @@ pub struct NodeSummary {
 }
 
 pub fn node_summary(context: &str) -> Option<NodeSummary> {
-    let output = super::run::command()
-        .args(["--context", context, "get", "nodes", "-o", "json"])
+    let output = super::run::contextual(context)
+        .ok()?
+        .args(["get", "nodes", "-o", "json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()
@@ -386,17 +410,8 @@ pub fn pods_in_namespace(
     namespace: &str,
     request_timeout: Option<&str>,
 ) -> Option<Vec<serde_json::Value>> {
-    let mut cmd = super::run::command();
-    cmd.args([
-        "--context",
-        context,
-        "get",
-        "pods",
-        "-n",
-        namespace,
-        "-o",
-        "json",
-    ]);
+    let mut cmd = super::run::contextual(context).ok()?;
+    cmd.args(["get", "pods", "-n", namespace, "-o", "json"]);
     if let Some(timeout) = request_timeout {
         cmd.arg(format!("--request-timeout={timeout}"));
     }

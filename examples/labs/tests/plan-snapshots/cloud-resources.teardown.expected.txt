@@ -1,0 +1,3 @@
+[001] destroy-cluster name=destroy-cluster-bootstrap-mgmt params.name=mgmt params.provisioner=k3d params.skipIfMissing=true
+[002] run-script name=mgmt-capi-clusters cluster=mgmt policy.onFailure=continue params.bin=/nix/store/HASH-capi-teardown/bin/capi-teardown params.kubeContext=k3d-cloud-resources-mgmt
+[003] remove-network name=remove-network

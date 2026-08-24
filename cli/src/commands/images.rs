@@ -90,18 +90,18 @@ pub enum ImagesCommands {
 
 pub async fn run(ctx: &CataContext, command: ImagesCommands) -> Result<()> {
     match command {
-        ImagesCommands::List { name } => list(ctx, name.as_deref()).await,
+        ImagesCommands::List { name } => list(ctx, name.as_deref()),
         ImagesCommands::Actual {
             name,
             cluster,
             undeclared,
-        } => actual(ctx, name.as_deref(), cluster.as_deref(), undeclared).await,
-        ImagesCommands::Lock { name, out } => lock(ctx, name.as_deref(), &out).await,
+        } => actual(ctx, name.as_deref(), cluster.as_deref(), undeclared),
+        ImagesCommands::Lock { name, out } => lock(ctx, name.as_deref(), &out),
         ImagesCommands::Mirror {
             name,
             registry,
             dry_run,
-        } => mirror(ctx, name.as_deref(), &registry, dry_run).await,
+        } => mirror(ctx, name.as_deref(), &registry, dry_run),
         ImagesCommands::Prefetch {
             name,
             registry,
@@ -123,7 +123,7 @@ fn lock_key(image: &str) -> &str {
     }
 }
 
-async fn lock(ctx: &CataContext, name: Option<&str>, out: &str) -> Result<()> {
+fn lock(ctx: &CataContext, name: Option<&str>, out: &str) -> Result<()> {
     let Some(dir) = ctx.flake_ref.local_dir() else {
         bail!(
             "a lockfile has to be written beside the flake, and '{}' is not a local one.\n\n                 Run this against a checkout, then commit the file it writes.",
@@ -185,7 +185,7 @@ async fn lock(ctx: &CataContext, name: Option<&str>, out: &str) -> Result<()> {
     Ok(())
 }
 
-async fn list(ctx: &CataContext, name: Option<&str>) -> Result<()> {
+fn list(ctx: &CataContext, name: Option<&str>) -> Result<()> {
     let images = crate::images::load_image_list(ctx, name)?;
 
     println!(
@@ -202,7 +202,7 @@ async fn list(ctx: &CataContext, name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-async fn actual(
+fn actual(
     ctx: &CataContext,
     name: Option<&str>,
     cluster: Option<&str>,
@@ -293,7 +293,7 @@ async fn actual(
     Ok(())
 }
 
-async fn mirror(
+fn mirror(
     ctx: &CataContext,
     name: Option<&str>,
     target_registry: &str,

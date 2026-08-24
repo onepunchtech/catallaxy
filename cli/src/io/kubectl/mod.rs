@@ -2,6 +2,7 @@ mod crossplane;
 mod diagnostics;
 mod finalizers;
 mod kubeconfig;
+pub mod owned;
 mod run;
 
 pub use crossplane::*;
@@ -9,6 +10,9 @@ pub use diagnostics::*;
 pub use finalizers::*;
 pub use kubeconfig::*;
 pub use run::*;
+
+pub mod seam;
+pub use seam::{Kubectl, KubectlRun};
 
 #[cfg(test)]
 mod tests {

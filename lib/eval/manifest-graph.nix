@@ -4,55 +4,30 @@ let
   inherit (lib)
     attrNames
     concatLists
-    concatMap
+    concatStringsSep
     filter
     filterAttrs
-    foldl'
-    genAttrs
     hasAttr
     hasPrefix
     removePrefix
-    unique
     ;
 
-  parseAnchor =
-    anchor:
-    if hasPrefix "optional:" anchor then
-      {
-        hard = false;
-        body = removePrefix "optional:" anchor;
-      }
-    else
-      {
-        hard = true;
-        body = anchor;
-      };
+  shared = import ./graph.nix { inherit lib; };
 
-  buildProvidesIdx =
-    bundles:
-    foldl' (
-      acc: name:
-      foldl' (
-        inner: tok:
-        inner
-        // {
-          ${tok} = (inner.${tok} or [ ]) ++ [ name ];
-        }
-      ) acc (bundles.${name}.provides or [ ])
-    ) { } (attrNames bundles);
+  inherit (shared) parseAnchor buildProvidesIdx closureFrom;
 
+  # `kind:` is deliberately absent: it is an ordinary provided name now,
+  # supplied by whoever installs the CRD, so it falls through to the index
+  # below. It used to mean "any bundle holding a resource of this kind",
+  # which reads the same and answers the opposite question - every emitter
+  # of a Certificate rather than the one thing that admits one.
   matchAnchor =
     bundles: providesIdx: body:
-    if hasPrefix "kind:" body then
-      let
-        kind = removePrefix "kind:" body;
-      in
-      attrNames (filterAttrs (_: b: builtins.elem kind (b.kinds or [ ])) bundles)
-    else if hasPrefix "floe:" body then
+    if hasPrefix "floe:" body then
       let
         floe = removePrefix "floe:" body;
       in
-      attrNames (filterAttrs (_: b: (b.floe or null) == floe) bundles)
+      attrNames (filterAttrs (_: b: (b.declaredBy or null) == floe) bundles)
     else if hasPrefix "provides:" body then
       providesIdx.${removePrefix "provides:" body} or [ ]
     else if hasPrefix "bundle:" body then
@@ -63,48 +38,94 @@ let
     else if hasAttr body bundles then
       [ body ]
     else
-      [ ];
+      providesIdx.${body} or [ ];
+
+  isStepAnchor = a: hasPrefix "step:" (parseAnchor a).body;
+
+  # A `step:` name belongs to the lab's plan, not to this cluster, so there
+  # is no bundle here for it to order against and no index that could answer
+  # it. It is dropped from the edges and collected instead, and the lab
+  # checks that whatever publishes it runs before the manifests are applied.
+  stepAnchors =
+    bundles:
+    lib.concatMap (
+      name:
+      lib.concatMap
+        (
+          field:
+          map (a: {
+            bundle = name;
+            inherit field;
+            token = removePrefix "step:" (parseAnchor a).body;
+            inherit (parseAnchor a) hard;
+          }) (filter isStepAnchor (bundles.${name}.${field} or [ ]))
+        )
+        [
+          "after"
+          "requires"
+        ]
+    ) (attrNames bundles);
 
   resolveAnchorList =
     bundles: providesIdx: bundleName: field: anchors:
-    concatMap (
-      a:
-      let
-        p = parseAnchor a;
-        matches = matchAnchor bundles providesIdx p.body;
-      in
-      if matches == [ ] && p.hard then
-        throw ''
-          bundle '${bundleName}': ${field} anchor '${a}' matched no bundle.
-          Anchor grammar: <name> | bundle:<name> | kind:<k8s-kind> | floe:<floe> | provides:<token>.
-          Prefix with 'optional:' to silence this error when the anchor is
-          allowed to match nothing.
-        ''
-      else
-        matches
-    ) anchors;
+    baseResolveAnchorList bundles providesIdx bundleName field (filter (a: !(isStepAnchor a)) anchors);
 
-  resolveRequires =
-    providesIdx: bundleName: requires:
-    concatMap (
-      req:
+  baseResolveAnchorList = shared.resolveAnchorList {
+    inherit matchAnchor;
+    onUnmatched =
+      {
+        node,
+        field,
+        body,
+        ...
+      }:
+      throw ''
+        bundle '${node}': ${field} names '${body}', which nothing on
+        this cluster provides.
+
+        A name resolves against a bundle of that name, then against
+        everything any bundle lists in `provides`. Derived names carry a
+        prefix (bundle:, floe:, kind:, namespace:); hand-written ones are
+        bare, by convention <scope>/<subject>/<state>. `step:<token>`
+        reaches a lab plan step instead, for something that has to happen
+        before the manifests are applied at all.
+
+        Supply it with `provides = [ "${body}" ]` on the bundle that does,
+        or write it as 'optional:${body}' if it is allowed to match
+        nothing.
+      '';
+  };
+
+  conflictErrors = shared.conflictErrors {
+    inherit matchAnchor;
+    onConflict =
+      {
+        nodes,
+        name,
+        conflicted,
+        others,
+      }:
       let
-        providers = providesIdx.${req} or [ ];
+        remedies = filter (r: r != null) (map (n: nodes.${n}.disableWith or null) ([ name ] ++ others));
       in
-      if providers == [ ] then
-        throw ''
-          bundle '${bundleName}': requires '${req}' but no bundle provides it.
-          Declare a bundle with `provides = [ "${req}" ]` or drop the require.
-        ''
-      else
-        providers
-    ) requires;
+      ''
+        bundle '${name}' conflicts with '${conflicted}', which ${
+          concatStringsSep " and " (map (n: "'${n}'") others)
+        } also provides.
+
+        Two providers of one name do not merge: they claim the same
+        objects and the same traffic, and which one wins depends on the
+        order things reconcile in, so the cluster comes up and then
+        disagrees with itself. Turn one of them off:
+        ${concatStringsSep "\n" (map (r: "  " + r) remedies)}
+      '';
+  };
 
   buildEdges =
     bundles:
     let
       providesIdx = buildProvidesIdx bundles;
-      names = attrNames bundles;
+      conflicts = conflictErrors bundles;
 
       directPreds =
         name:
@@ -112,73 +133,36 @@ let
           b = bundles.${name};
         in
         (resolveAnchorList bundles providesIdx name "after" (b.after or [ ]))
-        ++ (resolveRequires providesIdx name (b.requires or [ ]));
-
-      predsOf = name: filter (n: n != name) (unique (directPreds name));
+        ++ (resolveAnchorList bundles providesIdx name "requires" (b.requires or [ ]));
     in
-    genAttrs names predsOf;
+    if conflicts != [ ] then
+      throw (concatStringsSep "\n" conflicts)
+    else
+      shared.buildEdges {
+        nodes = bundles;
+        inherit directPreds;
+      };
 
-  kahnWaves =
-    edges:
-    let
-      names = attrNames edges;
+  kahnWaves = shared.kahnWaves {
+    onCycle =
+      { edges, remaining }:
+      throw ''
+        manifest bundles: dependency cycle.
 
-      successors =
-        let
-          allPairs = concatMap (post: map (pre: { inherit pre post; }) edges.${post}) names;
-        in
-        foldl' (
-          acc: p:
-          acc
-          // {
-            ${p.pre} = (acc.${p.pre} or [ ]) ++ [ p.post ];
-          }
-        ) (genAttrs names (_: [ ])) allPairs;
+        These are all still waiting, each on the ones named after it.
+        Only edges inside the cycle are shown, so every line here is
+        part of the knot rather than of the tree hanging off it:
 
-      initialInDeg = genAttrs names (n: builtins.length edges.${n});
+        ${concatStringsSep "\n" (
+          map (
+            n: "  ${n} <- ${concatStringsSep ", " (filter (p: builtins.elem p remaining) edges.${n})}"
+          ) remaining
+        )}
 
-      loop =
-        state:
-        let
-          zero = filter (n: state.inDeg.${n} == 0) state.remaining;
-          zeroSorted = lib.sort (a: b: a < b) zero;
-        in
-        if zeroSorted == [ ] then
-          if state.remaining == [ ] then
-            state.waves
-          else
-            throw ''
-              manifest bundles: dependency cycle among: ${builtins.toJSON state.remaining}.
-              At least one pair of bundles mutually require each other via
-              after/requires edges. Inspect the anchor lists on the named
-              bundles and break the cycle.
-            ''
-        else
-          let
-            newRemaining = filter (n: !(builtins.elem n zeroSorted)) state.remaining;
-
-            newInDeg = foldl' (
-              acc: pick:
-              foldl' (
-                acc': succ:
-                acc'
-                // {
-                  ${succ} = acc'.${succ} - 1;
-                }
-              ) acc (successors.${pick} or [ ])
-            ) state.inDeg zeroSorted;
-          in
-          loop {
-            remaining = newRemaining;
-            inDeg = newInDeg;
-            waves = state.waves ++ [ zeroSorted ];
-          };
-    in
-    loop {
-      remaining = names;
-      inDeg = initialInDeg;
-      waves = [ ];
-    };
+        Break it by making one of those edges optional, or by moving
+        what it depends on into a bundle of its own.
+      '';
+  };
 
   computeWaves =
     { bundles }:
@@ -197,15 +181,28 @@ let
   closurePredecessors =
     { bundles, roots }:
     let
-      edges = buildEdges bundles;
-      walk =
-        seen: name:
-        if !(bundles ? ${name}) || builtins.elem name seen then
-          seen
+      unknown = builtins.filter (name: !(bundles ? ${name})) roots;
+      checkedRoots =
+        if unknown == [ ] then
+          roots
         else
-          foldl' walk (seen ++ [ name ]) (edges.${name} or [ ]);
+          throw ''
+            `cluster.provisioning.rootBundles` names ${
+              concatStringsSep ", " (map (n: "'${n}'") unknown)
+            }, which ${
+              if builtins.length unknown == 1 then "is not a bundle" else "are not bundles"
+            } on this cluster. It has: ${concatStringsSep ", " (attrNames bundles)}.
+
+            The stage1 set is the dependency closure of these roots, so a name
+            that matches nothing quietly drops everything it should have pulled
+            in. The bootstrap then comes up missing the CRDs the cluster needs
+            and fails at apply rather than here.
+          '';
     in
-    foldl' walk [ ] roots;
+    closureFrom {
+      edges = buildEdges bundles;
+      roots = checkedRoots;
+    };
 
 in
 {
@@ -213,7 +210,9 @@ in
     parseAnchor
     buildProvidesIdx
     matchAnchor
+    stepAnchors
     buildEdges
+    conflictErrors
     kahnWaves
     computeWaves
     topoSort

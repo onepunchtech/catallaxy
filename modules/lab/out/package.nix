@@ -112,6 +112,19 @@ in
           ) config.lab.out.verifyTests
         );
 
+        infraLinks = lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (
+            name: pkg: "cp -rL ${pkg}/infra/${name} $out/infra/${name}"
+          ) config.lab.out.infra
+        );
+        hasInfra = infraLinks != "";
+
+        # The lab carries the tool as well as the file, so the CLI runs
+        # `infra/bin/tofu` and never has to find or match providers itself.
+        infraToolLink = lib.optionalString (
+          config.lab.out.infraTool != null
+        ) "ln -s ${config.lab.out.infraTool}/bin/tofu $out/infra/bin/tofu";
+
         manifestLinks = lib.concatStringsSep "\n" (
           lib.mapAttrsToList (
             name: pkg: "ln -s ${pkg}/${name} $out/manifests/${name}"
@@ -239,6 +252,7 @@ in
           ${lib.optionalString hasStage1 "mkdir -p $out/stage1"}
           ${lib.optionalString hasTeardownHooks "mkdir -p $out/hooks"}
           ${lib.optionalString hasLintChecks "mkdir -p $out/lint"}
+          ${lib.optionalString hasInfra "mkdir -p $out/infra $out/infra/bin"}
           jq . "$metadataTextPath" > $out/metadata.json
           ${manifestLinks}
           ${verifyCopies}
@@ -248,6 +262,8 @@ in
           ${stepBinLinks}
           ${discovererLinks}
           ${lintCheckLinks}
+          ${infraLinks}
+          ${infraToolLink}
           ${autoDeployLinks}
 
           touch $out/images-raw.txt

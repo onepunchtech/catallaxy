@@ -139,7 +139,7 @@ fn cluster_manifests(
     })
 }
 
-pub async fn apply(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<()> {
+pub fn apply(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<()> {
     let cluster = ctx.resolve_cluster_name(args.cluster)?;
 
     println!(
@@ -167,13 +167,18 @@ pub async fn apply(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<()> {
         &lab,
         spec,
     )
-    .await
 }
 
-pub async fn diff(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<bool> {
+pub fn diff(ctx: &CataContext, args: ApplyRequest<'_>) -> Result<bool> {
     let cluster = ctx.resolve_cluster_name(args.cluster)?;
     let lab = resolve_lab(ctx, &args)?;
     let spec = lab.cluster(&cluster)?;
+
+    let strategy = spec.deploy.strategy;
+    if strategy.is_gitops() && !args.force {
+        return Err(deployed_through_git(strategy));
+    }
+
     let kube_context = kube_context_for(&args, spec);
 
     if !io::kubectl::api_reachable(kube_context) {
@@ -294,20 +299,42 @@ fn discover_bundles(cluster_manifests: &Path) -> Result<Vec<BundleDir>> {
     Ok(bundles)
 }
 
-fn read_deploy_timeout(cluster_manifests: &Path) -> String {
-    let config_file = cluster_manifests.join(".deploy-config");
-    if let Ok(content) = crate::io::fs::read_to_string(&config_file) {
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if let Some(val) = trimmed.strip_prefix("waitTimeout:") {
-                return val.trim().to_string();
-            }
-        }
-    }
-    "10m".to_string()
+fn wait_timeout_in(content: &str) -> Option<&str> {
+    content
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("waitTimeout:"))
+        .map(str::trim)
 }
 
-async fn apply_kapp(
+fn read_deploy_timeout(cluster_manifests: &Path) -> Result<String> {
+    let config_file = cluster_manifests.join(".deploy-config");
+    let content = crate::io::fs::read_to_string(&config_file).with_context(|| {
+        format!(
+            "reading {}. The lab declares `waitTimeout` there; substituting a \
+             default would deploy with a timeout the lab never asked for",
+            config_file.display()
+        )
+    })?;
+
+    let timeout = wait_timeout_in(&content).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} has no `waitTimeout:` line. Re-render the lab",
+            config_file.display()
+        )
+    })?;
+
+    crate::io::kubectl::parse_timeout(timeout).ok_or_else(|| {
+        anyhow::anyhow!(
+            "`waitTimeout: {timeout}` in {} is not a duration (expected e.g. 30s, \
+             10m, 1h). kapp would have been handed it verbatim",
+            config_file.display()
+        )
+    })?;
+
+    Ok(timeout.to_string())
+}
+
+fn apply_kapp(
     ctx: &CataContext,
     kube_context: &str,
     manifests_path: &str,
@@ -320,7 +347,7 @@ async fn apply_kapp(
     }
 
     let cluster_manifests = Path::new(manifests_path);
-    let timeout = read_deploy_timeout(cluster_manifests);
+    let timeout = read_deploy_timeout(cluster_manifests)?;
     let mut bundles = discover_bundles(cluster_manifests)?;
 
     if let Some(key) = args.bundle {
@@ -452,7 +479,7 @@ where
         secrets: spec,
         pre_cache,
     } = source;
-    let secrets_tmp = tempfile::tempdir()?;
+    let secrets_tmp = crate::io::fs::secure_tempdir()?;
 
     let mut store_cache: HashMap<String, HashMap<String, HashMap<String, String>>> = HashMap::new();
 
@@ -622,4 +649,36 @@ fn deployed_through_git(strategy: crate::domain::DeployStrategy) -> anyhow::Erro
          Use 'cata lab publish' to push manifests to the Git repository.\n\
          To apply directly anyway, use --force."
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_declared_timeout_is_read_from_the_config() {
+        let content = "strategy: kapp\nwaitTimeout: 45m\n";
+        assert_eq!(wait_timeout_in(content), Some("45m"));
+    }
+
+    #[test]
+    fn a_config_without_the_key_yields_nothing_rather_than_a_default() {
+        assert_eq!(wait_timeout_in("strategy: kapp\n"), None);
+        assert_eq!(wait_timeout_in("waitTimeoutSeconds: 600\n"), None);
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_not_part_of_the_duration() {
+        assert_eq!(wait_timeout_in("   waitTimeout:   45m   \n"), Some("45m"));
+    }
+
+    #[test]
+    fn a_duration_kapp_cannot_read_is_not_silently_ten_minutes() {
+        for bad in ["soon", "45minutes", "", "-5m"] {
+            assert!(
+                crate::io::kubectl::parse_timeout(bad).is_none(),
+                "'{bad}' parsed as a duration"
+            );
+        }
+    }
 }

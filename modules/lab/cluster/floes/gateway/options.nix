@@ -8,6 +8,7 @@
 
 let
   inherit (lib) mkOption mkDefault types;
+  contracts = import ../../../../../lib/contracts { inherit lib; };
 in
 {
 
@@ -37,6 +38,35 @@ in
       type = types.str;
       default = "traefik";
       description = "GatewayClass name";
+    };
+
+    nodePorts = {
+      http = mkOption {
+        type = types.port;
+        default = 30080;
+        description = ''
+          NodePort the controller's plaintext listener is pinned to, used only
+          on a provisioner that does not publish the gateway's ports on the
+          node itself.
+
+          Pinned rather than allocated because the lab's proxy has to be
+          configured with it before the Service exists. Reading it back after
+          the fact would make the proxy config depend on the order things came
+          up in.
+        '';
+      };
+
+      https = mkOption {
+        type = types.port;
+        default = 30443;
+        description = "As `http`, for the TLS listener.";
+      };
+
+      passthrough = mkOption {
+        type = types.port;
+        default = 30444;
+        description = "As `http`, for the TLS passthrough listener.";
+      };
     };
 
     gatewayName = mkOption {
@@ -71,20 +101,8 @@ in
         '';
       };
 
-      issuerRef = mkOption {
-        type = types.submodule {
-          options = {
-            name = mkOption {
-              type = types.str;
-              description = "Name of the issuer.";
-            };
-            kind = mkOption {
-              type = types.str;
-              default = "ClusterIssuer";
-              description = "Issuer scope. `ClusterIssuer` is lab-wide; `Issuer` is confined to the namespace.";
-            };
-          };
-        };
+      issuerRef = contracts.tls.issuerRefOption {
+        nullable = false;
         default = {
           name = "lab-ca";
           kind = "ClusterIssuer";

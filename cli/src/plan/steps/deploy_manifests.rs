@@ -8,7 +8,7 @@ use crate::domain::{BootstrapTool, DeployStrategy};
 use crate::io;
 use crate::plan::StepContext;
 
-pub async fn run(sctx: &StepContext<'_>, p: &DeployManifestsParams) -> Result<()> {
+pub fn run(sctx: &StepContext<'_>, p: &DeployManifestsParams) -> Result<()> {
     let DeployManifestsParams {
         target,
         bootstrap,
@@ -73,5 +73,4 @@ pub async fn run(sctx: &StepContext<'_>, p: &DeployManifestsParams) -> Result<()
             ..crate::apply::ApplyRequest::for_cluster(target)
         },
     )
-    .await
 }

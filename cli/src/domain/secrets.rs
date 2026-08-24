@@ -36,6 +36,52 @@ impl Backend {
 #[serde(rename_all = "camelCase")]
 pub struct SecretStore {
     pub backend: Backend,
+    #[serde(default)]
+    pub direction: StoreDirection,
+    #[serde(default)]
+    pub writer_command: Option<Vec<String>>,
+    #[serde(default)]
+    pub vault: VaultStore,
+}
+
+/// Whether anything may write into a store at runtime.
+///
+/// Derived on the Nix side from the backend, so the two cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StoreDirection {
+    #[default]
+    Authored,
+    Runtime,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultStore {
+    #[serde(default)]
+    pub server: Option<String>,
+    #[serde(default = "default_mount")]
+    pub path: String,
+    #[serde(default = "default_kv_version")]
+    pub version: String,
+}
+
+impl Default for VaultStore {
+    fn default() -> Self {
+        Self {
+            server: None,
+            path: default_mount(),
+            version: default_kv_version(),
+        }
+    }
+}
+
+fn default_mount() -> String {
+    "secret".to_string()
+}
+
+fn default_kv_version() -> String {
+    "v2".to_string()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

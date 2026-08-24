@@ -4,7 +4,7 @@ use console::style;
 use crate::config::Context as CataContext;
 use crate::domain::LabSpec;
 
-pub async fn run(
+pub fn run(
     ctx: &CataContext,
     name: &str,
     bundle: Option<String>,
@@ -40,14 +40,13 @@ pub async fn run(
                 lab: Some(&lab),
                 ..crate::apply::ApplyRequest::for_cluster(cluster_name)
             },
-        )
-        .await?;
+        )?;
     }
 
     Ok(())
 }
 
-pub async fn diff(
+pub fn diff(
     ctx: &CataContext,
     name: &str,
     bundle: Option<String>,
@@ -70,12 +69,11 @@ pub async fn diff(
                 lab: Some(&lab),
                 ..crate::apply::ApplyRequest::for_cluster(cluster_name)
             },
-        )
-        .await?;
+        )?;
     }
 
     if any_changed {
-        std::process::exit(3);
+        return Err(crate::domain::ExitWith(3).into());
     }
     Ok(())
 }

@@ -45,7 +45,7 @@ fn check(resources: &[K8sResource], cluster: &str) -> Vec<Diagnostic> {
 }
 
 pub(super) fn crd_key(api_version: &str, kind: &str) -> String {
-    format!("{}/{}", api_version, kind)
+    format!("{api_version}/{kind}")
 }
 
 #[derive(Debug)]
@@ -135,7 +135,7 @@ pub(super) fn extract_crd_schemas(resources: &[K8sResource]) -> HashMap<String, 
             };
 
             let node = parse_schema_node(openapi_schema);
-            let key = format!("{}/{}/{}", group, version_name, kind);
+            let key = format!("{group}/{version_name}/{kind}");
             schemas.insert(key, node);
         }
     }
@@ -293,7 +293,7 @@ fn validate_object(
                 let child_path = if path.is_empty() {
                     key.to_string()
                 } else {
-                    format!("{}.{}", path, key)
+                    format!("{path}.{key}")
                 };
 
                 if let Some(prop_schema) = schema.properties.get(key) {
@@ -309,7 +309,7 @@ fn validate_object(
         && let Some(ref items_schema) = schema.items
     {
         for (i, item) in seq.iter().enumerate() {
-            let child_path = format!("{}[{}]", path, i);
+            let child_path = format!("{path}[{i}]");
             validate_object(item, items_schema, &child_path, resource, cluster, diags);
         }
     }

@@ -7,48 +7,45 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions;
+  cfg = config.floes.otel-collector;
 in
-(mkFloe {
-  name = "otel-collector";
-  version = "0.96.0";
-  imports = [ ./options.nix ];
-  exports =
-    { lib, ... }:
-    {
-      namespace = lib.mkOption {
-        type = lib.types.str;
-        default = "otel-collector";
-        description = "Namespace the collector runs in.";
-      };
-      host = lib.mkOption {
-        type = lib.types.str;
-        default = "otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local";
-        description = "In-cluster DNS name of the gateway Service.";
-      };
-      otlpGrpc = lib.mkOption {
-        type = lib.types.str;
-        default = "otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local:4317";
-        description = "host:port a peer sends OTLP gRPC to.";
-      };
-      otlpHttp = lib.mkOption {
-        type = lib.types.str;
-        default = "http://otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local:4318";
-        description = "Full URL a peer sends OTLP HTTP to.";
-      };
+{
+  imports = [
+    (floeOptions {
+      name = "otel-collector";
+      version = "0.96.0";
+    })
+    ./options.nix
+  ];
+
+  options.floes.otel-collector.exports = {
+    namespace = lib.mkOption {
+      type = lib.types.str;
+      default = "otel-collector";
+      description = "Namespace the collector runs in.";
     };
-  module =
-    {
-      config,
-      lib,
-      cataCharts,
-      cfg,
-      peers,
-      ...
-    }:
+    host = lib.mkOption {
+      type = lib.types.str;
+      default = "otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local";
+      description = "In-cluster DNS name of the gateway Service.";
+    };
+    otlpGrpc = lib.mkOption {
+      type = lib.types.str;
+      default = "otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local:4317";
+      description = "host:port a peer sends OTLP gRPC to.";
+    };
+    otlpHttp = lib.mkOption {
+      type = lib.types.str;
+      default = "http://otel-gateway-opentelemetry-collector.otel-collector.svc.cluster.local:4318";
+      description = "Full URL a peer sends OTLP HTTP to.";
+    };
+  };
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         optional
@@ -439,7 +436,9 @@ in
 
       assertions = [
         {
-          assertion = !cfg.gateway.external.enable || (peers.gateway.routing != null);
+          assertion =
+            !cfg.gateway.external.enable
+            || ((config.cluster.capabilities.resolved.api-gateway.routing or null) != null);
           message = ''
             otel-collector external gateway (`gateway.external.enable = true`)
             needs `floes.gateway.enable = true`: the HTTPRoute reads
@@ -447,7 +446,7 @@ in
           '';
         }
         {
-          assertion = !cfg.exporters.prometheus.enable || (peers.prometheus.metrics != null);
+          assertion = !cfg.exporters.prometheus.enable || (config.floes.prometheus.exports.metrics != null);
           message = ''
             otel-collector prometheus exporter is on but
             `floes.prometheus.enable = false`. Either enable prometheus
@@ -455,7 +454,7 @@ in
           '';
         }
         {
-          assertion = !cfg.exporters.loki.enable || (peers.loki.logIngest != null);
+          assertion = !cfg.exporters.loki.enable || (config.floes.loki.exports.logIngest != null);
           message = ''
             otel-collector loki exporter is on but
             `floes.loki.enable = false`. Either enable loki or turn off
@@ -494,7 +493,7 @@ in
 
       };
 
-      bundles.otel-collector = {
+      floes.otel-collector.bundles.otel-collector = {
         helmCharts = (
 
           optionalAttrs cfg.agent.enable {
@@ -600,6 +599,6 @@ in
           timeout = "5m";
         };
       };
-    };
-})
-  __floeModuleArgs
+    }
+  );
+}

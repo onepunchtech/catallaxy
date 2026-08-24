@@ -1,0 +1,7 @@
+[001] docker-network-create name=docker-network-create params.gateway=172.20.0.1 params.name=platform-layering params.subnet=172.20.0.0/16
+[002] colima-network-route name=colima-network-route params.profile=catallaxy params.subnet=172.20.0.0/16
+[003] setup-services name=setup-services
+[004] registry-setup name=registry-setup params.port=5099 params.upstreams=["codeberg.org","registry.k8s.io","ghcr.io","quay.io","docker.io","public.ecr.aws","oci.external-secrets.io"] params.zone=layering.test
+[005] warm-cache name=warm-cache
+[006] create-cluster name=create-cluster-app params.name=app params.provisioner=k3d
+[007] deploy-manifests name=deploy-manifests-app params.kubeContext=k3d-platform-layering-app params.target=app

@@ -12,6 +12,7 @@ let
       before = [ ];
       requires = [ ];
       provides = [ ];
+      conflicts = [ ];
       cluster = null;
     }
     // attrs;
@@ -48,6 +49,8 @@ let
     map (x: x.name) (topoSort {
       inherit steps;
     });
+
+  conflictsOf = steps: builtins.length (graph.conflictErrors steps);
 
   force = expr: builtins.deepSeq expr expr;
 
@@ -176,19 +179,34 @@ lib.concatLists [
     user = s { after = [ "optional:provides:nobody-publishes-this" ]; };
   }) [ "user" ])
 
-  (assertThrows "a bare step name is not an anchor" (
+  (assertEq "a bare name resolves against what steps publish"
+    (orderOf {
+      user = s { after = [ "ready" ]; };
+      publisher = s { provides = [ "ready" ]; };
+    })
+    [
+      "publisher"
+      "user"
+    ]
+  )
+
+  (assertThrows "a step's own key is still not a name, even when that step exists" (
     force (orderOf {
       user = s { after = [ "some-other-step" ]; };
       some-other-step = s { };
     })
   ))
 
-  (assertThrows "an optional bare step name is not an anchor either" (
-    force (orderOf {
+  (assertEq "optional: silences a bare name nothing publishes"
+    (orderOf {
       user = s { after = [ "optional:some-other-step" ]; };
       some-other-step = s { };
     })
-  ))
+    [
+      "some-other-step"
+      "user"
+    ]
+  )
 
   (assertThrows "hard kind: anchor miss fails eval" (
     force (orderOf {
@@ -210,8 +228,14 @@ lib.concatLists [
 
   (assertThrows "cycle via after fails eval" (
     force (orderOf {
-      a = s { after = [ "b" ]; };
-      b = s { after = [ "a" ]; };
+      a = s {
+        after = [ "tok-b" ];
+        provides = [ "tok-a" ];
+      };
+      b = s {
+        after = [ "tok-a" ];
+        provides = [ "tok-b" ];
+      };
     })
   ))
 
@@ -241,6 +265,7 @@ lib.concatLists [
       {
         after = [ ];
         before = [ ];
+        conflicts = [ ];
         kind = "custom-kind";
         name = "only";
         provides = [ "here" ];
@@ -278,4 +303,61 @@ lib.concatLists [
       requires = [ "tok" ];
     };
   }) [ "x" ])
+
+  (assertEq "requires takes the same grammar as after"
+    (orderOf {
+      user = s { requires = [ "kind:maker" ]; };
+      maker = s {
+        kind = "maker";
+        provides = [ "unused" ];
+      };
+    })
+    [
+      "maker"
+      "user"
+    ]
+  )
+
+  (assertEq "optional: silences a requires that matches nothing" (orderOf {
+    user = s { requires = [ "optional:provides:nobody-publishes-this" ]; };
+  }) [ "user" ])
+
+  (assertEq "one publisher does not conflict with itself" (conflictsOf {
+    only = s {
+      provides = [ "host/dns" ];
+      conflicts = [ "host/dns" ];
+    };
+  }) 0)
+
+  (assertEq "two publishers of an exclusive name collide" (conflictsOf {
+    dnsmasq = s {
+      provides = [ "host/dns" ];
+      conflicts = [ "host/dns" ];
+    };
+    coredns = s {
+      provides = [ "host/dns" ];
+      conflicts = [ "host/dns" ];
+    };
+  }) 1)
+
+  (assertEq "the pair is reported once even when only the later end declares it" (conflictsOf {
+    a-publisher = s { provides = [ "host/dns" ]; };
+    z-publisher = s {
+      provides = [ "host/dns" ];
+      conflicts = [ "host/dns" ];
+    };
+  }) 1)
+
+  (assertEq "and once when only the earlier end declares it" (conflictsOf {
+    a-publisher = s {
+      provides = [ "host/dns" ];
+      conflicts = [ "host/dns" ];
+    };
+    z-publisher = s { provides = [ "host/dns" ]; };
+  }) 1)
+
+  (assertEq "two publishers of a name nobody calls exclusive are fine" (conflictsOf {
+    one = s { provides = [ "lab/services" ]; };
+    two = s { provides = [ "lab/services" ]; };
+  }) 0)
 ]

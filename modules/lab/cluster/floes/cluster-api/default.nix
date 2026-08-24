@@ -7,25 +7,23 @@
   k8sHelpers,
   lab,
   ...
-}@__floeModuleArgs:
+}:
 
 let
-  inherit ((import ../../../../../lib/floe { inherit lib; })) mkFloe refs;
+  inherit ((import ../../../../../lib/floe { inherit lib; })) floeOptions refs;
   planTokens = import ../../../../../lib/plan-tokens.nix { inherit lib; };
+  cfg = config.floes.cluster-api;
 in
-(mkFloe {
-  name = "cluster-api";
-  version = "1.9.0";
-  imports = [ ./options.nix ];
-  module =
-    {
-      config,
-      lib,
-      cataCharts,
-      cfg,
-      peers,
-      ...
-    }:
+{
+  imports = [
+    (floeOptions {
+      name = "cluster-api";
+      version = "1.9.0";
+    })
+    ./options.nix
+  ];
+
+  config = lib.mkIf cfg.enable (
     let
       inherit (lib)
         mkIf
@@ -717,7 +715,7 @@ in
 
         };
 
-        bundles.cluster-api = {
+        floes.cluster-api.bundles.cluster-api = {
           helmCharts.capi-operator = {
             chart = chartRef;
             releaseName = "capi-operator";
@@ -729,8 +727,17 @@ in
           };
           createNamespaces = [ cfg.namespace ];
 
-          requires = refs.needs peers.cert-manager.issuance "webhookReady";
-          provides = [ "cluster-api/operator/ready" ];
+          requires = [ "certificate-issuance/webhook/ready" ];
+          provides = [
+            "cluster-api/operator/ready"
+            "kind:operator.cluster.x-k8s.io/CoreProvider"
+            "kind:operator.cluster.x-k8s.io/BootstrapProvider"
+            "kind:operator.cluster.x-k8s.io/ControlPlaneProvider"
+            "kind:operator.cluster.x-k8s.io/InfrastructureProvider"
+            "kind:operator.cluster.x-k8s.io/IPAMProvider"
+            "kind:operator.cluster.x-k8s.io/AddonProvider"
+            "kind:operator.cluster.x-k8s.io/RuntimeExtensionProvider"
+          ];
           readyProbe = {
             kind = "condition";
             resource = "deployment/capi-operator-cluster-api-operator";
@@ -742,15 +749,31 @@ in
       })
 
       (mkIf cfg.isManagementCluster {
-        bundles.capi-providers.resources = providerCRs;
-        bundles.capi-providers.requires = [
+        floes.cluster-api.bundles.capi-providers.resources = providerCRs;
+        floes.cluster-api.bundles.capi-providers.requires = [
           "cluster-api/operator/ready"
         ];
-        bundles.capi-providers.provides = [
+        # The providers install the CRDs they own once they are running, so
+        # their readiness is what admits a Cluster, not any bundle here.
+        floes.cluster-api.bundles.capi-providers.provides = [
           "cluster-api/providers/ready"
+          "kind:cluster.x-k8s.io/Cluster"
+          "kind:cluster.x-k8s.io/MachineDeployment"
+          "kind:bootstrap.cluster.x-k8s.io/KubeadmConfigTemplate"
+          "kind:bootstrap.cluster.x-k8s.io/TalosConfigTemplate"
+          "kind:controlplane.cluster.x-k8s.io/KubeadmControlPlane"
+          "kind:controlplane.cluster.x-k8s.io/TalosControlPlane"
+          "kind:infrastructure.cluster.x-k8s.io/DockerCluster"
+          "kind:infrastructure.cluster.x-k8s.io/DockerMachineTemplate"
+          "kind:infrastructure.cluster.x-k8s.io/DOCluster"
+          "kind:infrastructure.cluster.x-k8s.io/DOMachineTemplate"
+          "kind:infrastructure.cluster.x-k8s.io/AWSCluster"
+          "kind:infrastructure.cluster.x-k8s.io/AWSMachineTemplate"
+          "kind:infrastructure.cluster.x-k8s.io/HetznerCluster"
+          "kind:infrastructure.cluster.x-k8s.io/HetznerMachineTemplate"
         ];
 
-        bundles.capi-namespaces.createNamespaces = lib.concatMap (
+        floes.cluster-api.bundles.capi-namespaces.createNamespaces = lib.concatMap (
           p:
           {
             digitalocean = [ "capdo-system" ];
@@ -773,17 +796,21 @@ in
       })
 
       (mkIf (enabledClusters != { }) {
+        cluster.kubernetes.uncheckedResources = [
+          "cluster.x-k8s.io/v1beta2/Cluster"
+        ];
+
         cluster.provisions = lib.mapAttrs (_: _: { }) enabledClusters;
 
-        bundles.capi-clusters.resources = allClusterResources;
-        bundles.capi-clusters.requires = [
+        floes.cluster-api.bundles.capi-clusters.resources = allClusterResources;
+        floes.cluster-api.bundles.capi-clusters.requires = [
           "cluster-api/providers/ready"
         ];
-        bundles.capi-clusters.provides = [
+        floes.cluster-api.bundles.capi-clusters.provides = [
           "cluster-api/clusters/provisioned"
         ];
 
-        steps.capi-clusters = {
+        floes.cluster-api.steps.capi-clusters = {
           kind = "run-script";
           direction = "teardown";
           description = "Delete CAPI-managed clusters and wait for cloud resource cleanup";
@@ -795,7 +822,20 @@ in
           params.bin =
             let
 
-              kubeContext = config.cluster.ref.kubeContext or "";
+              # Resolved here rather than guarded in the script. An empty
+              # context is not "no cluster in particular", it is whichever one
+              # the operator last selected, so a teardown that ran with it
+              # would delete CAPI clusters somewhere else entirely. The script
+              # used to test for empty at runtime, on a value already
+              # substituted into it, which shellcheck correctly reads as dead.
+              kubeContext =
+                let
+                  ctx = config.cluster.ref.kubeContext or "";
+                in
+                if ctx == "" then
+                  throw "floes.cluster-api on cluster '${config.cluster.name}' declares clusters to tear down, but the cluster resolves no kube context, so the teardown would run against whichever context the operator last selected"
+                else
+                  ctx;
               namespace = cfg.namespace;
               clusterNames = lib.attrNames enabledClusters;
               deleteCommands = lib.concatStringsSep "\n" (
@@ -816,10 +856,6 @@ in
                 name = "capi-teardown";
                 runtimeInputs = [ pkgs.kubectl ];
                 text = ''
-                  if [ -z "${kubeContext}" ]; then
-                    echo "no kube context resolved; skipping CAPI cluster deletion" >&2
-                    exit 0
-                  fi
                   ${deleteCommands}
                   ${waitCommands}
                   echo "All CAPI clusters deleted"
@@ -829,6 +865,6 @@ in
             "${script}/bin/capi-teardown";
         };
       })
-    ];
-})
-  __floeModuleArgs
+    ]
+  );
+}

@@ -3,6 +3,5 @@
 [003] run-script name=mgmt-netbird-mesh-leave cluster=mgmt policy.onFailure=continue params.bin=/nix/store/HASH-logout/bin/logout params.kubeContext=k3d-mesh-local-mgmt
 [004] destroy-cluster name=destroy-cluster-apps params.name=apps params.provisioner=k3d
 [005] destroy-cluster name=destroy-cluster-mgmt params.name=mgmt params.provisioner=k3d
-[006] dns-teardown name=dns-teardown params.zone=mesh.test
-[007] remove-services name=remove-services
-[008] remove-network name=remove-network
+[006] remove-services name=remove-services
+[007] remove-network name=remove-network
